@@ -142,22 +142,26 @@ public partial class GestureBoardControls : Control
         float dur = Mathf.Max(1f, Time.GetTicksMsec() - _downMs);
         Vector2 disp = pos - _downPos;
 
-        // A quick, near-stationary touch is a tap → rotate CW.
+        // A quick, near-stationary touch is a tap → rotate CW (never places).
         if (_travel < cell * TapMaxTravelCells && dur < TapMaxMs)
         {
             _sampler.LatchRotateCw();
             return;
         }
 
-        // A decisive vertical flick (fast, mostly vertical): down = hard drop, up = hold.
-        // Slow vertical drags fall through — those were soft drops / positioning.
+        // A fast upward flick → hold (swap the piece away).
         bool verticalDominant = Mathf.Abs(disp.Y) > Mathf.Abs(disp.X) * 1.3f;
         float vy = disp.Y / dur * 1000f; // px/s, signed (+ down)
-        float flickSpeed = cell * FlickSpeedPerCell;
-        if (verticalDominant && disp.Y > cell * FlickMinCells && vy > flickSpeed)
-            _sampler.LatchHardDrop();
-        else if (verticalDominant && disp.Y < -cell * FlickMinCells && -vy > flickSpeed)
+        if (verticalDominant && disp.Y < -cell * FlickMinCells && -vy > cell * FlickSpeedPerCell)
+        {
             _sampler.LatchHold();
+            return;
+        }
+
+        // Otherwise you dragged the piece to line it up — lifting your finger PLACES
+        // it: hard-drop into the chosen column, puzzle-style. This is the "drag to
+        // fit, lift to drop" control the player asked for (#6, Tier A).
+        _sampler.LatchHardDrop();
     }
 
     private void SetSoft(bool on)
@@ -233,7 +237,7 @@ public partial class GestureBoardControls : Control
     {
         _hint = new Label
         {
-            Text = "DRAG TO MOVE   ·   TAP TO ROTATE   ·   FLICK DOWN TO DROP",
+            Text = "DRAG TO LINE UP   ·   LIFT TO DROP   ·   TAP TO ROTATE",
             HorizontalAlignment = HorizontalAlignment.Center,
             MouseFilter = MouseFilterEnum.Ignore,
         };

@@ -191,6 +191,7 @@ public partial class SceneRouter : Node
         if (Busy) return;
         var screen = new SettingsScreen();
         screen.BackRequested += GoToMainMenu;
+        screen.ReplayTutorialRequested += GoToTutorial;
         Swap(screen);
     }
 

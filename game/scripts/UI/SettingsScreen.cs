@@ -17,6 +17,7 @@ namespace Blockfall.UI;
 public partial class SettingsScreen : Control
 {
     public event Action? BackRequested;
+    public event Action? ReplayTutorialRequested;
 
     private GameSettings _s = null!;
     private VBoxContainer _skinRows = null!;
@@ -123,6 +124,15 @@ public partial class SettingsScreen : Control
         var access = SectionCard(col, "ACCESSIBILITY");
         access.AddChild(Slider("TEXT SIZE", 0.8, 1.6, 0.1, _s.TextScale,
             v => { _s.TextScale = (float)v; UiTheme.SetScale((float)v); }, Pct));
+
+        // ---- HELP --------------------------------------------------------------
+        // The tutorial is no longer forced on first launch, so it lives here (and
+        // on the menu's HOW TO PLAY) as an opt-in replay.
+        var help = SectionCard(col, "HELP");
+        var replay = new Button { Text = Loc.T("REPLAY TUTORIAL"), CustomMinimumSize = new Vector2(0, 46) };
+        Motion.BindButtonFeel(replay);
+        replay.Pressed += () => { Bootstrap.Instance.Save.SetSettings(_s); ReplayTutorialRequested?.Invoke(); };
+        help.AddChild(replay);
 
         col.AddChild(new Control { CustomMinimumSize = new Vector2(0, 8) });
         var back = new Button
