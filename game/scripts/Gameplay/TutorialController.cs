@@ -23,6 +23,7 @@ public partial class TutorialController : Node2D
     private ButtonSampler _sampler = null!;
     private InputProcessor _proc = null!;
     private BoardView _view = null!;
+    private Control _root = null!;
     private double _tickAccum;
 
     private Label _title = null!, _hint = null!, _progress = null!;
@@ -66,7 +67,7 @@ public partial class TutorialController : Node2D
         WireEvents();
         BuildHud();
         if (TouchControls.ShouldShow())
-            AddChild(BuildTouchControls());
+            _root.AddChild(BuildTouchControls());
 
         BuildSteps();
         _game.Start();
@@ -78,6 +79,7 @@ public partial class TutorialController : Node2D
     private void LayoutBoard()
     {
         var vp = GetViewport().GetVisibleRect().Size;
+        if (GodotObject.IsInstanceValid(_root)) { _root.Position = Vector2.Zero; _root.Size = vp; }
         _view.Layout(new Vector2(vp.X * 0.60f, vp.Y * 0.62f), new Vector2(vp.X * 0.20f, vp.Y * 0.26f));
     }
 
@@ -266,10 +268,14 @@ public partial class TutorialController : Node2D
 
     private void BuildHud()
     {
-        var root = new Control();
+        // Viewport-sized host: a Control parented to this Node2D gets no rect, so
+        // FullRect anchors would collapse the tutorial UI (title/hint/skip) to 0×0.
+        // Size it explicitly (default TopLeft anchors) and keep it synced in LayoutBoard.
+        var root = new Control { MouseFilter = Control.MouseFilterEnum.Ignore };
         UiTheme.ApplyTo(root);
-        root.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
-        root.MouseFilter = Control.MouseFilterEnum.Ignore;
+        root.Position = Vector2.Zero;
+        root.Size = GetViewport().GetVisibleRect().Size;
+        _root = root;
         AddChild(root);
 
         var box = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ShrinkCenter };

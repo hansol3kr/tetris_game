@@ -6,6 +6,7 @@
 #   ./run.sh --test     코어 유닛 테스트만 실행 (Godot 불필요)
 #   ./run.sh --editor   실행 대신 Godot 에디터로 열기
 #   ./run.sh --headless 창 없이 C# 솔루션 빌드만 검증
+#   ./run.sh --smoke    창 없이 전 화면·게임플레이 오토플레이 스모크 테스트 (버그/레이아웃 검사)
 #
 # Godot 실행 파일은 아래 순서로 탐색합니다:
 #   1) 환경변수 GODOT
@@ -184,6 +185,7 @@ case "${1:-}" in
   --test)     MODE="test" ;;
   --editor)   MODE="editor" ;;
   --headless) MODE="headless" ;;
+  --smoke)    MODE="smoke" ;;
   -h|--help)
     cat <<'EOF'
 Blockfall — 한 번에 실행 스크립트
@@ -193,6 +195,7 @@ Blockfall — 한 번에 실행 스크립트
   ./run.sh --test     코어 유닛 테스트만 실행 (Godot 불필요)
   ./run.sh --editor   실행 대신 Godot 에디터로 열기
   ./run.sh --headless 창 없이 C# 솔루션 빌드만 검증
+  ./run.sh --smoke    창 없이 오토플레이 스모크 테스트 (전 화면·게임플레이 버그/레이아웃)
 
 Godot 실행 파일 탐색 순서:
   1) 환경변수 GODOT (예: GODOT=/path/to/Godot_v4.3-stable_mono_linux.x86_64 ./run.sh)
@@ -200,7 +203,7 @@ Godot 실행 파일 탐색 순서:
 EOF
     exit 0 ;;
   "" ) ;;
-  *) die "알 수 없는 옵션: $1  (--test | --editor | --headless | --help)" ;;
+  *) die "알 수 없는 옵션: $1  (--test | --editor | --headless | --smoke | --help)" ;;
 esac
 
 check_dotnet
@@ -228,6 +231,18 @@ c_ok "빌드 성공."
 case "$MODE" in
   headless)
     c_ok "헤드리스 빌드 검증 완료 (실행 안 함)."
+    ;;
+  smoke)
+    c_info "헤드리스 오토플레이 스모크 테스트 실행 중… (전 화면 + 게임 한 판)"
+    "$GODOT_BIN" --headless --path "$GAME_DIR" --import >/dev/null 2>&1 || true
+    # 강제종료/널렌더 백엔드가 뿜는 무해한 종료 노이즈만 걸러내고, 판정은 종료코드로.
+    NOISE='PagedAllocator|Unreferenced static string|ObjectDB instances leaked|non-existing signal .draw.|BUG: Unreferenced|EDITOR_GET|shader_parameter'
+    set +e
+    "$GODOT_BIN" --headless --path "$GAME_DIR" -- --autoplay 2>&1 | grep -viE "$NOISE"
+    rc=${PIPESTATUS[0]}
+    set -e
+    [[ $rc -eq 0 ]] && c_ok "스모크 테스트 통과 (RESULT=PASS)." \
+                    || die "스모크 테스트 실패 (RESULT=FAIL) — 위 [autoplay] ✗ 로그 확인."
     ;;
   editor)
     c_info "Godot 에디터로 프로젝트 여는 중…"

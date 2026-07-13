@@ -31,6 +31,7 @@ public partial class GameController : Node2D
     private double _tickAccum;
     private BoardView _view = null!;
     private JuiceLayer _juice = null!;
+    private Control _uiHost = null!;
     private Hud _hud = null!;
     private Control _pauseOverlay = null!;
     private bool _finished;
@@ -83,10 +84,22 @@ public partial class GameController : Node2D
         AddChild(_juice);
         _juice.Configure(_view, Bootstrap.Instance.Save.Settings.JuiceIntensity);
 
+        // Full-screen UI (HUD, ghost label, touch controls, pause/revive scrims)
+        // MUST live under a Control that actually has the viewport's rect. A Control
+        // parented directly to this Node2D gets a 0×0 anchorable rect, so its
+        // FullRect/edge anchors collapse — the HUD's right column rendered off-screen
+        // and the pause/revive scrims were invisible (0×0). This host is sized to the
+        // viewport and kept in sync in LayoutBoard — the same fix Bootstrap.ScreenHost
+        // applies to menu screens. Mouse-transparent so gameplay input passes through.
+        _uiHost = new Control { Name = "UiHost", MouseFilter = Control.MouseFilterEnum.Ignore };
+        AddChild(_uiHost);
+        _uiHost.Position = Vector2.Zero;
+        _uiHost.Size = GetViewport().GetVisibleRect().Size;
+
         _hud = new Hud();
         _hud.Bind(_game);
         _hud.BindFinesse(_finesse);
-        AddChild(_hud);
+        _uiHost.AddChild(_hud);
 
         // Ghost race: run the best replay in lockstep and show a live pace readout.
         if (_ghostData is not null)
@@ -96,7 +109,7 @@ public partial class GameController : Node2D
             _ghostLabel.AddThemeFontSizeOverride("font_size", 20);
             _ghostLabel.SetAnchorsPreset(Control.LayoutPreset.CenterTop);
             _ghostLabel.Position = new Vector2(-110, 8);
-            AddChild(_ghostLabel);
+            _uiHost.AddChild(_ghostLabel);
         }
 
         if (TouchControls.ShouldShow())
@@ -117,6 +130,7 @@ public partial class GameController : Node2D
     private void LayoutBoard()
     {
         var vp = GetViewport().GetVisibleRect().Size;
+        if (GodotObject.IsInstanceValid(_uiHost)) { _uiHost.Position = Vector2.Zero; _uiHost.Size = vp; }
         // Reserve the top strip for stats; center the board in the rest.
         var area = new Vector2(vp.X * 0.62f, vp.Y * 0.80f);
         var offset = new Vector2(vp.X * 0.19f, vp.Y * 0.12f);
@@ -272,7 +286,7 @@ public partial class GameController : Node2D
         scrim.AddChild(center);
         _reviveOverlay = scrim;
         _reviveCountdown = 6.0;
-        AddChild(scrim);
+        _uiHost.AddChild(scrim);
         Motion.PopIn(card);
     }
 
@@ -505,7 +519,7 @@ public partial class GameController : Node2D
 
         card.AddChild(box);
         scrim.AddChild(center);
-        AddChild(_pauseOverlay);
+        _uiHost.AddChild(_pauseOverlay);
     }
 
     private static Button MakeMenuButton(string text, Action onPressed, bool primary)
@@ -530,7 +544,7 @@ public partial class GameController : Node2D
             _touchLayer = Bootstrap.Instance.Save.Settings.GestureControls
                 ? BuildGestureControls()
                 : BuildTouchControls();
-            AddChild(_touchLayer);
+            _uiHost.AddChild(_touchLayer);
         }
         else if (!on && _touchLayer is not null)
         {

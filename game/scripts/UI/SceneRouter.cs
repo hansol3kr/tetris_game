@@ -34,8 +34,10 @@ public partial class SceneRouter : Node
     /// True while a crossfade is in flight. Public nav methods bail out on this
     /// BEFORE running their side effects (background dim, settings writes,
     /// controller construction) — a double-tap must be a no-op, not a half-nav.
+    /// Public so a test harness (Dev.AutoPlay) can wait for a transition to settle
+    /// before driving the next navigation; production code never reads it.
     /// </summary>
-    private bool Busy => _busy;
+    public bool Busy => _busy;
 
     private void Swap(Node next, bool fast = false)
     {

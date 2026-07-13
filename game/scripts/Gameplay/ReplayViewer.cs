@@ -18,6 +18,7 @@ public partial class ReplayViewer : Node2D
     private readonly ReplayData _data;
     private ReplayPlayer _player = null!;
     private BoardView _view = null!;
+    private Control _root = null!;
     private double _accum;
     private float _speed = 1f;
     private bool _paused;
@@ -45,6 +46,7 @@ public partial class ReplayViewer : Node2D
     private void LayoutBoard()
     {
         var vp = GetViewport().GetVisibleRect().Size;
+        if (GodotObject.IsInstanceValid(_root)) { _root.Position = Vector2.Zero; _root.Size = vp; }
         _view.Layout(new Vector2(vp.X * 0.62f, vp.Y * 0.78f), new Vector2(vp.X * 0.19f, vp.Y * 0.10f));
     }
 
@@ -74,10 +76,14 @@ public partial class ReplayViewer : Node2D
 
     private void BuildHud()
     {
-        var root = new Control();
+        // Viewport-sized host: a Control parented to this Node2D gets no rect, so
+        // FullRect anchors would collapse the whole replay UI to 0×0. Size it
+        // explicitly (default TopLeft anchors) and keep it synced in LayoutBoard.
+        var root = new Control { MouseFilter = Control.MouseFilterEnum.Ignore };
         UiTheme.ApplyTo(root);
-        root.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
-        root.MouseFilter = Control.MouseFilterEnum.Ignore;
+        root.Position = Vector2.Zero;
+        root.Size = GetViewport().GetVisibleRect().Size;
+        _root = root;
         AddChild(root);
 
         var title = new Label { Text = "REPLAY", ThemeTypeVariation = "TitleLabel", Position = new Vector2(24, 24) };

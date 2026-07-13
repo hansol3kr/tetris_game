@@ -90,6 +90,10 @@ public partial class Bootstrap : Node2D
 
         // First launch drops into the tutorial; afterwards, straight to the menu.
         Router.GoToStart();
+
+        // Opt-in headless smoke test (--autoplay). Never attaches in a shipped build.
+        if (Dev.AutoPlay.Requested)
+            AddChild(new Dev.AutoPlay { Name = "AutoPlay" });
     }
 
     /// <summary>

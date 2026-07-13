@@ -26,6 +26,7 @@ public partial class VersusController : Node2D
     private BoardView _playerView = null!;
     private BoardView _botView = null!;
     private JuiceLayer _juice = null!;
+    private Control _uiHost = null!;
 
     private Label _playerScore = null!, _botScore = null!;
     private ColorRect _playerMeter = null!, _botMeter = null!;
@@ -56,6 +57,15 @@ public partial class VersusController : Node2D
         AddChild(_juice);
         _juice.Configure(_playerView, Bootstrap.Instance.Save.Settings.JuiceIntensity);
 
+        // Viewport-sized host for anchor-based Controls (win/pause overlay, touch
+        // controls). A Control under this Node2D otherwise gets a 0×0 rect and its
+        // FullRect anchors collapse — the overlay scrim + centered card were invisible.
+        // Same fix as Bootstrap.ScreenHost / GameController._uiHost.
+        _uiHost = new Control { Name = "UiHost", MouseFilter = Control.MouseFilterEnum.Ignore };
+        AddChild(_uiHost);
+        _uiHost.Position = Vector2.Zero;
+        _uiHost.Size = GetViewport().GetVisibleRect().Size;
+
         BuildHud();
         BuildOverlay();
         WireEvents();
@@ -64,7 +74,7 @@ public partial class VersusController : Node2D
         GetViewport().SizeChanged += LayoutBoards;
 
         if (TouchControls.ShouldShow())
-            AddChild(BuildTouchControls());
+            _uiHost.AddChild(BuildTouchControls());
 
         _match.Start();
         Bootstrap.Instance.Audio.PlayMusic("game");
@@ -78,6 +88,7 @@ public partial class VersusController : Node2D
     private void LayoutBoards()
     {
         var vp = GetViewport().GetVisibleRect().Size;
+        if (GodotObject.IsInstanceValid(_uiHost)) { _uiHost.Position = Vector2.Zero; _uiHost.Size = vp; }
         float top = vp.Y * 0.16f;
         float h = vp.Y * 0.70f;
         float w = vp.X * 0.45f;
@@ -208,7 +219,7 @@ public partial class VersusController : Node2D
         UiTheme.ApplyTo(scrim); // hangs off a Node2D — the theme never propagates here
         scrim.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
         _overlay = scrim;
-        AddChild(_overlay);
+        _uiHost.AddChild(_overlay);
     }
 
     // Builds the overlay with exactly the buttons passed in (first one is the

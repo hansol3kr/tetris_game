@@ -33,6 +33,7 @@ public partial class NetVersusController : Node2D
     private InputController _input = null!;
     private BoardView _view = null!;
     private JuiceLayer _juice = null!;
+    private Control _uiHost = null!;
     private RemoteBoardView _remote = null!;
 
     private Label _youTag = null!, _rivalTag = null!;
@@ -76,6 +77,14 @@ public partial class NetVersusController : Node2D
         _remote = new RemoteBoardView();
         AddChild(_remote);
 
+        // Viewport-sized host for anchor-based Controls (win/forfeit overlay, touch).
+        // A Control under this Node2D gets a 0×0 rect, collapsing FullRect anchors —
+        // the overlay scrim + card were invisible. Same fix as GameController._uiHost.
+        _uiHost = new Control { Name = "UiHost", MouseFilter = Control.MouseFilterEnum.Ignore };
+        AddChild(_uiHost);
+        _uiHost.Position = Vector2.Zero;
+        _uiHost.Size = GetViewport().GetVisibleRect().Size;
+
         BuildHud();
         BuildOverlay();
         WireGameEvents();
@@ -85,7 +94,7 @@ public partial class NetVersusController : Node2D
         GetViewport().SizeChanged += LayoutBoards;
 
         if (TouchControls.ShouldShow())
-            AddChild(BuildTouchControls());
+            _uiHost.AddChild(BuildTouchControls());
 
         _game.Start();
         Bootstrap.Instance.Audio.PlayMusic("game");
@@ -102,6 +111,7 @@ public partial class NetVersusController : Node2D
     private void LayoutBoards()
     {
         var vp = GetViewport().GetVisibleRect().Size;
+        if (GodotObject.IsInstanceValid(_uiHost)) { _uiHost.Position = Vector2.Zero; _uiHost.Size = vp; }
         float top = vp.Y * 0.16f;
         float h = vp.Y * 0.70f;
         float w = vp.X * 0.45f;
@@ -320,7 +330,7 @@ public partial class NetVersusController : Node2D
         UiTheme.ApplyTo(scrim);
         scrim.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
         _overlay = scrim;
-        AddChild(_overlay);
+        _uiHost.AddChild(_overlay);
     }
 
     private void ShowOverlay(string text, Color color, bool showRematch, bool forfeit = false)
