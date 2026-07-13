@@ -44,8 +44,38 @@ public partial class Hud : Control
         UiTheme.ApplyTo(this);
         SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         MouseFilter = MouseFilterEnum.Ignore;
+        Build();
+        GetViewport().SizeChanged += OnResize;
+    }
 
-        // ---- Left: stats card ----------------------------------------------
+    // The root viewport outlives this HUD and C# signal subscriptions aren't
+    // auto-disconnected on free — mirror GameController's cleanup.
+    public override void _ExitTree() => GetViewport().SizeChanged -= OnResize;
+
+    // Phone held portrait → a compact HUD strip along the top so the board can
+    // claim the full width; desktop / landscape → roomy left-stats + right
+    // hold/next columns. Rebuild only when the arrangement actually flips
+    // (e.g. the device rotates), never every resize tick.
+    private bool _stripLayout;
+    private void OnResize() { if (WantStrip() != _stripLayout) Build(); }
+
+    private bool WantStrip()
+    {
+        var vp = GetViewport().GetVisibleRect().Size;
+        return TouchControls.ShouldShow() && vp.Y >= vp.X;
+    }
+
+    private void Build()
+    {
+        foreach (var child in GetChildren()) child.QueueFree();
+        _next.Clear();
+        _stripLayout = WantStrip();
+        if (_stripLayout) BuildStrip(); else BuildColumns();
+    }
+
+    // ---- Desktop / landscape: left stats card + right hold/next column ------
+    private void BuildColumns()
+    {
         var statsCard = GlassPanel();
         statsCard.Position = new Vector2(16, 40);
         var leftCol = new VBoxContainer();
@@ -73,7 +103,6 @@ public partial class Hud : Control
         leftCol.AddChild(goalBox);
         leftCol.AddChild(finesseBox);
 
-        // ---- Right: hold + next --------------------------------------------
         var rightCol = new VBoxContainer();
         rightCol.SetAnchorsPreset(LayoutPreset.TopRight);
         rightCol.Position = new Vector2(-158, 40);
@@ -104,6 +133,88 @@ public partial class Hud : Control
         }
         rightCol.AddChild(nextCard);
         AddChild(rightCol);
+    }
+
+    // ---- Phone portrait: compact top strip (stats · HOLD · NEXT) ------------
+    private void BuildStrip()
+    {
+        var vp = GetViewport().GetVisibleRect().Size;
+        float h = Mathf.Clamp(vp.Y * 0.11f, 96f, 190f);
+
+        var bar = new HBoxContainer { MouseFilter = MouseFilterEnum.Ignore };
+        bar.SetAnchorsPreset(LayoutPreset.TopWide);
+        bar.OffsetLeft = 10; bar.OffsetRight = -10; bar.OffsetTop = 8; bar.OffsetBottom = 8 + h;
+        bar.Alignment = BoxContainer.AlignmentMode.Center;
+        bar.AddThemeConstantOverride("separation", 8);
+        AddChild(bar);
+
+        // Stats (compact, horizontal). Every field is created so _Process never
+        // dereferences a null even though only some are visible on a phone.
+        var statsCard = GlassPanel();
+        var stats = new HBoxContainer { MouseFilter = MouseFilterEnum.Ignore };
+        stats.AddThemeConstantOverride("separation", 12);
+        statsCard.AddChild(stats);
+        _score = CompactStat(stats, Loc.T("SCORE"), 116, out _);
+        _lines = CompactStat(stats, Loc.T("LINES"), 46, out _);
+        _level = CompactStat(stats, Loc.T("LEVEL"), 40, out _);
+        _clock = CompactStat(stats, Loc.T("TIME"), 74, out _);
+        _goal = CompactStat(stats, Loc.T("GOAL"), 62, out _);
+        _finesseValue = CompactStat(stats, Loc.T("FINESSE"), 78, out var fbox);
+        _finesseBox = fbox;
+        _finessePip = MakeLabel("", Palette.TextSecondary, 12);
+        fbox.AddChild(_finessePip);
+        _finesseStreak = MakeLabel("", Palette.Accent, 11);
+        fbox.AddChild(_finesseStreak);
+        bar.AddChild(statsCard);
+
+        // HOLD.
+        _hold = new MiniPieceView { CustomMinimumSize = new Vector2(70, 54) };
+        bar.AddChild(MiniCard(Loc.T("HOLD"), new[] { _hold }));
+
+        // NEXT (horizontal; first emphasized).
+        var minis = new System.Collections.Generic.List<MiniPieceView>();
+        for (int i = 0; i < 4; i++)
+        {
+            var mv = new MiniPieceView
+            {
+                CustomMinimumSize = i == 0 ? new Vector2(70, 54) : new Vector2(52, 46),
+                Dimmed = i > 0,
+            };
+            _next.Add(mv);
+            minis.Add(mv);
+        }
+        bar.AddChild(MiniCard(Loc.T("NEXT"), minis.ToArray()));
+    }
+
+    private Label CompactStat(BoxContainer parent, string caption, float width, out VBoxContainer box)
+    {
+        box = new VBoxContainer { MouseFilter = MouseFilterEnum.Ignore };
+        box.AddThemeConstantOverride("separation", -2);
+        box.AddChild(Section(caption));
+        var val = new Label
+        {
+            Text = "0",
+            ThemeTypeVariation = "StatValueLabel",
+            CustomMinimumSize = new Vector2(width, 0),
+        };
+        val.AddThemeFontSizeOverride("font_size", 19);
+        box.AddChild(val);
+        parent.AddChild(box);
+        return val;
+    }
+
+    private Control MiniCard(string caption, MiniPieceView[] minis)
+    {
+        var card = GlassPanel();
+        var v = new VBoxContainer { MouseFilter = MouseFilterEnum.Ignore };
+        v.AddThemeConstantOverride("separation", 2);
+        v.AddChild(Section(caption));
+        var row = new HBoxContainer { MouseFilter = MouseFilterEnum.Ignore };
+        row.AddThemeConstantOverride("separation", 4);
+        foreach (var m in minis) row.AddChild(m);
+        v.AddChild(row);
+        card.AddChild(v);
+        return card;
     }
 
     private static PanelContainer GlassPanel()

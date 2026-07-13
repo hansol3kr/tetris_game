@@ -131,10 +131,11 @@ public partial class GameController : Node2D
     {
         var vp = GetViewport().GetVisibleRect().Size;
         if (GodotObject.IsInstanceValid(_uiHost)) { _uiHost.Position = Vector2.Zero; _uiHost.Size = vp; }
-        // Reserve the top strip for stats; center the board in the rest.
-        var area = new Vector2(vp.X * 0.62f, vp.Y * 0.80f);
-        var offset = new Vector2(vp.X * 0.19f, vp.Y * 0.12f);
-        _view.Layout(area, offset);
+        // Phone portrait: near-full-width board (HUD moves to a top strip).
+        // Desktop / landscape: roomy side columns for the HUD.
+        var m = BoardView.MobilePortraitArea(vp);
+        if (m is { } ma) _view.Layout(ma.area, ma.offset);
+        else _view.Layout(new Vector2(vp.X * 0.62f, vp.Y * 0.80f), new Vector2(vp.X * 0.19f, vp.Y * 0.12f));
     }
 
     // Compare your progress to the time-aligned ghost: lines for time-attack modes

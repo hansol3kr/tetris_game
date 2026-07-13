@@ -82,12 +82,10 @@ public partial class SceneRouter : Node
         _blocker.Visible = false;
     }
 
-    /// <summary>App entry: first-timers get the tutorial; everyone else the menu.</summary>
-    public void GoToStart()
-    {
-        if (!Bootstrap.Instance.Save.TutorialDone) GoToTutorial();
-        else GoToMainMenu();
-    }
+    /// <summary>App entry: always land on the menu. The tutorial is never
+    /// force-launched on first run — it's offered from the menu (HOW TO PLAY)
+    /// and from Settings (REPLAY TUTORIAL), so the player is in control.</summary>
+    public void GoToStart() => GoToMainMenu();
 
     public void GoToMainMenu()
     {

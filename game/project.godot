@@ -26,7 +26,9 @@ window/size/viewport_height=1280
 window/size/mode=0
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
-window/handheld/orientation="portrait"
+; "sensor" lets the device rotate to landscape and back (portrait is still the
+; primary layout — the board is tall, so it's largest held upright).
+window/handheld/orientation="sensor"
 
 [rendering]
 

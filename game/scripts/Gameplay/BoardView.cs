@@ -111,6 +111,20 @@ public partial class BoardView : Node2D
         return new Rect2(_boardOrigin - new Vector2(10, 10), new Vector2(boardW + 20, boardH + 20));
     }
 
+    /// <summary>
+    /// On a phone held portrait the board is given almost the full width (a
+    /// compact HUD strip lives along the top instead of side columns), so cells
+    /// are far larger than the desktop side-column layout. Returns null on
+    /// desktop or in landscape, where callers keep their own roomier layout.
+    /// </summary>
+    public static (Vector2 area, Vector2 offset)? MobilePortraitArea(Vector2 vp)
+    {
+        if (!(TouchControls.ShouldShow() && vp.Y >= vp.X)) return null;
+        float top = vp.Y * 0.12f;     // compact HUD strip (stats · HOLD · NEXT)
+        float bottom = vp.Y * 0.06f;  // thumb room for the drag / aux touch controls
+        return (new Vector2(vp.X * 0.96f, vp.Y - top - bottom), new Vector2(vp.X * 0.02f, top));
+    }
+
     /// <summary>Compute cell size + centering for a given available pixel area.</summary>
     public void Layout(Vector2 areaSize, Vector2 areaOffset)
     {
