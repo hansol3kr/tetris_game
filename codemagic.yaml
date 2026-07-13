@@ -1,30 +1,50 @@
-# Blockfall — Codemagic 클라우드 iOS 빌드 (Mac 없이 App Store/TestFlight 배포)
+# Blockfall — Codemagic 자동 배포 (CD)
+# ============================================================================
+# 릴리스는 "태그 하나로" 나갑니다:
 #
-# Codemagic의 macOS(M2) 빌드머신에서: Godot 4.3(.NET) 설치 → Xcode 프로젝트 생성
-# → 인증서·프로비저닝 자동 처리(App Store Connect API 키) → .ipa 빌드 →
-# TestFlight 자동 업로드. 설정 절차는 docs/IOS_RELEASE.md "방법 A" 참고.
+#     git tag v1.0.1 && git push origin v1.0.1
+#         → ios-testflight   워크플로 자동 시작 → TestFlight 업로드
+#         → android-playstore 워크플로 자동 시작 → Play 내부 테스트 트랙 업로드
 #
-# ⚠ 빌드 전에 채워야 하는 것 (docs/IOS_RELEASE.md 2장):
-#   1) Codemagic UI → Team settings → Integrations → Developer Portal 에
-#      App Store Connect API 키를 등록하고 이름을 `blockfall_asc` 로 지정
-#      (다른 이름을 썼다면 아래 integrations 값을 맞추세요).
-#   2) 아래 vars 의 TEAM_ID 를 본인 Team ID(10자리)로 교체.
-#   3) Bundle ID를 바꿨다면 BUNDLE_ID 와 ios_signing.bundle_identifier 를
-#      같은 값으로 함께 교체.
+# 태그 이름(v1.0.1)이 그대로 마케팅 버전(1.0.1)이 되고, 빌드 번호는 Codemagic의
+# $BUILD_NUMBER(자동 증가 정수)가 스토어 업로드 번호로 들어갑니다 —
+# 버전을 손으로 고칠 일이 없습니다. (수동 빌드도 Start new build로 언제든 가능)
 #
-# 무료 요금제: macOS M2 월 500분. 이 빌드는 첫 회 ~25분(1GB 템플릿 다운로드),
-# 캐시가 잡힌 뒤로는 회당 ~15분 안팎입니다. 빌드는 수동 시작(Start new build).
+# 설정 절차·비밀값은 docs/DEPLOYMENT.md 참고.
+# ============================================================================
+
+definitions:
+  # 두 워크플로가 공유하는 도구 설치 스크립트 (.NET 8 + Godot 4.3 mono).
+  scripts:
+    - &install_dotnet
+      name: .NET 8 SDK 설치 (캐시되면 즉시 통과)
+      script: |
+        if [ ! -x "$HOME/.dotnet/dotnet" ]; then
+          curl -fsSL https://dot.net/v1/dotnet-install.sh | bash -s -- --channel 8.0
+        fi
+        echo 'export PATH="$HOME/.dotnet:$PATH"' >> "$CM_ENV"
+        echo 'export DOTNET_ROOT="$HOME/.dotnet"' >> "$CM_ENV"
+        "$HOME/.dotnet/dotnet" --version
 
 workflows:
-  ios-appstore:
-    name: Blockfall iOS (App Store)
+  # ──────────────────────────────────────────────────────────────────────
+  #  iOS → TestFlight
+  # ──────────────────────────────────────────────────────────────────────
+  ios-testflight:
+    name: Blockfall iOS → TestFlight
     instance_type: mac_mini_m2
     max_build_duration: 90
+    triggering:
+      events: [tag]
+      tag_patterns:
+        - pattern: 'v*.*.*'    # v1.0.1 형태의 태그를 push하면 자동 시작
+          include: true
+      cancel_previous_builds: true
     environment:
       xcode: latest
       vars:
-        TEAM_ID: "XXXXXXXXXX" # ← developer.apple.com > Membership 의 Team ID
-        BUNDLE_ID: "com.blockfall.game" # ← 바꾸면 아래 ios_signing 도 같이
+        TEAM_ID: "XXXXXXXXXX"            # ← developer.apple.com > Membership 의 Team ID
+        BUNDLE_ID: "com.blockfall.game"  # ← 바꾸면 아래 ios_signing 도 같이
         GODOT_ZIP_URL: "https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_mono_macos.universal.zip"
         GODOT_TPL_URL: "https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_mono_export_templates.tpz"
         GODOT_TPL_DIR: "$HOME/Library/Application Support/Godot/export_templates/4.3.stable.mono"
@@ -32,21 +52,14 @@ workflows:
         distribution_type: app_store
         bundle_identifier: com.blockfall.game
     integrations:
-      app_store_connect: blockfall_asc
+      app_store_connect: blockfall_asc   # ← Codemagic Team settings 에 등록한 ASC API 키 이름
     cache:
       cache_paths:
         - ~/.dotnet
         - ~/godot-tools
         - ~/Library/Application Support/Godot/export_templates
     scripts:
-      - name: .NET 8 SDK 설치 (캐시되면 즉시 통과)
-        script: |
-          if [ ! -x "$HOME/.dotnet/dotnet" ]; then
-            curl -fsSL https://dot.net/v1/dotnet-install.sh | bash -s -- --channel 8.0
-          fi
-          export PATH="$HOME/.dotnet:$PATH"
-          dotnet --version
-
+      - *install_dotnet
       - name: Godot 4.3(.NET) + iOS 내보내기 템플릿 설치 (캐시되면 즉시 통과)
         script: |
           mkdir -p "$HOME/godot-tools"
@@ -58,26 +71,18 @@ workflows:
           if [ ! -f "$GODOT_TPL_DIR/ios.zip" ]; then
             curl -fL --retry 3 -o /tmp/tpl.tpz "$GODOT_TPL_URL"
             mkdir -p "$GODOT_TPL_DIR"
-            # 1GB 묶음에서 iOS 템플릿만 꺼내 저장 (다른 플랫폼 것은 불필요)
             unzip -q -o /tmp/tpl.tpz "templates/ios.zip" -d /tmp/tpl
             mv /tmp/tpl/templates/ios.zip "$GODOT_TPL_DIR/"
             rm -rf /tmp/tpl /tmp/tpl.tpz
           fi
           "$HOME/godot-tools/Godot_mono.app/Contents/MacOS/Godot" --version | head -n1
-
-      - name: Godot 내보내기 → Xcode 프로젝트 생성
+      - name: Godot 내보내기 → Xcode 프로젝트 (버전=태그, 빌드번호=$BUILD_NUMBER)
         script: |
-          export DOTNET_ROOT="$HOME/.dotnet"
-          export PATH="$HOME/.dotnet:$PATH"
           export GODOT="$HOME/godot-tools/Godot_mono.app/Contents/MacOS/Godot"
-          ./build-ios.sh --team "$TEAM_ID" --bundle "$BUNDLE_ID"
-
-      - name: 빌드 번호 주입 (App Store는 업로드마다 새 빌드 번호 필요)
-        script: |
-          PLIST="$(find game/build/ios -name '*-Info.plist' -not -path '*xcodeproj*' | head -n1)"
-          echo "Info.plist: $PLIST → CFBundleVersion=$BUILD_NUMBER"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$PLIST"
-
+          VER_ARGS=""
+          # 태그 빌드면 태그(v1.0.1 → 1.0.1)를 마케팅 버전으로 주입. 수동 빌드면 프리셋 값 유지.
+          [ -n "${CM_TAG:-}" ] && VER_ARGS="--version ${CM_TAG#v}"
+          ./build-ios.sh --team "$TEAM_ID" --bundle "$BUNDLE_ID" $VER_ARGS --build "$BUILD_NUMBER"
       - name: 서명 프로파일 적용 + .ipa 빌드
         script: |
           xcode-project use-profiles
@@ -91,6 +96,109 @@ workflows:
     publishing:
       app_store_connect:
         auth: integration
-        # 업로드 후 TestFlight 내부 테스트에 자동 반영. 심사 제출은
-        # App Store Connect 웹에서 수동으로 (docs/IOS_RELEASE.md 6장).
         submit_to_testflight: true
+        # 심사 자동 제출까지 원하면 아래 주석 해제 (처음엔 수동 제출 권장 — docs/DEPLOYMENT.md).
+        # submit_to_app_store: false
+
+  # ──────────────────────────────────────────────────────────────────────
+  #  Android → Google Play (내부 테스트 트랙)
+  #  ⚠ 활성화 조건: 릴리스 키스토어 + Play 서비스 계정 JSON 등록 (docs/DEPLOYMENT.md §4).
+  #     자격 증명이 준비되기 전에는 이 워크플로가 서명/업로드 단계에서 실패합니다.
+  # ──────────────────────────────────────────────────────────────────────
+  android-playstore:
+    name: Blockfall Android → Play (internal)
+    instance_type: linux_x2
+    max_build_duration: 90
+    triggering:
+      events: [tag]
+      tag_patterns:
+        - pattern: 'v*.*.*'
+          include: true
+      cancel_previous_builds: true
+    environment:
+      groups:
+        - blockfall_android   # ← Codemagic 환경변수 그룹: 키스토어/비밀번호 (docs/DEPLOYMENT.md §4)
+      vars:
+        PACKAGE_NAME: "com.blockfall.game"
+        GODOT_LINUX_URL: "https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_mono_linux_x86_64.zip"
+        GODOT_TPL_URL: "https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_mono_export_templates.tpz"
+        GODOT_TPL_DIR: "$HOME/.local/share/godot/export_templates/4.3.stable.mono"
+      java: 17
+    cache:
+      cache_paths:
+        - ~/.dotnet
+        - ~/godot-tools
+        - ~/.local/share/godot/export_templates
+    scripts:
+      - *install_dotnet
+      - name: Godot 4.3(.NET) + Android 템플릿/빌드템플릿 설치
+        script: |
+          mkdir -p "$HOME/godot-tools"
+          GODOT_BIN="$HOME/godot-tools/Godot_v4.3-stable_mono_linux.x86_64"
+          if [ ! -x "$GODOT_BIN" ]; then
+            curl -fL --retry 3 -o /tmp/godot.zip "$GODOT_LINUX_URL"
+            unzip -q -o /tmp/godot.zip -d /tmp/gd
+            mv /tmp/gd/*/Godot_v4.3-stable_mono_linux.x86_64 "$GODOT_BIN"
+            mv /tmp/gd/*/GodotSharp "$HOME/godot-tools/GodotSharp"
+            chmod +x "$GODOT_BIN"
+          fi
+          # export 템플릿 + android 빌드 템플릿(android_source.zip)을 tpz에서 추출
+          if [ ! -f "$GODOT_TPL_DIR/android_source.zip" ]; then
+            curl -fL --retry 3 -o /tmp/tpl.tpz "$GODOT_TPL_URL"
+            mkdir -p "$GODOT_TPL_DIR"
+            unzip -q -o /tmp/tpl.tpz -d /tmp/tpl
+            mv /tmp/tpl/templates/* "$GODOT_TPL_DIR/"
+            rm -rf /tmp/tpl /tmp/tpl.tpz
+          fi
+          # Godot 안드로이드 gradle 빌드 템플릿을 프로젝트에 설치 (에디터의 "Install
+          # Android Build Template" 과 동일 — android_source.zip 을 res://android/build 로).
+          mkdir -p game/android/build
+          unzip -q -o "$GODOT_TPL_DIR/android_source.zip" -d game/android/build
+          touch game/android/.gdignore
+          echo 'export GODOT_BIN="'"$GODOT_BIN"'"' >> "$CM_ENV"
+      - name: 에디터 설정에 SDK/JDK 경로 주입 (헤드리스 export 필수)
+        script: |
+          CFG="$HOME/.config/godot"; mkdir -p "$CFG"
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/programs/android-sdk}}"
+          JDK="${JAVA_HOME:-/usr/lib/jvm/java-17-openjdk}"
+          # 키스토어 자격증명은 여기 넣지 않는다 — 아래 export 단계에서 Godot이 읽는
+          # GODOT_ANDROID_KEYSTORE_* 환경변수로만 전달(파일에 평문 저장 금지).
+          cat > "$CFG/editor_settings-4.3.tres" <<EOF
+          [gd_resource type="EditorSettings" format=3]
+          [resource]
+          export/android/android_sdk_path = "$SDK"
+          export/android/java_sdk_path = "$JDK"
+          EOF
+          echo "SDK=$SDK  JDK=$JDK"
+      - name: 릴리스 서명 + 버전 주입 + .aab 내보내기
+        script: |
+          # blockfall_android 그룹에서 오는 값들 (docs/DEPLOYMENT.md §4):
+          #   BLOCKFALL_RELEASE_KEYSTORE  = base64 인코딩한 upload keystore(.jks)
+          #   BLOCKFALL_KEYSTORE_PASSWORD, BLOCKFALL_KEY_ALIAS, BLOCKFALL_KEY_PASSWORD
+          echo "$BLOCKFALL_RELEASE_KEYSTORE" | base64 --decode > "$CM_BUILD_DIR/release.keystore"
+
+          # .apk → .aab 로 전환 (preset.3 에만 있는 키라 전역 치환해도 안전)
+          perl -i -pe 's{^gradle_build/export_format=0}{gradle_build/export_format=1}' game/export_presets.cfg
+
+          # 버전(태그) + 빌드 번호(=version/code) 주입
+          VER_ARGS=""
+          [ -n "${CM_TAG:-}" ] && VER_ARGS="--version ${CM_TAG#v}"
+          python3 tools/set-version.py $VER_ARGS --build "$BUILD_NUMBER"
+
+          # Godot 4.3은 키스토어를 CLI가 아닌 환경변수로 받는다 (검증됨).
+          export GODOT_ANDROID_KEYSTORE_RELEASE_PATH="$CM_BUILD_DIR/release.keystore"
+          export GODOT_ANDROID_KEYSTORE_RELEASE_USER="$BLOCKFALL_KEY_ALIAS"
+          export GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD="$BLOCKFALL_KEY_PASSWORD"
+
+          "$GODOT_BIN" --headless --path game --import >/dev/null 2>&1 || true
+          "$GODOT_BIN" --headless --path game \
+            --export-release "Android" "$CM_BUILD_DIR/Blockfall.aab"
+          ls -la "$CM_BUILD_DIR/Blockfall.aab"
+    artifacts:
+      - "*.aab"
+      - $CM_BUILD_DIR/*.aab
+    publishing:
+      google_play:
+        credentials: $GCLOUD_SERVICE_ACCOUNT_CREDENTIALS  # ← Play 서비스계정 JSON (그룹 변수)
+        track: internal
+        submit_as_draft: true

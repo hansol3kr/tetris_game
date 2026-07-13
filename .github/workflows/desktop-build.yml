@@ -1,0 +1,75 @@
+name: Desktop build
+
+# 데스크톱(Linux/Windows/macOS) 빌드를 클라우드에서 자동으로 만들어 워크플로
+# 아티팩트로 올린다. 스토어별 자동 배포(iOS/Android)는 Codemagic이 담당하므로
+# (codemagic.yaml) 여기서는 데스크톱만 다룬다.
+#
+# ⚠ 태그 자동 트리거가 아니라 "수동 실행"이다: 데스크톱은 Steam 유료 SKU 계획이
+#   있어(무료 공개 배포와 충돌) 실수로 릴리스가 나가지 않게 workflow_dispatch로만
+#   돈다. 필요할 때 Actions 탭 → Desktop build → Run workflow 로 실행.
+#   Steam 자동 업로드(steamcmd)로 확장하려면 docs/DEPLOYMENT.md §6 참고.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '마케팅 버전 (예: 1.0.1). 비우면 프리셋 값 사용'
+        required: false
+        default: ''
+      targets:
+        description: '빌드 타깃 (공백 구분)'
+        required: false
+        default: 'linux windows macos'
+
+env:
+  GODOT_VER: '4.3.stable.mono'
+  GODOT_URL: 'https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_mono_linux_x86_64.zip'
+
+jobs:
+  desktop:
+    name: Godot desktop export
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Cache Godot editor + export templates
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/godot-tools
+            ~/.local/share/godot/export_templates
+          key: godot-${{ env.GODOT_VER }}-desktop
+
+      - name: Install Godot 4.3 (.NET) if not cached
+        run: |
+          set -e
+          BIN="$HOME/godot-tools/Godot_v4.3-stable_mono_linux.x86_64"
+          if [ ! -x "$BIN" ]; then
+            mkdir -p "$HOME/godot-tools"
+            curl -fL --retry 3 -o /tmp/godot.zip "$GODOT_URL"
+            unzip -q -o /tmp/godot.zip -d /tmp/gd
+            cp -a /tmp/gd/*/. "$HOME/godot-tools/"
+            chmod +x "$BIN"
+          fi
+          echo "GODOT=$BIN" >> "$GITHUB_ENV"
+          "$BIN" --version | head -n1
+
+      - name: Inject version (optional)
+        if: ${{ inputs.version != '' }}
+        run: python3 tools/set-version.py --version "${{ inputs.version }}" --build "${{ github.run_number }}"
+
+      - name: Build desktop targets
+        run: ./build-all.sh ${{ inputs.targets }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: blockfall-desktop-${{ github.run_number }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14

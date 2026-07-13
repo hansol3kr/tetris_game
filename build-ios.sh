@@ -10,6 +10,7 @@
 #   ./build-ios.sh --team ABCDE12345          # Team ID 주입 + Xcode 프로젝트 생성
 #   ./build-ios.sh --team ABCDE12345 --open   # 생성 후 Xcode 바로 열기
 #   ./build-ios.sh --bundle com.myname.blockfall --team ABCDE12345
+#   ./build-ios.sh --version 1.0.1 --build 12 # 마케팅 버전/빌드 번호 주입 (CD용)
 #   ./build-ios.sh                            # 프리셋에 Team ID가 이미 있으면 그대로 진행
 #
 # 준비물 (docs/IOS_RELEASE.md 1장 참고):
@@ -35,11 +36,13 @@ c_err(){ printf '\033[1;31m[✗]\033[0m %s\n' "$*" >&2; }
 die(){ c_err "$*"; exit 1; }
 
 # ── 인자 ─────────────────────────────────────────────────────
-TEAM_ID="${TEAM_ID:-}"; BUNDLE_ID=""; OPEN_XCODE=0
+TEAM_ID="${TEAM_ID:-}"; BUNDLE_ID=""; OPEN_XCODE=0; VERSION=""; BUILD_NO=""
 while [[ $# -gt 0 ]]; do case "$1" in
-  --team)   TEAM_ID="${2:-}"; shift 2;;
-  --bundle) BUNDLE_ID="${2:-}"; shift 2;;
-  --open)   OPEN_XCODE=1; shift;;
+  --team)    TEAM_ID="${2:-}"; shift 2;;
+  --bundle)  BUNDLE_ID="${2:-}"; shift 2;;
+  --version) VERSION="${2:-}"; shift 2;;
+  --build)   BUILD_NO="${2:-}"; shift 2;;
+  --open)    OPEN_XCODE=1; shift;;
   -h|--help) grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0;;
   *) die "알 수 없는 옵션: $1 (--help 참고)";;
 esac; done
@@ -97,6 +100,15 @@ if [[ -n "$BUNDLE_ID" ]]; then
 fi
 grep -A30 '^\[preset\.4\.options\]' "$PRESETS" | grep -q 'app_store_team_id=""' && \
   c_warn "Team ID가 비어 있습니다 — Xcode에서 팀을 직접 선택해야 합니다 (--team XXXXXXXXXX 권장)."
+
+# ── 버전 / 빌드 번호 주입 (CD: git 태그 → 버전, CI 카운터 → 빌드 번호) ──
+if [[ -n "$VERSION" || -n "$BUILD_NO" ]]; then
+  command -v python3 >/dev/null 2>&1 || die "python3 필요 (버전 주입에 사용)."
+  vargs=()
+  [[ -n "$VERSION"  ]] && vargs+=(--version "$VERSION")
+  [[ -n "$BUILD_NO" ]] && vargs+=(--build "$BUILD_NO")
+  python3 "$ROOT/tools/set-version.py" "${vargs[@]}" || die "버전 주입 실패"
+fi
 
 # ── 내보내기 ─────────────────────────────────────────────────
 if [[ ! -f "$GAME_DIR/Blockfall.sln" ]]; then
