@@ -28,6 +28,8 @@ mono_crash.*.json
 server/node_modules/
 npm-debug.log*
 
-# iOS App Store Connect API 키 — 비밀. 절대 커밋 금지 (.example 템플릿/README 만 커밋).
+# iOS App Store Connect API 키 + 기타 비밀 — 절대 커밋 금지 (.example 템플릿/README 만 커밋).
 ios/appstore_connect.env
-ios/private_keys/*.p8
+# private_keys/ 안의 모든 파일 무시 (.p8, git_key 등) — README 만 예외로 추적.
+ios/private_keys/*
+!ios/private_keys/README.md
