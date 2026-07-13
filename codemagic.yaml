@@ -48,11 +48,10 @@ workflows:
         GODOT_ZIP_URL: "https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_mono_macos.universal.zip"
         GODOT_TPL_URL: "https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_mono_export_templates.tpz"
         GODOT_TPL_DIR: "$HOME/Library/Application Support/Godot/export_templates/4.3.stable.mono"
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.blockfall.game
+      # 선언적 ios_signing 블록은 "프로파일 가져오기만"(생성 안 함) 하다 실패하므로 제거.
+      # 대신 아래 스크립트에서 app-store-connect fetch-signing-files --create 로 직접 생성.
     integrations:
-      app_store_connect: blockfall_asc   # ← Codemagic Team settings 에 등록한 ASC API 키 이름
+      app_store_connect: blockfall_asc   # ← Codemagic 계정(개인)에 등록한 ASC API 키 이름
     cache:
       cache_paths:
         - ~/.dotnet
@@ -86,9 +85,13 @@ workflows:
       - name: 서명 인증서·프로파일 생성/가져오기 + .ipa 빌드
         script: |
           # blockfall_asc(App Store Connect API 키)로 배포 인증서 + com.blockfall.game 용
-          # App Store 프로파일을 (없으면) 자동 생성해 가져온다. --create 가 자동 생성의 핵심.
+          # App Store 프로파일을 (없으면) 직접 생성해 가져온다.
           keychain initialize
-          app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE --create
+          # 배포 인증서 생성용 RSA 개인키를 빌드 내에서 생성 → 이 키로 새 배포 인증서를
+          # 만들고(--create), 그 인증서로 App Store 프로파일을 생성해 가져온다.
+          openssl genrsa -out /tmp/cm_cert_key.pem 2048
+          app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE \
+            --certificate-key @file:/tmp/cm_cert_key.pem --create
           keychain add-certificates
           xcode-project use-profiles
           XCPROJ="$(find game/build/ios -maxdepth 2 -name '*.xcodeproj' | head -n1)"
