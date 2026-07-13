@@ -42,16 +42,17 @@ workflows:
       cancel_previous_builds: true
     environment:
       xcode: latest
+      groups:
+        - app_store_credentials   # ← ASC API 키 보안 변수 그룹(APP_STORE_CONNECT_ISSUER_ID/KEY_IDENTIFIER/PRIVATE_KEY)
       vars:
         TEAM_ID: "65G2Y56XUT"            # ← developer.apple.com > Membership 의 Team ID
-        BUNDLE_ID: "com.blockfall.game"  # ← 바꾸면 아래 ios_signing 도 같이
+        BUNDLE_ID: "com.blockfall.game"  # ← 바꾸면 아래 서명/번들ID 도 같이
         GODOT_ZIP_URL: "https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_mono_macos.universal.zip"
         GODOT_TPL_URL: "https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_mono_export_templates.tpz"
         GODOT_TPL_DIR: "$HOME/Library/Application Support/Godot/export_templates/4.3.stable.mono"
-      # 선언적 ios_signing 블록은 "프로파일 가져오기만"(생성 안 함) 하다 실패하므로 제거.
-      # 대신 아래 스크립트에서 app-store-connect fetch-signing-files --create 로 직접 생성.
-    integrations:
-      app_store_connect: blockfall_asc   # ← Codemagic 계정(개인)에 등록한 ASC API 키 이름
+      # 서명·업로드 인증은 named integration(blockfall_asc) 대신 위 그룹의 APP_STORE_CONNECT_* 보안
+      # 환경변수로 처리한다. 앱이 팀 소유라 개인 스코프 integration을 못 찾던 "does not exist"를 회피.
+      # app-store-connect CLI(fetch-signing-files)와 아래 publishing 이 이 3개 변수를 자동 사용.
     cache:
       cache_paths:
         - ~/.dotnet
@@ -103,7 +104,9 @@ workflows:
       - /tmp/xcodebuild_logs/*.log
     publishing:
       app_store_connect:
-        auth: integration
+        api_key: $APP_STORE_CONNECT_PRIVATE_KEY
+        key_id: $APP_STORE_CONNECT_KEY_IDENTIFIER
+        issuer_id: $APP_STORE_CONNECT_ISSUER_ID
         submit_to_testflight: true
         # 심사 자동 제출까지 원하면 아래 주석 해제 (처음엔 수동 제출 권장 — docs/DEPLOYMENT.md).
         # submit_to_app_store: false
