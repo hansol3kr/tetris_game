@@ -47,6 +47,16 @@ while [[ $# -gt 0 ]]; do case "$1" in
   *) die "알 수 없는 옵션: $1 (--help 참고)";;
 esac; done
 
+# ── App Store Connect 자격증명(ios/appstore_connect.env)에서 기본값 채우기 ──
+# CLI로 --team / --bundle 을 안 주면 이 파일의 ASC_TEAM_ID / ASC_BUNDLE_ID 를 사용.
+# (파일이 없거나 값이 비면 무시 — 기존 동작 그대로.)
+if [[ -f "$ROOT/ios/appstore_connect.env" ]]; then
+  # shellcheck disable=SC1091
+  source "$ROOT/ios/appstore_connect.env"
+  [[ -z "$TEAM_ID"   && -n "${ASC_TEAM_ID:-}"   ]] && TEAM_ID="$ASC_TEAM_ID"
+  [[ -z "$BUNDLE_ID" && -n "${ASC_BUNDLE_ID:-}" ]] && BUNDLE_ID="$ASC_BUNDLE_ID"
+fi
+
 # ── 환경 점검 ────────────────────────────────────────────────
 [[ "$(uname -s)" == "Darwin" ]] || die "iOS 빌드는 macOS에서만 가능합니다 (현재: $(uname -s)). 이 저장소를 Mac으로 옮겨 실행하세요."
 xcode-select -p >/dev/null 2>&1 || die "Xcode가 없습니다. App Store에서 Xcode 설치 후: xcode-select --install"

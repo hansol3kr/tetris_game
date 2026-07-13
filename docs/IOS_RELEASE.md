@@ -145,6 +145,29 @@ cd tetris_game
 > 업데이트 배포 때는 `game/export_presets.cfg`의 `application/version`
 > (빌드 번호)을 반드시 올려야 합니다 — 방법 A는 자동, 방법 B는 수동.
 
+### 3-4. (선택) 커맨드라인으로 업로드 — App Store Connect API 키 사용
+
+Xcode GUI 의 Distribute App 클릭 대신, **API 키**로 바로 TestFlight 에 올릴 수 있습니다.
+자격증명은 저장소 루트 **`ios/`** 폴더에 둡니다 (자세히: [`ios/README.md`](../ios/README.md)):
+
+1. `ios/appstore_connect.env.example` → `ios/appstore_connect.env` 로 복사한 뒤
+   **Issuer ID / Key ID / Team ID / Bundle ID** 를 채웁니다.
+   (값 만드는 법은 위 **2-2** 와 동일 — App Store Connect API 키 1개면 됩니다.)
+2. 다운로드한 `AuthKey_<KeyID>.p8` 를 `ios/private_keys/` 에 저장합니다.
+3. `.ipa` 를 만든 뒤(Xcode Organizer 의 *Distribute → Export*, 또는
+   `xcodebuild -exportArchive`) 업로드:
+   ```bash
+   ./ios/upload.sh game/build/ios/Blockfall.ipa
+   ```
+
+> - `ios/appstore_connect.env` 와 `.p8` 는 `.gitignore` 로 커밋이 막혀 있습니다 —
+>   절대 저장소에 올리지 마세요. 이 폴더는 `game/`(=`res://`) **밖**이라 앱 번들에도
+>   포함되지 않습니다.
+> - `build-ios.sh` 는 이 파일의 **Team ID / Bundle ID** 를 자동으로 읽으므로, 로컬
+>   빌드 때 `--team` 을 매번 주지 않아도 됩니다.
+> - **방법 A(Codemagic)** 는 이 파일이 필요 없습니다 — 같은 키를 Codemagic 볼트
+>   (`integrations.app_store_connect: blockfall_asc`)에서 관리합니다.
+
 ---
 
 ## 4. TestFlight로 실기기 테스트 (공통)

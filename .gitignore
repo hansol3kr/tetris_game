@@ -27,3 +27,7 @@ mono_crash.*.json
 # Node matchmaking server
 server/node_modules/
 npm-debug.log*
+
+# iOS App Store Connect API 키 — 비밀. 절대 커밋 금지 (.example 템플릿/README 만 커밋).
+ios/appstore_connect.env
+ios/private_keys/*.p8
