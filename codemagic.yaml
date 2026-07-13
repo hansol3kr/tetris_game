@@ -43,7 +43,7 @@ workflows:
     environment:
       xcode: latest
       vars:
-        TEAM_ID: "XXXXXXXXXX"            # ← developer.apple.com > Membership 의 Team ID
+        TEAM_ID: "65G2Y56XUT"            # ← developer.apple.com > Membership 의 Team ID
         BUNDLE_ID: "com.blockfall.game"  # ← 바꾸면 아래 ios_signing 도 같이
         GODOT_ZIP_URL: "https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_mono_macos.universal.zip"
         GODOT_TPL_URL: "https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_mono_export_templates.tpz"
