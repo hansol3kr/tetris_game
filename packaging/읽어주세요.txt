@@ -1,0 +1,72 @@
+Blockfall — 리눅스 독립 실행판 (Linux x86_64)
+==================================================
+
+이 폴더 하나만 있으면 게임이 실행됩니다.
+.NET SDK나 Godot을 따로 설치할 필요가 없습니다 (self-contained 빌드).
+
+
+■ 실행 방법 (권장)
+  폴더 안에서:
+
+        ./Blockfall.sh
+
+  Blockfall.sh 는 "똑똑한 런처"입니다. 알아서:
+    - 실행 권한을 맞추고,
+    - 아키텍처 / 디스플레이 유무를 확인하고,
+    - 기본 Vulkan 렌더러로 켜보다가 실패하면 OpenGL 호환 모드로 자동 재시도하고,
+    - 필요한 시스템 라이브러리가 없으면 배포판별 설치 명령을 안내합니다.
+
+  그냥 실행 파일만 직접 돌려도 됩니다:
+        ./Blockfall.x86_64
+
+
+■ 런처 옵션
+  ./Blockfall.sh              자동 (Vulkan → 실패 시 OpenGL 폴백)
+  ./Blockfall.sh --gl         강제로 OpenGL 호환 모드
+  ./Blockfall.sh --vulkan     강제로 Vulkan(forward_plus)
+  ./Blockfall.sh --check      실행 안 하고 환경 진단만 출력
+  ./Blockfall.sh --headless-check   창 없이 부팅만 검증(화면 없는 서버/SSH용)
+
+
+■ 필요 환경
+  - 64비트 리눅스 (x86_64)
+  - 그래픽 데스크톱 세션 (X11 또는 Wayland)  ← 게임 창을 띄우려면 필수
+    * SSH/터미널만 있는 화면 없는 환경에서는 창이 뜨지 않습니다.
+      (모니터 앞 데스크톱에 로그인한 상태에서 실행하세요.)
+  - .NET / Godot 설치 불필요 (전부 포함되어 있음)
+
+
+■ 폴더 구성 (반드시 함께 두어야 함)
+  Blockfall.x86_64                       게임 본체 (리소스 내장)
+  data_Blockfall_linuxbsd_x86_64/        .NET 어셈블리 (없으면 실행 안 됨)
+  Blockfall.sh                           똑똑한 실행 런처
+  읽어주세요.txt                         이 파일
+
+  → Blockfall.x86_64 와 data_..._x86_64 폴더는 항상 같은 위치에 두세요.
+
+
+■ 조작 (키보드)
+  ← / →        좌우 이동
+  ↓            소프트 드롭
+  Space        하드 드롭
+  ↑            시계방향 회전
+  Z            반시계방향 회전
+  A            180도 회전
+  C            홀드
+  Esc          일시정지
+  (게임패드도 지원합니다.)
+
+
+■ 전달 방법
+  방법 A) 폴더/압축 통째로 복사
+     scp Blockfall-linux-x86_64.tar.gz 사용자@대상PC:~/
+     tar xzf Blockfall-linux-x86_64.tar.gz
+     cd Blockfall-linux-x86_64 && ./Blockfall.sh
+
+  방법 B) 파일 하나(.run)만 복사  ← 가장 간단
+     scp Blockfall.run 사용자@대상PC:~/
+     ./Blockfall.run
+     (처음 한 번 ~/.cache/blockfall 에 풀고 바로 실행됩니다.)
+
+
+즐겁게 플레이하세요!

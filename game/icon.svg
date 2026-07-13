@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <rect width="128" height="128" rx="24" fill="#0b0c14"/>
+  <g filter="url(#g)">
+    <rect x="28" y="20" width="24" height="24" rx="4" fill="#34eafa"/>
+    <rect x="52" y="44" width="24" height="24" rx="4" fill="#b85af9"/>
+    <rect x="76" y="44" width="24" height="24" rx="4" fill="#5c8cfa"/>
+    <rect x="52" y="68" width="24" height="24" rx="4" fill="#5bf28c"/>
+    <rect x="76" y="68" width="24" height="24" rx="4" fill="#fad93f"/>
+    <rect x="28" y="84" width="24" height="24" rx="4" fill="#fa5c72"/>
+  </g>
+  <defs>
+    <filter id="g" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="2.5" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+</svg>

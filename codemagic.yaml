@@ -1,0 +1,96 @@
+# Blockfall — Codemagic 클라우드 iOS 빌드 (Mac 없이 App Store/TestFlight 배포)
+#
+# Codemagic의 macOS(M2) 빌드머신에서: Godot 4.3(.NET) 설치 → Xcode 프로젝트 생성
+# → 인증서·프로비저닝 자동 처리(App Store Connect API 키) → .ipa 빌드 →
+# TestFlight 자동 업로드. 설정 절차는 docs/IOS_RELEASE.md "방법 A" 참고.
+#
+# ⚠ 빌드 전에 채워야 하는 것 (docs/IOS_RELEASE.md 2장):
+#   1) Codemagic UI → Team settings → Integrations → Developer Portal 에
+#      App Store Connect API 키를 등록하고 이름을 `blockfall_asc` 로 지정
+#      (다른 이름을 썼다면 아래 integrations 값을 맞추세요).
+#   2) 아래 vars 의 TEAM_ID 를 본인 Team ID(10자리)로 교체.
+#   3) Bundle ID를 바꿨다면 BUNDLE_ID 와 ios_signing.bundle_identifier 를
+#      같은 값으로 함께 교체.
+#
+# 무료 요금제: macOS M2 월 500분. 이 빌드는 첫 회 ~25분(1GB 템플릿 다운로드),
+# 캐시가 잡힌 뒤로는 회당 ~15분 안팎입니다. 빌드는 수동 시작(Start new build).
+
+workflows:
+  ios-appstore:
+    name: Blockfall iOS (App Store)
+    instance_type: mac_mini_m2
+    max_build_duration: 90
+    environment:
+      xcode: latest
+      vars:
+        TEAM_ID: "XXXXXXXXXX" # ← developer.apple.com > Membership 의 Team ID
+        BUNDLE_ID: "com.blockfall.game" # ← 바꾸면 아래 ios_signing 도 같이
+        GODOT_ZIP_URL: "https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_mono_macos.universal.zip"
+        GODOT_TPL_URL: "https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_mono_export_templates.tpz"
+        GODOT_TPL_DIR: "$HOME/Library/Application Support/Godot/export_templates/4.3.stable.mono"
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.blockfall.game
+    integrations:
+      app_store_connect: blockfall_asc
+    cache:
+      cache_paths:
+        - ~/.dotnet
+        - ~/godot-tools
+        - ~/Library/Application Support/Godot/export_templates
+    scripts:
+      - name: .NET 8 SDK 설치 (캐시되면 즉시 통과)
+        script: |
+          if [ ! -x "$HOME/.dotnet/dotnet" ]; then
+            curl -fsSL https://dot.net/v1/dotnet-install.sh | bash -s -- --channel 8.0
+          fi
+          export PATH="$HOME/.dotnet:$PATH"
+          dotnet --version
+
+      - name: Godot 4.3(.NET) + iOS 내보내기 템플릿 설치 (캐시되면 즉시 통과)
+        script: |
+          mkdir -p "$HOME/godot-tools"
+          if [ ! -x "$HOME/godot-tools/Godot_mono.app/Contents/MacOS/Godot" ]; then
+            curl -fL --retry 3 -o /tmp/godot.zip "$GODOT_ZIP_URL"
+            unzip -q /tmp/godot.zip -d "$HOME/godot-tools"
+            xattr -dr com.apple.quarantine "$HOME/godot-tools/Godot_mono.app" || true
+          fi
+          if [ ! -f "$GODOT_TPL_DIR/ios.zip" ]; then
+            curl -fL --retry 3 -o /tmp/tpl.tpz "$GODOT_TPL_URL"
+            mkdir -p "$GODOT_TPL_DIR"
+            # 1GB 묶음에서 iOS 템플릿만 꺼내 저장 (다른 플랫폼 것은 불필요)
+            unzip -q -o /tmp/tpl.tpz "templates/ios.zip" -d /tmp/tpl
+            mv /tmp/tpl/templates/ios.zip "$GODOT_TPL_DIR/"
+            rm -rf /tmp/tpl /tmp/tpl.tpz
+          fi
+          "$HOME/godot-tools/Godot_mono.app/Contents/MacOS/Godot" --version | head -n1
+
+      - name: Godot 내보내기 → Xcode 프로젝트 생성
+        script: |
+          export DOTNET_ROOT="$HOME/.dotnet"
+          export PATH="$HOME/.dotnet:$PATH"
+          export GODOT="$HOME/godot-tools/Godot_mono.app/Contents/MacOS/Godot"
+          ./build-ios.sh --team "$TEAM_ID" --bundle "$BUNDLE_ID"
+
+      - name: 빌드 번호 주입 (App Store는 업로드마다 새 빌드 번호 필요)
+        script: |
+          PLIST="$(find game/build/ios -name '*-Info.plist' -not -path '*xcodeproj*' | head -n1)"
+          echo "Info.plist: $PLIST → CFBundleVersion=$BUILD_NUMBER"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$PLIST"
+
+      - name: 서명 프로파일 적용 + .ipa 빌드
+        script: |
+          xcode-project use-profiles
+          XCPROJ="$(find game/build/ios -maxdepth 2 -name '*.xcodeproj' | head -n1)"
+          SCHEME="$(xcodebuild -project "$XCPROJ" -list -json | python3 -c 'import json,sys;print(json.load(sys.stdin)["project"]["schemes"][0])')"
+          echo "project=$XCPROJ scheme=$SCHEME"
+          xcode-project build-ipa --project "$XCPROJ" --scheme "$SCHEME"
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        # 업로드 후 TestFlight 내부 테스트에 자동 반영. 심사 제출은
+        # App Store Connect 웹에서 수동으로 (docs/IOS_RELEASE.md 6장).
+        submit_to_testflight: true

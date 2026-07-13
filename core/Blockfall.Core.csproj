@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Blockfall.Core - Pure C# game-rules engine.
+    NO dependency on Godot, Unity, or any engine. This lets us:
+      * Unit-test the hard parts (SRS kicks, T-spin, scoring) with `dotnet test`
+      * Reuse the same logic if we ever swap the presentation engine
+      * Keep gameplay deterministic and easy to maintain/upgrade
+    net8.0 is fully supported by Godot 4.2+.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>12</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Blockfall.Core</RootNamespace>
+    <AssemblyName>Blockfall.Core</AssemblyName>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Don't force XML docs on every trivial public member; keep signal high. -->
+    <NoWarn>CS1591;CS1573</NoWarn>
+    <!-- Deterministic build so daily-challenge seeds behave identically everywhere -->
+    <Deterministic>true</Deterministic>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <!-- Let the test project set RunStats' internal setters when building fixtures. -->
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>Blockfall.Core.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+</Project>

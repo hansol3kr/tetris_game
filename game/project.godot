@@ -1,0 +1,92 @@
+; Blockfall — Godot 4 project configuration.
+; Engine version target: Godot 4.3+ with .NET (Mono) enabled.
+; This file is human-editable but normally maintained by the Godot editor.
+
+config_version=5
+
+[application]
+
+config/name="Blockfall"
+config/description="A neon falling-block puzzle. Original brand — not affiliated with Tetris®."
+run/main_scene="res://scenes/Main.tscn"
+config/features=PackedStringArray("4.3", "C#", "Forward Plus")
+config/icon="res://icon.svg"
+; Portrait for mobile; the game adapts to landscape on desktop.
+; NOTE: low_processor_mode must stay OFF — it skips redraws on "idle" frames,
+; which visibly stutters the TIME-driven animated background shader.
+
+[dotnet]
+
+project/assembly_name="Blockfall"
+
+[display]
+
+window/size/viewport_width=720
+window/size/viewport_height=1280
+window/size/mode=0
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+window/handheld/orientation="portrait"
+
+[rendering]
+
+renderer/rendering_method="forward_plus"
+; HDR 2D: required for WorldEnvironment glow to apply to 2D at all. Overbright
+; (>1.0) canvas colors survive to the bloom pass only with this on. Baked OFF —
+; it blanks the entire 2D viewport on some macOS/Metal drivers (black screen, no
+; menu). It's turned on at runtime ONLY where supported, via Bootstrap's glow
+; setting + platform capability check (Bootstrap.GlowSupported).
+viewport/hdr_2d=false
+; Mobile/arm64 (macOS universal, Android, iOS) use the mobile renderer at runtime.
+renderer/rendering_method.mobile="mobile"
+; Glow makes the neon theme sing; enabled via WorldEnvironment at runtime too.
+environment/defaults/default_clear_color=Color(0.043, 0.047, 0.078, 1)
+; Required to export for arm64 targets (macOS universal, Android, iOS).
+textures/vram_compression/import_etc2_astc=true
+
+[physics]
+
+common/physics_ticks_per_second=60
+
+; ---------------------------------------------------------------------------
+;  Input map — actions the InputController listens for. Keyboard + gamepad.
+;  Touch controls are handled separately by the on-screen pad on mobile.
+; ---------------------------------------------------------------------------
+[input]
+
+move_left={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"physical_keycode":4194319),Object(InputEventJoypadButton,"button_index":13)]
+}
+move_right={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"physical_keycode":4194321),Object(InputEventJoypadButton,"button_index":14)]
+}
+soft_drop={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"physical_keycode":4194322),Object(InputEventJoypadButton,"button_index":12)]
+}
+hard_drop={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"physical_keycode":32),Object(InputEventJoypadButton,"button_index":0)]
+}
+rotate_cw={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"physical_keycode":4194320),Object(InputEventJoypadButton,"button_index":1)]
+}
+rotate_ccw={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"physical_keycode":90),Object(InputEventJoypadButton,"button_index":2)]
+}
+rotate_180={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"physical_keycode":65),Object(InputEventJoypadButton,"button_index":3)]
+}
+hold_piece={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"physical_keycode":67),Object(InputEventJoypadButton,"button_index":9)]
+}
+pause_game={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"physical_keycode":4194305),Object(InputEventJoypadButton,"button_index":6)]
+}

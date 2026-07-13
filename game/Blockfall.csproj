@@ -1,0 +1,28 @@
+<Project Sdk="Godot.NET.Sdk/4.3.0">
+
+  <!--
+    Blockfall — Godot 4 C# game project.
+    Presentation + platform layer. All game RULES live in Blockfall.Core,
+    referenced below, so this project stays focused on rendering, input,
+    audio, UI, and platform services (ads / IAP / Steam).
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <Nullable>enable</Nullable>
+    <LangVersion>12</LangVersion>
+    <RootNamespace>Blockfall</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\core\Blockfall.Core.csproj" />
+  </ItemGroup>
+
+  <!--
+    The active store backend is chosen at RUNTIME via OS feature tags
+    (OS.HasFeature("mobile") / "steam"), so no per-preset compile symbols are
+    needed. The Steam desktop preset adds a custom "steam" feature tag; mobile
+    exports report "mobile" automatically. See docs/BUILD.md.
+  -->
+
+</Project>

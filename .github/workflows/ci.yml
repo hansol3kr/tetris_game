@@ -1,0 +1,32 @@
+name: CI
+
+# Builds and tests the engine-agnostic core on every push/PR. The Godot game
+# project is intentionally excluded here (it builds via the Godot toolchain in a
+# separate export pipeline) so this job stays fast and dependency-light.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  core-tests:
+    name: Core engine tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore Blockfall.sln
+
+      - name: Build
+        run: dotnet build Blockfall.sln --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test Blockfall.sln --configuration Release --no-build --verbosity normal

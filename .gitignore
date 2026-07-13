@@ -1,0 +1,29 @@
+# .NET
+bin/
+obj/
+*.user
+
+# Godot 4
+.godot/
+game/build/
+export_presets.cfg.bak
+
+# 빌드 산출물 / 재생성 가능한 것들 (GitHub·Codemagic에 올릴 필요 없음)
+dist/
+# 안드로이드 빌드 템플릿: 에디터의 "Install Android Build Template"로 재설치
+game/android/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vs/
+.idea/
+*.swp
+
+# Godot .NET generated
+game/.mono/
+mono_crash.*.json
+
+# Node matchmaking server
+server/node_modules/
+npm-debug.log*

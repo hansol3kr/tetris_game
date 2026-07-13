@@ -1,0 +1,12 @@
+{
+  "name": "blockfall-matchmaker",
+  "version": "1.0.0",
+  "description": "Matchmaking + relay server for Blockfall online versus",
+  "type": "commonjs",
+  "main": "matchmaker.js",
+  "scripts": {
+    "start": "node matchmaker.js",
+    "test": "node test-matchmaker.js"
+  },
+  "dependencies": { "ws": "^8.18.0" }
+}
