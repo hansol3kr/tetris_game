@@ -83,8 +83,13 @@ workflows:
           # 태그 빌드면 태그(v1.0.1 → 1.0.1)를 마케팅 버전으로 주입. 수동 빌드면 프리셋 값 유지.
           [ -n "${CM_TAG:-}" ] && VER_ARGS="--version ${CM_TAG#v}"
           ./build-ios.sh --team "$TEAM_ID" --bundle "$BUNDLE_ID" $VER_ARGS --build "$BUILD_NUMBER"
-      - name: 서명 프로파일 적용 + .ipa 빌드
+      - name: 서명 인증서·프로파일 생성/가져오기 + .ipa 빌드
         script: |
+          # blockfall_asc(App Store Connect API 키)로 배포 인증서 + com.blockfall.game 용
+          # App Store 프로파일을 (없으면) 자동 생성해 가져온다. --create 가 자동 생성의 핵심.
+          keychain initialize
+          app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE --create
+          keychain add-certificates
           xcode-project use-profiles
           XCPROJ="$(find game/build/ios -maxdepth 2 -name '*.xcodeproj' | head -n1)"
           SCHEME="$(xcodebuild -project "$XCPROJ" -list -json | python3 -c 'import json,sys;print(json.load(sys.stdin)["project"]["schemes"][0])')"
