@@ -26,9 +26,10 @@ window/size/viewport_height=1280
 window/size/mode=0
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
-; "sensor" lets the device rotate to landscape and back (portrait is still the
-; primary layout — the board is tall, so it's largest held upright).
-window/handheld/orientation="sensor"
+; Portrait-locked. The board is 10×20 (tall), so the game only fills the screen
+; and plays well held upright. In landscape every menu became a narrow centred
+; 460px column with wide black side-bars, so we lock to portrait.
+window/handheld/orientation="portrait"
 
 [rendering]
 
