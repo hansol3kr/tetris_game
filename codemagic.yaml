@@ -89,14 +89,18 @@ workflows:
           # Godot의 handheld/orientation=portrait 이 iOS Info.plist 에 확실히 반영되지
           # 않는 경우가 있어(가로로 뜸), 앱 Info.plist 의 UISupportedInterfaceOrientations
           # 를 '세로 전용'으로 직접 덮어쓴다. 기존 배열을 지우고 다시 넣어 중복 키를 피함.
+          # 확인된 사실: Godot이 orientation=portrait 를 무시하고 Info.plist 를
+          # LandscapeLeft(가로)로 뽑는다. 그래서 여기서 iPhone/iPad 키를 모두 세로로 덮어쓴다.
           found=0
           while IFS= read -r PLIST; do
             /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$PLIST" >/dev/null 2>&1 || continue
-            /usr/libexec/PlistBuddy -c "Delete :UISupportedInterfaceOrientations" "$PLIST" 2>/dev/null || true
-            /usr/libexec/PlistBuddy -c "Add :UISupportedInterfaceOrientations array" "$PLIST"
-            /usr/libexec/PlistBuddy -c "Add :UISupportedInterfaceOrientations:0 string UIInterfaceOrientationPortrait" "$PLIST"
-            /usr/libexec/PlistBuddy -c "Delete :UISupportedInterfaceOrientations~ipad" "$PLIST" 2>/dev/null || true
+            for KEY in UISupportedInterfaceOrientations "UISupportedInterfaceOrientations~ipad"; do
+              /usr/libexec/PlistBuddy -c "Delete :$KEY" "$PLIST" 2>/dev/null || true
+              /usr/libexec/PlistBuddy -c "Add :$KEY array" "$PLIST"
+              /usr/libexec/PlistBuddy -c "Add :$KEY:0 string UIInterfaceOrientationPortrait" "$PLIST"
+            done
             echo "[orientation] portrait 고정 → $PLIST"
+            /usr/libexec/PlistBuddy -c "Print :UISupportedInterfaceOrientations" "$PLIST"
             found=1
           done < <(find game/build/ios -name '*.plist')
           [ "$found" = 1 ] || { echo "!! 앱 Info.plist 를 못 찾음 — 방향 강제 실패"; exit 1; }
