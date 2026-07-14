@@ -116,8 +116,11 @@ public static class TextureFactory
             float body = Feather(RoundedBoxSdf(p, half, radius));
             if (body <= 0f) return new Color(0, 0, 0, 0);
             float t = (y + 0.5f) / size;
-            var c = fill.Lerp(new Color(fill.R * 0.82f, fill.G * 0.82f, fill.B * 0.82f, fill.A), t);
-            if (t < 0.5f) c = Over(c, new Color(1, 1, 1, 0.14f * (1f - t * 2f)));
+            // Candy dome: bright top, deep bottom, a glossy top sheen and a soft
+            // bottom inner lip so the fill reads as an injection-molded gel button.
+            var c = fill.Lerp(new Color(fill.R * 0.72f, fill.G * 0.72f, fill.B * 0.72f, fill.A), t);
+            if (t < 0.46f) { float s = 1f - t / 0.46f; c = Over(c, new Color(1, 1, 1, 0.40f * s * s)); }
+            if (t > 0.72f) { float s = (t - 0.72f) / 0.28f; c = Over(c, new Color(0, 0, 0, 0.16f * s)); }
             return new Color(c.R, c.G, c.B, c.A * body);
         });
     }
@@ -133,18 +136,73 @@ public static class TextureFactory
     {
         px = Math.Clamp(px, 8, 128);
         string key = $"cell:{px}";
-        float radius = px * 0.11f;
+        float radius = px * 0.22f;                 // chunky candy corner
+        var half = new Vector2(px / 2f, px / 2f);
+        return Bake(key, px, px, (x, y) =>
+        {
+            var p = new Vector2(x + 0.5f, y + 0.5f) - half;
+            float sdf = RoundedBoxSdf(p, half, radius);
+            float body = Feather(sdf, 1.2f);
+            if (body <= 0f) return new Color(0, 0, 0, 0);
+
+            // Body gradient: bright top, darker bottom (top-lit gel). Kept WHITE so
+            // BoardView tints per piece; the wet white sheen is added on top by the
+            // CellGloss overlay (a colored texture couldn't hold a white specular).
+            float t = (y + 0.5f) / px;
+            float v = Mathf.Lerp(1.00f, 0.80f, t);
+            var c = new Color(v, v, v, 1f);
+
+            // Inner pillow: darken the last ~20% toward every edge for a rounded,
+            // extruded read; the top rim highlight below re-lights the top edge.
+            float dEdge = -sdf;                       // px inside the shape
+            float pillow = Mathf.Clamp(1f - dEdge / (px * 0.20f), 0f, 1f);
+            float pm = Mathf.Lerp(1f, 0.88f, pillow);
+            c = new Color(c.R * pm, c.G * pm, c.B * pm, 1f);
+
+            // Crisp bottom bevel lip (bottom half, within ~2.5px of the edge).
+            if (t > 0.5f && dEdge < 2.5f)
+                c = Over(c, new Color(0, 0, 0, 0.22f * (1f - dEdge / 2.5f)));
+
+            // Top rim highlight — lightens the top inner edge toward white.
+            if (y < px * 0.20f)
+                c = Over(c, new Color(1, 1, 1, 0.30f * (1f - y / (px * 0.20f))));
+
+            return new Color(c.R, c.G, c.B, body);
+        });
+    }
+
+    /// <summary>
+    /// White wet-sheen overlay for a glossy gel cell: a soft top specular ellipse
+    /// plus a small top-left glint, masked to the cell shape. Drawn over the tinted
+    /// cell with a white modulate so the highlight stays white regardless of hue —
+    /// this is what turns a flat tinted tile into a candy gem.
+    /// </summary>
+    public static ImageTexture CellGloss(int px)
+    {
+        px = Math.Clamp(px, 8, 128);
+        string key = $"cellgloss:{px}";
+        float radius = px * 0.22f;
         var half = new Vector2(px / 2f, px / 2f);
         return Bake(key, px, px, (x, y) =>
         {
             var p = new Vector2(x + 0.5f, y + 0.5f) - half;
             float body = Feather(RoundedBoxSdf(p, half, radius), 1.2f);
             if (body <= 0f) return new Color(0, 0, 0, 0);
-            float t = (y + 0.5f) / px;
-            float v = Mathf.Lerp(1.0f, 0.93f, t); // gentle two-tone
-            var c = new Color(v, v, v, 1f);
-            if (y < px * 0.16f) c = Over(c, new Color(1, 1, 1, 0.18f * (1f - y / (px * 0.16f))));
-            return new Color(c.R, c.G, c.B, body);
+
+            // Soft specular ellipse in the upper-left (single top-left light source).
+            float ex = (x + 0.5f - 0.44f * px) / (0.34f * px);
+            float ey = (y + 0.5f - 0.24f * px) / (0.20f * px);
+            float spec = Mathf.Clamp(1f - (ex * ex + ey * ey), 0f, 1f);
+            spec = spec * spec * 0.62f;
+
+            // Sharp glint catch-light.
+            float gx = x + 0.5f - 0.30f * px, gy = y + 0.5f - 0.26f * px;
+            float gd = Mathf.Sqrt(gx * gx + gy * gy);
+            float glint = Mathf.Clamp(1f - gd / (px * 0.09f), 0f, 1f);
+            glint = glint * glint * 0.85f;
+
+            float a = Mathf.Clamp(spec + glint, 0f, 1f) * body;
+            return new Color(1f, 1f, 1f, a);
         });
     }
 

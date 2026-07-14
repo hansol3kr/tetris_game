@@ -94,7 +94,10 @@ public static class UiTheme
         t.SetTypeVariation("PrimaryButton", "Button");
         var pNormal = FilledStyle(Palette.Accent);
         var pHover = FilledStyle(Brighten(Palette.Accent, 0.12f));
-        var pPressed = FilledStyle(Brighten(Palette.Accent, 0.22f));
+        // Pressed = pushed in: slightly darker fill + the label sinks ~3px (content
+        // margins shift while total height stays constant) for a tactile candy press.
+        var pPressed = FilledStyle(Brighten(Palette.Accent, -0.08f));
+        pPressed.ContentMarginTop = 16; pPressed.ContentMarginBottom = 10;
         t.SetStylebox("normal", "PrimaryButton", pNormal);
         t.SetStylebox("hover", "PrimaryButton", pHover);
         t.SetStylebox("pressed", "PrimaryButton", pPressed);

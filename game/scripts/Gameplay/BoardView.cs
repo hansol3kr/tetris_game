@@ -27,6 +27,7 @@ public partial class BoardView : Node2D
 
     // Baked per-cell-size textures.
     private Texture2D _cellTex = null!;
+    private Texture2D _glossTex = null!;
     private Texture2D _glowTex = null!;
     private int _bakedPx = -1;
     private StyleBoxTexture _panelSb = null!;
@@ -65,6 +66,7 @@ public partial class BoardView : Node2D
     internal Game Game => _game;
     internal bool Blind => _blind;
     internal Texture2D CellTexture => _cellTex;
+    internal Texture2D GlossTexture => _glossTex;
     internal Texture2D GlowTexture => _glowTex;
 
     /// <summary>Enable "blind" play: the locked stack is hidden (INVISIBLE modifier).</summary>
@@ -142,9 +144,12 @@ public partial class BoardView : Node2D
         {
             _bakedPx = px;
             _cellTex = TextureFactory.Cell(px);
+            _glossTex = TextureFactory.CellGloss(px);
             _glowTex = TextureFactory.CellGlow(Mathf.Clamp((int)(px * 1.7f), 12, 192));
+            // Lighter "well" behind the cells so the glossy gems pop off a mid-tone
+            // rather than floating on near-black; the frame keeps its glass rim.
             _panelSb = TextureFactory.GlassStyle(12,
-                new Color(0.045f, 0.055f, 0.105f, 0.85f), new Color(0.022f, 0.028f, 0.065f, 0.90f),
+                new Color(0.105f, 0.118f, 0.215f, 0.90f), new Color(0.062f, 0.072f, 0.140f, 0.94f),
                 Palette.GlassBorder, 1.2f, 0.10f, 0, 0);
         }
         QueueRedraw();
@@ -298,6 +303,11 @@ public partial class BoardView : Node2D
                 new Color(emissive.R, emissive.G, emissive.B, glowAlpha * alpha));
         }
         DrawTextureRect(_cellTex, rect, false, new Color(color.R, color.G, color.B, color.A * alpha));
+        // Wet gel sheen — white overlay so the specular reads on any hue. Garbage and
+        // dead cells pass glowAlpha 0, so they stay matte (junk / spent), per spec.
+        float gloss = glowAlpha > 0.01f ? Mathf.Lerp(0.42f, 0.60f, Mathf.Clamp(glowAlpha, 0f, 1f)) : 0f;
+        if (gloss > 0.01f)
+            DrawTextureRect(_glossTex, rect, false, new Color(1f, 1f, 1f, gloss * alpha));
     }
 }
 
@@ -494,6 +504,9 @@ public partial class BoardFx : Node2D
             DrawTextureRect(_view.GlowTexture, glowRect, false, new Color(emissive.R, emissive.G, emissive.B, glowAlpha * alpha));
         }
         DrawTextureRect(_view.CellTexture, rect, false, new Color(color.R, color.G, color.B, color.A * alpha));
+        float gloss = glowAlpha > 0.01f ? Mathf.Lerp(0.42f, 0.60f, Mathf.Clamp(glowAlpha, 0f, 1f)) : 0f;
+        if (gloss > 0.01f)
+            DrawTextureRect(_view.GlossTexture, rect, false, new Color(1f, 1f, 1f, gloss * alpha));
     }
 
     private void DrawLockFlashes()
