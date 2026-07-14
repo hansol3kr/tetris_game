@@ -425,7 +425,8 @@ public partial class MainMenu : Control
         {
             ThemeTypeVariation = "GhostButton",
             CustomMinimumSize = new Vector2(0, 50),
-            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+            // No ExpandFill: the pill hugs the icon + label instead of stretching
+            // to full width (which left the box far bigger than the text).
         };
         var content = CardContent(b, marginH: 0);
         content.Alignment = BoxContainer.AlignmentMode.Center;

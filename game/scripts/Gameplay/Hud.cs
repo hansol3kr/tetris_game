@@ -148,36 +148,43 @@ public partial class Hud : Control
         bar.AddThemeConstantOverride("separation", 8);
         AddChild(bar);
 
-        // Stats (compact, horizontal). Every field is created so _Process never
-        // dereferences a null even though only some are visible on a phone.
+        // Only the essentials fit a phone strip — SCORE / LINES / TIME / GOAL.
+        // The full stat row (6 stats + HOLD + 4 NEXT) overflowed the width and got
+        // clipped on the sides. LEVEL + FINESSE are still created (so _Process never
+        // NREs) but parked in a hidden holder off the strip.
         var statsCard = GlassPanel();
         var stats = new HBoxContainer { MouseFilter = MouseFilterEnum.Ignore };
-        stats.AddThemeConstantOverride("separation", 12);
+        stats.AddThemeConstantOverride("separation", 10);
         statsCard.AddChild(stats);
-        _score = CompactStat(stats, Loc.T("SCORE"), 116, out _);
-        _lines = CompactStat(stats, Loc.T("LINES"), 46, out _);
-        _level = CompactStat(stats, Loc.T("LEVEL"), 40, out _);
-        _clock = CompactStat(stats, Loc.T("TIME"), 74, out _);
-        _goal = CompactStat(stats, Loc.T("GOAL"), 62, out _);
-        _finesseValue = CompactStat(stats, Loc.T("FINESSE"), 78, out var fbox);
+        _score = CompactStat(stats, Loc.T("SCORE"), 88, out _);
+        _lines = CompactStat(stats, Loc.T("LINES"), 38, out _);
+        _clock = CompactStat(stats, Loc.T("TIME"), 60, out _);
+        _goal = CompactStat(stats, Loc.T("GOAL"), 52, out _);
+        bar.AddChild(statsCard);
+
+        var hidden = new Control { Visible = false, MouseFilter = MouseFilterEnum.Ignore };
+        AddChild(hidden);
+        var hbox = new VBoxContainer();
+        hidden.AddChild(hbox);
+        _level = CompactStat(hbox, Loc.T("LEVEL"), 40, out _);
+        _finesseValue = CompactStat(hbox, Loc.T("FINESSE"), 78, out var fbox);
         _finesseBox = fbox;
         _finessePip = MakeLabel("", Palette.TextSecondary, 12);
         fbox.AddChild(_finessePip);
         _finesseStreak = MakeLabel("", Palette.Accent, 11);
         fbox.AddChild(_finesseStreak);
-        bar.AddChild(statsCard);
 
         // HOLD.
-        _hold = new MiniPieceView { CustomMinimumSize = new Vector2(70, 54) };
+        _hold = new MiniPieceView { CustomMinimumSize = new Vector2(58, 46) };
         bar.AddChild(MiniCard(Loc.T("HOLD"), new[] { _hold }));
 
-        // NEXT (horizontal; first emphasized).
+        // NEXT (3, first emphasized).
         var minis = new System.Collections.Generic.List<MiniPieceView>();
-        for (int i = 0; i < 4; i++)
+        for (int i = 0; i < 3; i++)
         {
             var mv = new MiniPieceView
             {
-                CustomMinimumSize = i == 0 ? new Vector2(70, 54) : new Vector2(52, 46),
+                CustomMinimumSize = i == 0 ? new Vector2(58, 46) : new Vector2(44, 40),
                 Dimmed = i > 0,
             };
             _next.Add(mv);
