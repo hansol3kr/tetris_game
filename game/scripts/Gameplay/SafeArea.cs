@@ -28,6 +28,16 @@ public static class SafeArea
         float right = Mathf.Max(0, win.X - safe.Position.X - safe.Size.X) / win.X * logical.X;
         float bottom = Mathf.Max(0, win.Y - safe.Position.Y - safe.Size.Y) / win.Y * logical.Y;
 
+        // Fallback: some iOS builds report a 0 safe area even on notched phones.
+        // A tall aspect (≳2.0) means a camera cutout + home indicator, so guarantee
+        // a minimum inset there — Max keeps the real value when the API DOES report it.
+        bool notched = logical.X > 0 && logical.Y / logical.X > 2.0f;
+        if (notched)
+        {
+            top = Mathf.Max(top, logical.Y * 0.045f);    // clear the notch / Dynamic Island
+            bottom = Mathf.Max(bottom, logical.Y * 0.028f); // clear the home indicator
+        }
+
         // Real safe areas are small; clamp so a bad reading can never collapse the UI.
         left = Mathf.Min(left, logical.X * 0.12f);
         right = Mathf.Min(right, logical.X * 0.12f);
