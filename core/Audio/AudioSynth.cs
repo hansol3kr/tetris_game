@@ -136,28 +136,60 @@ public static class AudioSynth
     /// <summary>Renders a seamless ~8s looping music bed as 16-bit PCM.</summary>
     public static short[] RenderMusic()
     {
-        // Progression as root notes (semitones from A4) for a i–VI–III–VII feel: Am F C G.
-        int[] roots = { 0, -4, 3, -2 }; // A, F, C, G  (lead octave)
-        // Arpeggio pattern within each chord (root, 3rd, 5th, octave) in semitone offsets.
-        int[] arp = { 0, 3, 7, 12, 7, 3, 12, 7 };
+        // Retrowave loop in A minor (i–VI–III–VII = Am F C G): a sub + a driving
+        // 8th-note pulse bass, a soft sustained pad, a 16th-note arpeggio shimmer,
+        // a light four-on-the-floor groove, and a lead riff on the repeat — a fuller,
+        // more modern take than a lone arpeggio. Every voice uses the current chord's
+        // own tones, so the loop stays consonant across the progression.
+        int[] roots = { 0, -4, 3, -2 };   // A F C G (semitones from A4)
+        int[] third = { 3, 4, 4, 3 };     // 3rd above the root: Am / F / C / G
 
-        const double beat = 0.5;          // seconds per arp step
-        double barLen = arp.Length * beat; // one chord = one bar
-        var buf = new Buf(barLen * roots.Length + 0.02);
+        const double bpm = 110.0;
+        double six = 60.0 / bpm / 4.0;    // sixteenth-note length (seconds)
+        double barLen = 16 * six;         // one chord per bar
+        int bars = roots.Length * 2;      // 8-bar loop (progression twice)
+        var buf = new Buf(barLen * bars + 0.05);
 
-        for (int bar = 0; bar < roots.Length; bar++)
+        for (int bar = 0; bar < bars; bar++)
         {
-            double barStart = bar * barLen;
-            int root = roots[bar];
-            // Bass: root two octaves down, held, gently pulsing each half-bar.
-            buf.Tone(Hz(root - 24), barStart, barLen / 2 - 0.02, 0.10, Wave.Square, release: 0.15);
-            buf.Tone(Hz(root - 24), barStart + barLen / 2, barLen / 2 - 0.02, 0.10, Wave.Square, release: 0.15);
-            // Lead: arpeggio, one octave up.
-            for (int step = 0; step < arp.Length; step++)
+            double t0 = bar * barLen;
+            int r = roots[bar % roots.Length];
+            int t3 = third[bar % roots.Length];
+            bool repeat = bar >= roots.Length;
+
+            // Sub bass (foundation) + driving 8th-note pulse bass.
+            buf.Tone(Hz(r - 24), t0, barLen - 0.01, 0.10, Wave.Sine, release: 0.20);
+            for (int e = 0; e < 8; e++)
+                buf.Tone(Hz(r - 12), t0 + e * 2 * six, six * 1.5, 0.062, Wave.Square, release: 0.05);
+
+            // Soft sustained pad (root / 3rd / 5th).
+            buf.Tone(Hz(r),      t0, barLen - 0.02, 0.032, Wave.Triangle, release: 0.28);
+            buf.Tone(Hz(r + t3), t0, barLen - 0.02, 0.028, Wave.Triangle, release: 0.28);
+            buf.Tone(Hz(r + 7),  t0, barLen - 0.02, 0.028, Wave.Sine, release: 0.28);
+
+            // Arpeggio shimmer, up an octave, cycling the chord's own tones.
+            int[] arp = { 0, t3, 7, 12, 7, t3, 12, 7 };
+            for (int s = 0; s < 16; s++)
+                buf.Tone(Hz(r + 12 + arp[s % arp.Length]), t0 + s * six, six * 0.9, 0.036, Wave.Saw, release: 0.04);
+
+            // Lead riff on the repeat (chord tones, up high, gentle vibrato).
+            if (repeat)
             {
-                double t = barStart + step * beat;
-                buf.Tone(Hz(root + arp[step]), t, beat * 0.9, 0.075, Wave.Triangle, release: 0.12);
+                int[] ln = { 12, 12 + t3, 19, 24 };
+                double[] lt = { 0, 4, 8, 12 };
+                for (int i = 0; i < 4; i++)
+                    buf.Tone(Hz(r + ln[i]), t0 + lt[i] * six, six * 3.2, 0.055, Wave.Triangle, vibrato: 4, release: 0.14);
             }
+
+            // Groove: kick on beats 1 & 3, snare on 2 & 4, hats on the off-eighths.
+            for (int b = 0; b < 4; b++)
+            {
+                double bt = t0 + b * 4 * six;
+                if (b % 2 == 0) buf.Tone(60, bt, 0.12, 0.15, Wave.Sine, glideTo: 40, release: 0.06);
+                else buf.Noise(bt, 0.09, 0.075);
+            }
+            for (int h = 0; h < 8; h++)
+                buf.Noise(t0 + (h * 2 + 1) * six, 0.018, 0.026);
         }
         return buf.To16();
     }

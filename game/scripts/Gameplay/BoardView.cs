@@ -444,8 +444,10 @@ public partial class BoardFx : Node2D
         var ghost = _view.Blind ? null : game.GhostPiece();
         if (ghost is not null && game.Current is not null)
         {
-            // Slow alpha pulse so the ghost reads as "projection", not "block".
-            float pulse = Motion.Reduced ? 0.22f : 0.18f + 0.07f * (0.5f + 0.5f * Mathf.Sin(_dangerPhase * 5.2f));
+            // Landing preview: bright enough to clearly show WHERE the piece drops
+            // (so you can line it up / slot it into a gap), but still pulsing so it
+            // reads as a projection, not a solid block.
+            float pulse = Motion.Reduced ? 0.34f : 0.28f + 0.09f * (0.5f + 0.5f * Mathf.Sin(_dangerPhase * 5.2f));
             var color = Palette.ForPiece(ghost.Type);
             float gap = Mathf.Max(1f, _view.CellSize * 0.08f);
             foreach (var c in ghost.Cells())
@@ -454,8 +456,8 @@ public partial class BoardFx : Node2D
                     var pos = _view.CellPos(c.Row, c.Col);
                     var rect = new Rect2(pos + new Vector2(gap, gap),
                                          new Vector2(_view.CellSize - gap * 2, _view.CellSize - gap * 2));
-                    DrawRect(rect, new Color(color.R, color.G, color.B, pulse * 0.4f), filled: true);
-                    DrawRect(rect, new Color(color.R, color.G, color.B, pulse + 0.25f), filled: false, width: 1.5f);
+                    DrawRect(rect, new Color(color.R, color.G, color.B, pulse * 0.55f), filled: true);
+                    DrawRect(rect, new Color(color.R, color.G, color.B, Mathf.Min(1f, pulse + 0.45f)), filled: false, width: 2.5f);
                 }
         }
 

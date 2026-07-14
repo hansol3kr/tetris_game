@@ -64,10 +64,13 @@ public partial class MainMenu : Control
         scroll.AddChild(outer);
         outer.AddChild(new Control { SizeFlagsVertical = SizeFlags.ExpandFill });
 
+        // Scale the menu column to the device: fill most of the (safe-area) width
+        // on a phone, but cap it so it doesn't sprawl on tablets / desktop.
+        float menuW = Mathf.Clamp(Bootstrap.Instance.SafeCanvasSize.X * 0.92f, 340f, 600f);
         var col = new VBoxContainer
         {
             SizeFlagsHorizontal = SizeFlags.ShrinkCenter,
-            CustomMinimumSize = new Vector2(460, 0),
+            CustomMinimumSize = new Vector2(menuW, 0),
         };
         col.AddThemeConstantOverride("separation", 12);
         outer.AddChild(col);
