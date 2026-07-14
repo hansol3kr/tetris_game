@@ -101,6 +101,7 @@ public partial class SceneRouter : Node
         menu.TutorialChosen += GoToTutorial;
         menu.ReplaysChosen += GoToReplays;
         menu.ProfileChosen += GoToProfile;
+        menu.BlockFitChosen += StartBlockFit;
         Swap(menu);
     }
 
@@ -139,6 +140,17 @@ public partial class SceneRouter : Node
         var screen = new StoreScreen();
         screen.BackRequested += GoToMainMenu;
         Swap(screen);
+    }
+
+    /// <summary>Free-placement (Block Blast style) puzzle mode — a self-contained
+    /// game, so it doesn't route through StartGame's falling-block engine.</summary>
+    public void StartBlockFit()
+    {
+        if (Busy) return;
+        Bootstrap.Instance.Bg.SetGameplayDim(true);
+        var controller = new Blockfall.Gameplay.BlockFitController();
+        controller.QuitRequested += GoToMainMenu;
+        Swap(controller);
     }
 
     /// <summary>Pick the CPU difficulty (or online) before a versus match.</summary>

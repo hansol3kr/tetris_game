@@ -151,6 +151,10 @@ public partial class AutoPlay : Node
         await Wait(0.6); // 봇이 몇 수 두게
         await Nav("→Menu", () => R.GoToMainMenu(), typeof(MainMenu));
 
+        // 자유배치(Block Fit) 모드 — Node2D, 새 모드가 로드·레이아웃 안 깨지는지
+        await Nav("BlockFit", () => R.StartBlockFit());
+        await Nav("→Menu", () => R.GoToMainMenu(), typeof(MainMenu));
+
         // ── 4) 일시정지 오버레이 레이아웃 (Node2D 밑 스크림 — 0×0 회귀 이력) ──
         await CheckPauseOverlay();
 

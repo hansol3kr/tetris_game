@@ -111,6 +111,14 @@ public partial class SaveManager : Node
     public double? GetBest(GameModeId mode)
         => _data.Best.TryGetValue(mode.ToString(), out var v) ? v : null;
 
+    /// <summary>Best score in the free-placement (Block Fit) mode — persisted in the
+    /// same Best table under a reserved key, so no schema change is needed.</summary>
+    public double BlockFitBest
+    {
+        get => _data.Best.TryGetValue("__blockfit", out var v) ? v : 0;
+        set { _data.Best["__blockfit"] = value; _dirty = true; Flush(); }
+    }
+
     /// <summary>
     /// Records a run and returns true if it beat the stored best. For Sprint the
     /// best is the LOWEST time; for score modes it's the HIGHEST score.

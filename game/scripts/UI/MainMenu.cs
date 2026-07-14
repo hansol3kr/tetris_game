@@ -26,6 +26,7 @@ public partial class MainMenu : Control
     public event Action? TutorialChosen;
     public event Action? ReplaysChosen;
     public event Action? ProfileChosen;
+    public event Action? BlockFitChosen;
 
     private readonly HashSet<GameModifier> _mods = new();
     private static bool _introPlayed; // full entrance choreography only once per session
@@ -86,6 +87,8 @@ public partial class MainMenu : Control
         col.AddChild(BuildModeGrid(hero));
         col.AddChild(Spacer(2));
         col.AddChild(BuildVersusCard());
+        col.AddChild(Spacer(6));
+        col.AddChild(BuildBlockFitCard());
         col.AddChild(Spacer(6));
         BuildCustomRun(col);
         col.AddChild(BuildBottomButtons());
@@ -299,6 +302,30 @@ public partial class MainMenu : Control
         content.AddChild(text);
 
         b.Pressed += () => VersusChosen?.Invoke();
+        return b;
+    }
+
+    private Control BuildBlockFitCard()
+    {
+        var b = Card(Palette.AccentGreen, 72);
+        var content = CardContent(b);
+
+        content.AddChild(AccentBar(Palette.AccentGreen, 40));
+        content.AddChild(new Theme.Icon(IconKind.Blocks, Palette.AccentGreen, 26) { SizeFlagsVertical = SizeFlags.ShrinkCenter });
+
+        var text = new VBoxContainer { SizeFlagsVertical = SizeFlags.ShrinkCenter, SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        text.AddThemeConstantOverride("separation", 0);
+        var name = new Label { Text = Loc.T("BLOCK FIT") };
+        name.AddThemeFontOverride("font", Fonts.UiBold);
+        name.AddThemeFontSizeOverride("font_size", 21);
+        name.AddThemeColorOverride("font_color", Palette.AccentGreen);
+        var sub = new Label { Text = Loc.T("DRAG & FIT · NO GRAVITY"), ThemeTypeVariation = "DimLabel" };
+        sub.AddThemeFontSizeOverride("font_size", 14);
+        text.AddChild(name);
+        text.AddChild(sub);
+        content.AddChild(text);
+
+        b.Pressed += () => BlockFitChosen?.Invoke();
         return b;
     }
 
