@@ -106,6 +106,7 @@ public partial class SettingsScreen : Control
             Bootstrap.Instance.Bg.ApplyMotionSetting(); // freeze/unfreeze the backdrop
         }));
         visual.AddChild(Slider("JUICE / SHAKE", 0, 1, 0.1, _s.JuiceIntensity, v => _s.JuiceIntensity = (float)v, Pct));
+        visual.AddChild(CycleRow(Loc.T("CLEAR EFFECT"), JuiceLayer.ClearFxNames, _s.ClearFxStyle, i => _s.ClearFxStyle = i));
         // Desktop-only: mobile is always fullscreen, so the toggle would be a no-op there.
         if (!OS.HasFeature("mobile"))
             visual.AddChild(Check("FULLSCREEN", _s.Fullscreen, on => { _s.Fullscreen = on; Bootstrap.Instance.ApplyFullscreen(); }));
@@ -462,6 +463,26 @@ public partial class SettingsScreen : Control
 
         row.AddChild(slider);
         row.AddChild(valLabel);
+        return row;
+    }
+
+    /// <summary>A caption + a button that cycles through <paramref name="names"/> on tap.</summary>
+    private Control CycleRow(string caption, string[] names, int current, Action<int> onChanged)
+    {
+        var row = new HBoxContainer();
+        row.AddThemeConstantOverride("separation", 16);
+        row.AddChild(Caption(caption));
+        row.AddChild(new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill });
+        int idx = Mathf.Clamp(current, 0, names.Length - 1);
+        var btn = new Button { Text = names[idx], CustomMinimumSize = new Vector2(150, 0) };
+        Motion.BindButtonFeel(btn);
+        btn.Pressed += () =>
+        {
+            idx = (idx + 1) % names.Length;
+            btn.Text = names[idx];
+            onChanged(idx);
+        };
+        row.AddChild(btn);
         return row;
     }
 

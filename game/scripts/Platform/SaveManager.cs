@@ -23,6 +23,9 @@ public sealed class GameSettings
     /// <summary>Screen-shake / particle intensity, 0 = off … 1 = full.</summary>
     public float JuiceIntensity { get; set; } = 1.0f;
 
+    /// <summary>Line-clear effect style — index into JuiceLayer.ClearFxNames.</summary>
+    public int ClearFxStyle { get; set; }
+
     /// <summary>Show the finesse (input-economy) readout during play and on the results screen.</summary>
     public bool ShowFinesse { get; set; } = true;
 

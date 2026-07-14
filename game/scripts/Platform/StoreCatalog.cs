@@ -87,6 +87,42 @@ public static class StoreCatalog
         },
         new()
         {
+            Id = "theme_synthwave", ProductId = "", Kind = StoreItemKind.Theme,
+            Name = "SYNTHWAVE", Blurb = "PURPLE DUSK, MAGENTA & CYAN.",
+            PriceLabel = "FREE",
+            Theme = new BlockTheme("theme_synthwave",
+                I: new Color(0.30f, 0.90f, 1.00f), O: new Color(1.00f, 0.35f, 0.75f),
+                T: new Color(0.65f, 0.40f, 1.00f), S: new Color(0.35f, 0.95f, 0.85f),
+                Z: new Color(1.00f, 0.30f, 0.55f), J: new Color(0.45f, 0.55f, 1.00f),
+                L: new Color(1.00f, 0.60f, 0.35f),
+                BgTop: new Color(0.063f, 0.020f, 0.100f), BgBottom: new Color(0.137f, 0.043f, 0.200f)),
+        },
+        new()
+        {
+            Id = "theme_mint", ProductId = "", Kind = StoreItemKind.Theme,
+            Name = "MINT", Blurb = "SOFT PASTEL, COOL MINT NIGHT.",
+            PriceLabel = "FREE",
+            Theme = new BlockTheme("theme_mint",
+                I: new Color(0.45f, 0.95f, 0.85f), O: new Color(1.00f, 0.90f, 0.55f),
+                T: new Color(0.75f, 0.65f, 1.00f), S: new Color(0.55f, 0.95f, 0.70f),
+                Z: new Color(1.00f, 0.55f, 0.65f), J: new Color(0.55f, 0.75f, 1.00f),
+                L: new Color(1.00f, 0.75f, 0.50f),
+                BgTop: new Color(0.020f, 0.070f, 0.063f), BgBottom: new Color(0.047f, 0.129f, 0.110f)),
+        },
+        new()
+        {
+            Id = "theme_ember", ProductId = "", Kind = StoreItemKind.Theme,
+            Name = "EMBER", Blurb = "WARM AMBER COALS, GOLD GLOW.",
+            PriceLabel = "FREE",
+            Theme = new BlockTheme("theme_ember",
+                I: new Color(0.50f, 0.85f, 1.00f), O: new Color(1.00f, 0.80f, 0.30f),
+                T: new Color(1.00f, 0.55f, 0.75f), S: new Color(0.70f, 0.90f, 0.45f),
+                Z: new Color(1.00f, 0.45f, 0.35f), J: new Color(0.60f, 0.60f, 1.00f),
+                L: new Color(1.00f, 0.65f, 0.25f),
+                BgTop: new Color(0.090f, 0.050f, 0.020f), BgBottom: new Color(0.160f, 0.090f, 0.040f)),
+        },
+        new()
+        {
             Id = "theme_sunset_drive", ProductId = "com.blockfall.theme.sunset", Kind = StoreItemKind.Theme,
             Name = "SUNSET DRIVE", Blurb = "WARM DUSK PINKS OVER A PURPLE HORIZON.",
             PriceLabel = "US$1.99",

@@ -310,12 +310,26 @@ public partial class JuiceLayer : Node2D
         return Mathf.Min(t, 1f);
     }
 
+    /// <summary>Selectable line-clear effect styles (Settings › VISUAL). Index = Settings.ClearFxStyle.</summary>
+    public static readonly string[] ClearFxNames = { "SPARKS", "BURST", "CONFETTI", "MINIMAL", "SHATTER" };
+
     private void SpawnClearSparks(IReadOnlyList<int> rows, ClearResult r)
     {
         float cell = _board.CellSize;
         int cols = _board.Columns;
         float leftX = _board.BoardOrigin.X;
-        int perCell = r.LinesCleared >= 4 ? 5 : 3;
+
+        // Per-style tuning: (count×, speed×, spread×, life×, size×, rainbow, downward drift).
+        int style = Mathf.Clamp(Bootstrap.Instance.Save.Settings.ClearFxStyle, 0, ClearFxNames.Length - 1);
+        (float countMul, float speed, float spread, float life, float sizeMul, bool rainbow, float drift) = style switch
+        {
+            1 => (1.8f, 1.5f, 1.7f, 1.0f, 1.0f, false, 0f),    // BURST — more, faster, wider
+            2 => (2.2f, 0.9f, 1.3f, 1.5f, 0.9f, true, 150f),   // CONFETTI — rainbow, slow, drifts down
+            3 => (0.4f, 0.9f, 0.8f, 0.9f, 0.9f, false, 0f),    // MINIMAL — sparse, subtle
+            4 => (2.6f, 2.0f, 2.2f, 0.6f, 0.6f, false, 0f),    // SHATTER — many, small, fast, short
+            _ => (1.0f, 1.0f, 1.0f, 1.0f, 1.0f, false, 0f),    // SPARKS — default
+        };
+        int perCell = Mathf.Max(1, (int)Mathf.Ceil((r.LinesCleared >= 4 ? 5 : 3) * countMul));
 
         foreach (int boardRow in rows)
         {
@@ -325,14 +339,15 @@ public partial class JuiceLayer : Node2D
                 float x = leftX + (col + 0.5f) * cell;
                 for (int k = 0; k < perCell; k++)
                 {
-                    var color = SparkColor(r);
+                    var color = rainbow ? Color.FromHsv(_rng.Randf(), 0.75f, 1f) : SparkColor(r);
                     _sparks.Add(new Spark
                     {
                         Pos = new Vector2(x + _rng.RandfRange(-cell * 0.3f, cell * 0.3f),
                                           y + _rng.RandfRange(-cell * 0.3f, cell * 0.3f)),
-                        Vel = new Vector2(_rng.RandfRange(-140, 140), _rng.RandfRange(-260, -40)),
-                        Life = _rng.RandfRange(0.35f, 0.75f),
-                        Size = _rng.RandfRange(cell * 0.12f, cell * 0.28f),
+                        Vel = new Vector2(_rng.RandfRange(-140, 140) * spread,
+                                          _rng.RandfRange(-260, -40) * speed + drift),
+                        Life = _rng.RandfRange(0.35f, 0.75f) * life,
+                        Size = _rng.RandfRange(cell * 0.12f, cell * 0.28f) * sizeMul,
                         Color = color,
                     });
                 }
