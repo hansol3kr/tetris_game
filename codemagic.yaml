@@ -84,6 +84,22 @@ workflows:
           # 태그 빌드면 태그(v1.0.1 → 1.0.1)를 마케팅 버전으로 주입. 수동 빌드면 프리셋 값 유지.
           [ -n "${CM_TAG:-}" ] && VER_ARGS="--version ${CM_TAG#v}"
           ./build-ios.sh --team "$TEAM_ID" --bundle "$BUNDLE_ID" $VER_ARGS --build "$BUILD_NUMBER"
+      - name: iOS 세로 고정 강제 (Info.plist 직접 덮어쓰기)
+        script: |
+          # Godot의 handheld/orientation=portrait 이 iOS Info.plist 에 확실히 반영되지
+          # 않는 경우가 있어(가로로 뜸), 앱 Info.plist 의 UISupportedInterfaceOrientations
+          # 를 '세로 전용'으로 직접 덮어쓴다. 기존 배열을 지우고 다시 넣어 중복 키를 피함.
+          found=0
+          while IFS= read -r PLIST; do
+            /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$PLIST" >/dev/null 2>&1 || continue
+            /usr/libexec/PlistBuddy -c "Delete :UISupportedInterfaceOrientations" "$PLIST" 2>/dev/null || true
+            /usr/libexec/PlistBuddy -c "Add :UISupportedInterfaceOrientations array" "$PLIST"
+            /usr/libexec/PlistBuddy -c "Add :UISupportedInterfaceOrientations:0 string UIInterfaceOrientationPortrait" "$PLIST"
+            /usr/libexec/PlistBuddy -c "Delete :UISupportedInterfaceOrientations~ipad" "$PLIST" 2>/dev/null || true
+            echo "[orientation] portrait 고정 → $PLIST"
+            found=1
+          done < <(find game/build/ios -name '*.plist')
+          [ "$found" = 1 ] || { echo "!! 앱 Info.plist 를 못 찾음 — 방향 강제 실패"; exit 1; }
       - name: 서명 인증서·프로파일 생성/가져오기 + .ipa 빌드
         script: |
           # ASC API 키(APP_STORE_CONNECT_* 환경변수)로 배포 인증서 + com.blockfall.game 용
