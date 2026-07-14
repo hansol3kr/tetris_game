@@ -110,7 +110,7 @@ public partial class NetVersusController : Node2D
 
     private void LayoutBoards()
     {
-        var vp = GetViewport().GetVisibleRect().Size;
+        var vp = Bootstrap.Instance.SafeCanvasSize;   // safe-area rect (clears notch / home bar)
         if (GodotObject.IsInstanceValid(_uiHost)) { _uiHost.Position = Vector2.Zero; _uiHost.Size = vp; }
         float top = vp.Y * 0.16f;
         float h = vp.Y * 0.70f;

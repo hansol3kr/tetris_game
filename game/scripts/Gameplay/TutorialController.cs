@@ -78,7 +78,7 @@ public partial class TutorialController : Node2D
 
     private void LayoutBoard()
     {
-        var vp = GetViewport().GetVisibleRect().Size;
+        var vp = Bootstrap.Instance.SafeCanvasSize;   // safe-area rect (clears notch / home bar)
         if (GodotObject.IsInstanceValid(_root)) { _root.Position = Vector2.Zero; _root.Size = vp; }
         _view.Layout(new Vector2(vp.X * 0.60f, vp.Y * 0.62f), new Vector2(vp.X * 0.20f, vp.Y * 0.26f));
     }

@@ -76,6 +76,9 @@ public partial class Bootstrap : Node2D
         AddChild(ScreenHost);
         FitScreenHost();
         GetViewport().SizeChanged += FitScreenHost;
+        // iOS reports the display safe area a frame or two after launch, so re-fit
+        // once it's populated — otherwise the first menu lays out under the notch.
+        GetTree().CreateTimer(0.3).Timeout += () => { if (GodotObject.IsInstanceValid(this)) FitScreenHost(); };
 
         Platform = new PlatformHub { Name = "PlatformHub" };
         AddChild(Platform);
@@ -172,11 +175,29 @@ public partial class Bootstrap : Node2D
     }
 
     /// <summary>Keep the screen host exactly covering the viewport (initial + on resize).</summary>
+    /// <summary>Safe-area canvas size (the ScreenHost rect) for controllers that
+    /// otherwise lay out from the raw viewport. Falls back to the full viewport.</summary>
+    public Vector2 SafeCanvasSize
+    {
+        get
+        {
+            if (GodotObject.IsInstanceValid(ScreenHost) && ScreenHost.Size.X >= 1 && ScreenHost.Size.Y >= 1)
+                return ScreenHost.Size;
+            return GetViewport().GetVisibleRect().Size;
+        }
+    }
+
     private void FitScreenHost()
     {
         if (!GodotObject.IsInstanceValid(ScreenHost)) return;
-        ScreenHost.Position = Vector2.Zero;
-        ScreenHost.Size = GetViewport().GetVisibleRect().Size;
+        // Inset the whole UI host by the device safe area so menus, HUD and touch
+        // controls clear the notch / camera cutout and home indicator. Node2D game
+        // controllers parented under ScreenHost inherit this offset, and read
+        // SafeCanvasSize for their extent — so nothing is double-inset or clipped.
+        var vp = GetViewport().GetVisibleRect().Size;
+        var (l, t, r, b) = Gameplay.SafeArea.Insets(GetViewport());
+        ScreenHost.Position = new Vector2(l, t);
+        ScreenHost.Size = new Vector2(Mathf.Max(1f, vp.X - l - r), Mathf.Max(1f, vp.Y - t - b));
     }
 
     public override void _Notification(int what)

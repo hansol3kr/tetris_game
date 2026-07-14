@@ -45,7 +45,7 @@ public partial class ReplayViewer : Node2D
 
     private void LayoutBoard()
     {
-        var vp = GetViewport().GetVisibleRect().Size;
+        var vp = Bootstrap.Instance.SafeCanvasSize;   // safe-area rect (clears notch / home bar)
         if (GodotObject.IsInstanceValid(_root)) { _root.Position = Vector2.Zero; _root.Size = vp; }
         _view.Layout(new Vector2(vp.X * 0.62f, vp.Y * 0.78f), new Vector2(vp.X * 0.19f, vp.Y * 0.10f));
     }

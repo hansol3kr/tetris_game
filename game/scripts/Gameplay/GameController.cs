@@ -129,7 +129,7 @@ public partial class GameController : Node2D
 
     private void LayoutBoard()
     {
-        var vp = GetViewport().GetVisibleRect().Size;
+        var vp = Bootstrap.Instance.SafeCanvasSize;   // safe-area rect (clears notch / home bar)
         if (GodotObject.IsInstanceValid(_uiHost)) { _uiHost.Position = Vector2.Zero; _uiHost.Size = vp; }
         // Phone portrait: near-full-width board (HUD moves to a top strip).
         // Desktop / landscape: roomy side columns for the HUD.
