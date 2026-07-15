@@ -94,7 +94,10 @@ public partial class GameController : Node2D
         _uiHost = new Control { Name = "UiHost", MouseFilter = Control.MouseFilterEnum.Ignore };
         AddChild(_uiHost);
         _uiHost.Position = Vector2.Zero;
-        _uiHost.Size = GetViewport().GetVisibleRect().Size;
+        // Safe-canvas size from the start: LayoutBoard()'s first call happens before this
+        // host exists (its IsInstanceValid guard skips it), so a raw-viewport size would
+        // survive on a fixed-orientation phone and clip the bottom buttons.
+        _uiHost.Size = Bootstrap.Instance.SafeCanvasSize;
 
         _hud = new Hud();
         _hud.Bind(_game);
@@ -129,13 +132,12 @@ public partial class GameController : Node2D
 
     private void LayoutBoard()
     {
-        // Node2D controllers do NOT inherit the safe-inset ScreenHost's offset, so
-        // apply the device safe area here directly — position AND size — otherwise
-        // the HUD hits the notch and the touch buttons get clipped at screen edges.
-        var full = GetViewport().GetVisibleRect().Size;
-        var (l, t, r, b) = SafeArea.Insets(GetViewport());
-        var origin = new Vector2(l, t);
-        var vp = new Vector2(full.X - l - r, full.Y - t - b);
+        // This Node2D is a CHILD of the safe-inset ScreenHost and inherits its offset
+        // (a Node2D under a positioned Control inherits the parent transform — verified
+        // headless), so lay out from a ZERO origin at the safe-canvas size. Re-adding the
+        // inset here double-insets and shoves the bottom row past the home indicator.
+        var origin = Vector2.Zero;
+        var vp = Bootstrap.Instance.SafeCanvasSize;
         if (GodotObject.IsInstanceValid(_uiHost)) { _uiHost.Position = origin; _uiHost.Size = vp; }
         var m = BoardView.MobilePortraitArea(vp);
         if (m is { } ma) _view.Layout(ma.area, origin + ma.offset);
@@ -560,8 +562,9 @@ public partial class GameController : Node2D
 
     private GestureBoardControls BuildGestureControls()
     {
-        var g = new GestureBoardControls(_view, _sampler,
+        var sink = new SamplerGestureSink(_sampler,
             () => !_finished && _game.Status == GameStatus.Running);
+        var g = new GestureBoardControls(_view, sink);
         g.PauseRequested += TogglePause;
         return g;
     }

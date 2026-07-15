@@ -92,6 +92,7 @@ public partial class MainMenu : Control
         col.AddChild(Spacer(6));
         BuildCustomRun(col);
         col.AddChild(BuildBottomButtons());
+        col.AddChild(Spacer(40)); // reserve room for the floating footer so it can't overlap the bottom pills
 
         BuildFooter();
 

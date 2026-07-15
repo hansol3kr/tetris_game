@@ -33,14 +33,14 @@ public partial class GestureBoardControls : Control
     private const int MouseId = -2;                // synthetic finger id for desktop mouse
 
     private readonly BoardView _view;
-    private readonly ButtonSampler _sampler;
-    // True only while the run is actually playable (not paused / over / finished). Gestures
-    // and aux taps are ignored otherwise, so nothing latches to fire on a later resume/revive.
-    private readonly Func<bool> _canPlay;
+    // Where recognised actions go: the solo game's deterministic ButtonSampler, or CPU
+    // versus's live Game. The sink also answers "is the run playable right now?" — gestures
+    // and aux taps are ignored otherwise, so nothing fires on a later resume/revive.
+    private readonly IGestureSink _sink;
 
     public event Action? PauseRequested;
 
-    private bool CanPlay => _canPlay();
+    private bool CanPlay => _sink.CanPlay;
 
     // Active primary gesture (one finger; extra fingers are ignored by the board surface).
     private int _touchId = -1;
@@ -52,11 +52,10 @@ public partial class GestureBoardControls : Control
 
     private Label? _hint;
 
-    public GestureBoardControls(BoardView view, ButtonSampler sampler, Func<bool> canPlay)
+    public GestureBoardControls(BoardView view, IGestureSink sink)
     {
         _view = view;
-        _sampler = sampler;
-        _canPlay = canPlay;
+        _sink = sink;
     }
 
     public override void _Ready()
@@ -121,8 +120,8 @@ public partial class GestureBoardControls : Control
         // Horizontal: turn accumulated px into whole-cell steps (the sampler drains them
         // one crisp tap at a time — see DragStepper).
         _accumX += rel.X;
-        while (_accumX >= cell) { _sampler.QueueDragMove(1); _accumX -= cell; }
-        while (_accumX <= -cell) { _sampler.QueueDragMove(-1); _accumX += cell; }
+        while (_accumX >= cell) { _sink.StepHorizontal(1); _accumX -= cell; }
+        while (_accumX <= -cell) { _sink.StepHorizontal(-1); _accumX += cell; }
 
         // Vertical soft drop: only when the drag is genuinely downward-dominant, so a
         // sideways slide (which may dip a little) never soft-drops by accident.
@@ -145,7 +144,7 @@ public partial class GestureBoardControls : Control
         // A quick, near-stationary touch is a tap → rotate CW (never places).
         if (_travel < cell * TapMaxTravelCells && dur < TapMaxMs)
         {
-            _sampler.LatchRotateCw();
+            _sink.RotateCw();
             return;
         }
 
@@ -154,21 +153,21 @@ public partial class GestureBoardControls : Control
         float vy = disp.Y / dur * 1000f; // px/s, signed (+ down)
         if (verticalDominant && disp.Y < -cell * FlickMinCells && -vy > cell * FlickSpeedPerCell)
         {
-            _sampler.LatchHold();
+            _sink.Hold();
             return;
         }
 
         // Otherwise you dragged the piece to line it up — lifting your finger PLACES
         // it: hard-drop into the chosen column, puzzle-style. This is the "drag to
         // fit, lift to drop" control the player asked for (#6, Tier A).
-        _sampler.LatchHardDrop();
+        _sink.HardDrop();
     }
 
     private void SetSoft(bool on)
     {
         if (_soft == on) return;
         _soft = on;
-        _sampler.SetTouchSoft(on);
+        _sink.SetSoftDrop(on);
     }
 
     /// <summary>
@@ -189,8 +188,8 @@ public partial class GestureBoardControls : Control
     private void BuildAuxCluster()
     {
         // Gated on CanPlay so a tap over the pause/revive overlay can't queue an action.
-        var ccw = MakeGlassButton("↺", 76, () => { if (CanPlay) _sampler.LatchRotateCcw(); });
-        var hold = MakeGlassButton("HOLD", 88, () => { if (CanPlay) _sampler.LatchHold(); });
+        var ccw = MakeGlassButton("↺", 76, () => { if (CanPlay) _sink.RotateCcw(); });
+        var hold = MakeGlassButton("HOLD", 88, () => { if (CanPlay) _sink.Hold(); });
         var pause = MakeGlassButton("II", 60, () => { if (CanPlay) PauseRequested?.Invoke(); });
 
         Place(ccw, LayoutPreset.BottomRight, new Vector2(-210, -116));

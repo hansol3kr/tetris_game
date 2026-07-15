@@ -52,7 +52,13 @@ public partial class JuiceLayer : Node2D
     private float _beamAge = 1f;
     private float _beamY, _beamH;
     private Color _beamColor;
+    private float _beamPeak = 0.6f;   // per-clear peak alpha (crown 0.6, mid-tier 0.4)
     private float _sinceBeam = 10f;
+
+    // Shockwave rings: an expanding outline punched out from the cleared rows — the
+    // layered "boom" that sells a Tetris. Cosmetic; own RNG; gated by intensity + motion.
+    private struct Shock { public Vector2 Center; public float Age, Life, MaxRadius, Width; public Color Color; }
+    private readonly List<Shock> _shocks = new();
 
     public void Configure(BoardView board, float intensity)
     {
@@ -91,6 +97,15 @@ public partial class JuiceLayer : Node2D
         // --- Beam ---
         if (_beamAge < 1f) _beamAge = Mathf.Min(1f, _beamAge + dt / 0.2f);
 
+        // --- Shockwave rings ---
+        for (int i = _shocks.Count - 1; i >= 0; i--)
+        {
+            var s = _shocks[i];
+            s.Age += dt;
+            if (s.Age >= s.Life) { _shocks.RemoveAt(i); continue; }
+            _shocks[i] = s;
+        }
+
         // --- Screen shake ---
         if (_trauma > 0f)
         {
@@ -104,7 +119,7 @@ public partial class JuiceLayer : Node2D
             _board.Position = _boardBasePos;
         }
 
-        if (_sparks.Count > 0 || _popups.Count > 0 || _beamAge < 1f)
+        if (_sparks.Count > 0 || _popups.Count > 0 || _beamAge < 1f || _shocks.Count > 0)
             QueueRedraw();
     }
 
@@ -113,10 +128,22 @@ public partial class JuiceLayer : Node2D
         // Beam under everything else.
         if (_beamAge < 1f)
         {
-            float a = (1f - _beamAge) * 0.6f;
+            float a = (1f - _beamAge) * _beamPeak;
             float w = _board.CellSize * _board.Columns;
             DrawRect(new Rect2(new Vector2(_board.BoardOrigin.X, _beamY), new Vector2(w, _beamH)),
                      new Color(_beamColor.R, _beamColor.G, _beamColor.B, a), filled: true);
+        }
+
+        // Shockwave rings over the beam, under the sparks.
+        foreach (var s in _shocks)
+        {
+            float t = s.Age / s.Life;
+            float ease = 1f - (1f - t) * (1f - t);   // out-quad: quick punch, then eases wide
+            float radius = Mathf.Max(1f, ease * s.MaxRadius);
+            float alpha = (1f - t) * s.Color.A;
+            DrawArc(s.Center, radius, 0f, Mathf.Tau, 56,
+                    new Color(s.Color.R, s.Color.G, s.Color.B, alpha),
+                    Mathf.Max(1f, s.Width * (1f - 0.5f * t)), antialiased: true);
         }
 
         foreach (var s in _sparks)
@@ -170,15 +197,28 @@ public partial class JuiceLayer : Node2D
     public void OnLineClear(IReadOnlyList<int> rows, ClearResult r, PieceType pieceType)
     {
         AddTrauma(TraumaFor(r));
-        if (_intensity > 0f) SpawnClearSparks(rows, r);
+        if (_intensity > 0f)
+        {
+            SpawnClearSparks(rows, r);
+            if (!Motion.Reduced)
+            {
+                SpawnShock(rows, r);    // expanding ring — the boom
+                SpawnShards(rows, r);   // chunky debris explodes outward (crown clears only)
+            }
+        }
         SpawnClearPopup(rows, r, pieceType);
         Haptic(r.LinesCleared >= 4 || r.PerfectClear ? 40 : 20);
 
-        // Crown moments get the beam + an ambient background pulse.
-        if ((r.LinesCleared >= 4 || r.PerfectClear) && !Motion.Reduced && _intensity > 0f && _sinceBeam >= 0.5f)
+        // Beam flash: crown clears (Tetris / perfect) get the full 60% beam; triples and
+        // spins get a dimmer one. Still photosensitivity-budgeted — at most one per ~0.4s,
+        // and the whole thing is gated off under reduced motion.
+        bool crown = r.LinesCleared >= 4 || r.PerfectClear;
+        bool midBeam = r.LinesCleared == 3 || r.Spin != SpinType.None;
+        if ((crown || midBeam) && !Motion.Reduced && _intensity > 0f && _sinceBeam >= 0.4f)
         {
             _sinceBeam = 0f;
             _beamAge = 0f;
+            _beamPeak = crown ? 0.6f : 0.4f;
             float minY = float.MaxValue, maxY = float.MinValue;
             foreach (int row in rows)
             {
@@ -187,10 +227,78 @@ public partial class JuiceLayer : Node2D
                 maxY = Mathf.Max(maxY, y + _board.CellSize);
             }
             _beamY = minY; _beamH = Mathf.Max(_board.CellSize, maxY - minY);
-            _beamColor = r.PerfectClear ? Palette.AccentGold : Palette.ForPiece(PieceType.I);
+            _beamColor = r.PerfectClear ? Palette.AccentGold
+                       : r.Spin != SpinType.None ? Palette.ForPiece(PieceType.T)
+                       : Palette.ForPiece(PieceType.I);
         }
-        if (r.PerfectClear)
-            Bootstrap.Instance.Bg.Pulse(Palette.AccentGold, 0.6f);
+
+        if (r.PerfectClear) Bootstrap.Instance.Bg.Pulse(Palette.AccentGold, 0.6f);
+        else if (crown) Bootstrap.Instance.Bg.Pulse(Palette.ForPiece(PieceType.I), 0.4f); // a Tetris pulses the room too
+    }
+
+    /// <summary>An expanding ring punched from the cleared rows — the layered boom. Crown
+    /// clears throw a second, brighter inner ring. Radius scales with clear size + intensity.</summary>
+    private void SpawnShock(IReadOnlyList<int> rows, ClearResult r)
+    {
+        if (rows.Count == 0) return;
+        float cell = _board.CellSize;
+        float w = cell * _board.Columns;
+        float sum = 0f;
+        foreach (int row in rows) sum += _board.VisibleRowY(row) + cell * 0.5f;
+        var center = new Vector2(_board.BoardOrigin.X + w / 2f, sum / rows.Count);
+
+        float power = r.PerfectClear ? 1.5f : r.LinesCleared switch { >= 4 => 1.3f, 3 => 1.0f, 2 => 0.8f, _ => 0.55f };
+        if (r.Spin != SpinType.None) power += 0.3f;
+
+        var col = PopupColor(r);
+        _shocks.Add(new Shock
+        {
+            Center = center,
+            Life = 0.45f,
+            MaxRadius = (w * (0.5f + 0.4f * power) + cell) * _intensity,
+            Width = Mathf.Max(2f, cell * 0.16f * power),
+            Color = new Color(col.R, col.G, col.B, 0.9f),
+        });
+        if (r.LinesCleared >= 4 || r.PerfectClear)   // a fast white inner ring layers the boom
+            _shocks.Add(new Shock
+            {
+                Center = center,
+                Life = 0.3f,
+                MaxRadius = (w * 0.5f + cell) * _intensity,
+                Width = Mathf.Max(2f, cell * 0.1f),
+                Color = new Color(1f, 1f, 1f, 0.85f),
+            });
+    }
+
+    /// <summary>Big chunky debris that explodes OUTWARD from the clear — reserved for the
+    /// crown moments (Tetris / perfect / spin) so a single never feels like a quad.</summary>
+    private void SpawnShards(IReadOnlyList<int> rows, ClearResult r)
+    {
+        if (rows.Count == 0) return;
+        if (!(r.LinesCleared >= 4 || r.PerfectClear || r.Spin != SpinType.None)) return;
+
+        float cell = _board.CellSize;
+        float w = cell * _board.Columns;
+        float cx = _board.BoardOrigin.X + w / 2f;
+        float sum = 0f;
+        foreach (int row in rows) sum += _board.VisibleRowY(row) + cell * 0.5f;
+        float cy = sum / rows.Count;
+
+        var color = SparkColor(r);
+        int n = r.PerfectClear ? 28 : 22;
+        for (int k = 0; k < n; k++)
+        {
+            float ang = _rng.RandfRange(0f, Mathf.Tau);
+            float spd = _rng.RandfRange(300f, 620f) * _intensity;
+            _sparks.Add(new Spark
+            {
+                Pos = new Vector2(cx + _rng.RandfRange(-w * 0.42f, w * 0.42f), cy + _rng.RandfRange(-cell, cell)),
+                Vel = new Vector2(Mathf.Cos(ang), Mathf.Sin(ang) * 0.7f - 0.55f) * spd,  // outward + upward bias
+                Life = _rng.RandfRange(0.5f, 0.95f),
+                Size = _rng.RandfRange(cell * 0.28f, cell * 0.5f),   // chunky shards, bigger than sparks
+                Color = color,
+            });
+        }
     }
 
     /// <summary>A landed hard drop: a short, snappy shake scaled by fall distance.</summary>

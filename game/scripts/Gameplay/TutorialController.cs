@@ -78,10 +78,11 @@ public partial class TutorialController : Node2D
 
     private void LayoutBoard()
     {
-        var full = GetViewport().GetVisibleRect().Size;
-        var (l, t, r, b) = SafeArea.Insets(GetViewport());
-        var origin = new Vector2(l, t);
-        var vp = new Vector2(full.X - l - r, full.Y - t - b);
+        // Child of the safe-inset ScreenHost → inherits its offset (verified headless),
+        // so lay out from a ZERO origin at the safe-canvas size. Re-adding the inset here
+        // double-insets and pushes content past the safe area.
+        var origin = Vector2.Zero;
+        var vp = Bootstrap.Instance.SafeCanvasSize;
         if (GodotObject.IsInstanceValid(_root)) { _root.Position = origin; _root.Size = vp; }
         _view.Layout(new Vector2(vp.X * 0.60f, vp.Y * 0.62f), origin + new Vector2(vp.X * 0.20f, vp.Y * 0.26f));
     }
@@ -277,7 +278,7 @@ public partial class TutorialController : Node2D
         var root = new Control { MouseFilter = Control.MouseFilterEnum.Ignore };
         UiTheme.ApplyTo(root);
         root.Position = Vector2.Zero;
-        root.Size = GetViewport().GetVisibleRect().Size;
+        root.Size = Bootstrap.Instance.SafeCanvasSize;   // safe from the start (see GameController)
         _root = root;
         AddChild(root);
 

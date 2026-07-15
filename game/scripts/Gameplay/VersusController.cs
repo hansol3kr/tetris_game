@@ -32,6 +32,7 @@ public partial class VersusController : Node2D
     private ColorRect _playerMeter = null!, _botMeter = null!;
     private Control _overlay = null!;
     private Button _pauseBtn = null!;
+    private bool _showCornerPause = true;   // false when gesture mode supplies its own pause
     private bool _paused;
     private bool _resolved;
 
@@ -65,7 +66,7 @@ public partial class VersusController : Node2D
         _uiHost = new Control { Name = "UiHost", MouseFilter = Control.MouseFilterEnum.Ignore };
         AddChild(_uiHost);
         _uiHost.Position = Vector2.Zero;
-        _uiHost.Size = GetViewport().GetVisibleRect().Size;
+        _uiHost.Size = Bootstrap.Instance.SafeCanvasSize;   // safe from the start (see GameController)
 
         BuildHud();
         BuildOverlay();
@@ -75,8 +76,25 @@ public partial class VersusController : Node2D
         LayoutBoards();
         GetViewport().SizeChanged += LayoutBoards;
 
+        // Touch: drag-to-fit gestures by default (grab the piece, drag it to the column,
+        // lift to drop) — same control as the solo game — with the classic d-pad as the
+        // settings opt-out. The player board drives its live Game directly, exactly like
+        // the d-pad already does. Gesture mode carries its own bottom-left pause button, so
+        // the corner pause button is only needed for the d-pad and for desktop.
         if (TouchControls.ShouldShow())
-            _uiHost.AddChild(BuildTouchControls());
+        {
+            if (Bootstrap.Instance.Save.Settings.GestureControls)
+            {
+                var sink = new GameGestureSink(_match.PlayerGame, _input,
+                    () => !_paused && !_match.IsOver && !_resolved);
+                var gestures = new GestureBoardControls(_playerView, sink);
+                gestures.PauseRequested += TogglePause;
+                _uiHost.AddChild(gestures);
+                _showCornerPause = false;
+                _pauseBtn.Visible = false;
+            }
+            else _uiHost.AddChild(BuildTouchControls());
+        }
 
         _match.Start();
         Bootstrap.Instance.Audio.PlayMusic("game");
@@ -89,10 +107,11 @@ public partial class VersusController : Node2D
     // ---- Layout -----------------------------------------------------------
     private void LayoutBoards()
     {
-        var full = GetViewport().GetVisibleRect().Size;
-        var (l, t, r, b) = SafeArea.Insets(GetViewport());
-        var origin = new Vector2(l, t);
-        var vp = new Vector2(full.X - l - r, full.Y - t - b);
+        // Child of the safe-inset ScreenHost → inherits its offset (verified headless),
+        // so lay out from a ZERO origin at the safe-canvas size. Re-adding the inset here
+        // double-insets and clips the bottom touch buttons past the home indicator.
+        var origin = Vector2.Zero;
+        var vp = Bootstrap.Instance.SafeCanvasSize;
         if (GodotObject.IsInstanceValid(_uiHost)) { _uiHost.Position = origin; _uiHost.Size = vp; }
         float top = vp.Y * 0.16f;
         float h = vp.Y * 0.70f;
@@ -285,7 +304,7 @@ public partial class VersusController : Node2D
             _match.PlayerGame.Resume();
             _match.BotGame.Resume();
             _overlay.Visible = false;
-            _pauseBtn.Visible = true;
+            _pauseBtn.Visible = _showCornerPause;
         }
     }
 

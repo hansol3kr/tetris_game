@@ -40,6 +40,7 @@ public partial class NetVersusController : Node2D
     private ColorRect _incomingMeter = null!;
     private Control _overlay = null!;
     private Label _overlayStatus = null!;
+    private Button _forfeitBtn = null!;
 
     private int _rivalLines, _rivalSent;
     private bool _over;
@@ -83,10 +84,11 @@ public partial class NetVersusController : Node2D
         _uiHost = new Control { Name = "UiHost", MouseFilter = Control.MouseFilterEnum.Ignore };
         AddChild(_uiHost);
         _uiHost.Position = Vector2.Zero;
-        _uiHost.Size = GetViewport().GetVisibleRect().Size;
+        _uiHost.Size = Bootstrap.Instance.SafeCanvasSize;   // safe from the start (see GameController)
 
         BuildHud();
         BuildOverlay();
+        BuildForfeitButton();
         WireGameEvents();
         WireNetEvents();
 
@@ -110,10 +112,11 @@ public partial class NetVersusController : Node2D
 
     private void LayoutBoards()
     {
-        var full = GetViewport().GetVisibleRect().Size;
-        var (l, t, r, b) = SafeArea.Insets(GetViewport());
-        var origin = new Vector2(l, t);
-        var vp = new Vector2(full.X - l - r, full.Y - t - b);
+        // Child of the safe-inset ScreenHost → inherits its offset (verified headless),
+        // so lay out from a ZERO origin at the safe-canvas size. Re-adding the inset here
+        // double-insets and clips the bottom touch buttons past the home indicator.
+        var origin = Vector2.Zero;
+        var vp = Bootstrap.Instance.SafeCanvasSize;
         if (GodotObject.IsInstanceValid(_uiHost)) { _uiHost.Position = origin; _uiHost.Size = vp; }
         float top = vp.Y * 0.16f;
         float h = vp.Y * 0.70f;
@@ -258,6 +261,9 @@ public partial class NetVersusController : Node2D
         _youTag.Text = Loc.T("YOU   {0}L · SENT {1}", _game.Scoring.LinesCleared, _game.TotalGarbageSent);
         _rivalTag.Text = Loc.T("{0}   {1}L · SENT {2}", _rivalName, _rivalLines, _rivalSent);
         UpdateMeter();
+        // The forfeit button owns the exit while playing; any overlay (forfeit dialog or
+        // match result) has its own buttons, so hide it whenever an overlay is up.
+        if (GodotObject.IsInstanceValid(_forfeitBtn)) _forfeitBtn.Visible = !_overlay.Visible;
     }
 
     public override void _UnhandledInput(InputEvent @event)
@@ -406,6 +412,39 @@ public partial class NetVersusController : Node2D
         Motion.BindButtonFeel(b);
         b.Pressed += () => onPressed();
         return b;
+    }
+
+    // A visible forfeit/exit affordance. Online has NO pause (the rival keeps playing), and
+    // leaving was only reachable via the "pause_game" key — so on touch there was no way out
+    // of a live match. Mirrors the CPU-versus corner button (red-tinted for "leave"); tapping
+    // it opens the FORFEIT / KEEP PLAYING dialog. Hidden by _Process whenever an overlay is up.
+    private void BuildForfeitButton()
+    {
+        _forfeitBtn = new Button
+        {
+            Text = "✕",
+            CustomMinimumSize = new Vector2(56, 56),
+            Modulate = new Color(1, 1, 1, 0.85f),
+            FocusMode = Control.FocusModeEnum.None,
+            TooltipText = Loc.T("FORFEIT"),
+        };
+        _forfeitBtn.AddThemeStyleboxOverride("normal", new StyleBoxTexture {
+            Texture = TextureFactory.Circle(96, new Color(0.72f, 0.76f, 1f, 0.06f), new Color(1, 1, 1, 0.14f), 1.5f) });
+        _forfeitBtn.AddThemeStyleboxOverride("hover", new StyleBoxTexture {
+            Texture = TextureFactory.Circle(96, new Color(Palette.AccentRed.R, Palette.AccentRed.G, Palette.AccentRed.B, 0.12f),
+                                                new Color(Palette.AccentRed.R, Palette.AccentRed.G, Palette.AccentRed.B, 0.5f), 1.5f) });
+        _forfeitBtn.AddThemeStyleboxOverride("pressed", new StyleBoxTexture {
+            Texture = TextureFactory.Circle(96, new Color(Palette.AccentRed.R, Palette.AccentRed.G, Palette.AccentRed.B, 0.3f),
+                                                new Color(Palette.AccentRed.R, Palette.AccentRed.G, Palette.AccentRed.B, 0.9f), 2f) });
+        _forfeitBtn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+        _forfeitBtn.AddThemeFontOverride("font", Fonts.UiBold);
+        _forfeitBtn.AddThemeFontSizeOverride("font_size", 22);
+        _forfeitBtn.AddThemeColorOverride("font_color", Palette.TextPrimary);
+        Motion.BindButtonFeel(_forfeitBtn);
+        _forfeitBtn.Pressed += () => { if (!_over) ConfirmForfeit(); };
+        _forfeitBtn.SetAnchorsPreset(Control.LayoutPreset.TopRight);
+        _forfeitBtn.Position = new Vector2(-72, 16);
+        _uiHost.AddChild(_forfeitBtn);
     }
 
     private TouchControls BuildTouchControls()

@@ -97,7 +97,8 @@ server/ Node.js 매치메이킹/릴레이 (ws, 바이너리 릴레이, /health)
 ```
 - **core → view는 이벤트(push) + 읽기 전용 상태(pull), view → core는 커맨드 메서드만.** 뷰(`BoardView`, `Hud`)는 절대 게임 상태를 변형하지 않는다.
 - **결정론 계약**: 고정 60Hz 틱(`Sim.TickHz`) + `XorShiftRandom` + per-tick `Buttons` 비트마스크. 같은 시드 + 같은 버튼 스트림 = **비트 단위 동일 결과**. 리플레이·데일리 챌린지·고스트 레이스·랭크 안티치트(재시뮬 검증)가 전부 이 계약 위에 서 있다.
-- **입력 수렴**: 키보드/게임패드/터치/제스처는 전부 `ButtonSampler` → `Buttons` 마스크로 수렴한다. UI에서 `Game` 메서드를 직접 호출하면 리플레이 재현성이 깨진다 (예외: 구형 경로를 쓰는 `VersusController`/`NetVersusController`).
+- **입력 수렴**: 키보드/게임패드/터치/제스처는 전부 `ButtonSampler` → `Buttons` 마스크로 수렴한다. UI에서 `Game` 메서드를 직접 호출하면 리플레이 재현성이 깨진다 (예외: 구형 경로를 쓰는 `VersusController`/`NetVersusController` — 대전은 라이브라 `Game`을 직접 구동).
+- **터치 조작**: 기본은 드래그로 조각을 끼워넣는 `GestureBoardControls`(붙잡아 드래그=열 이동, 손 떼면 하드드롭, 탭=회전, 위 플릭=홀드, 아래 드래그=소프트드롭), 설정 "DRAG CONTROLS (TOUCH)"로 클래식 d-pad(`TouchControls`) 옵트아웃. 제스처 인식기는 하나이고 출력만 `IGestureSink`로 분기한다 — 솔로는 `SamplerGestureSink`(결정론적 리플레이), CPU 대전은 `GameGestureSink`(라이브 `Game` 직접). 새 모드에 터치를 붙일 땐 이 싱크 패턴을 재사용할 것.
 - **플랫폼 분기는 런타임 feature 태그**: `OS.HasFeature("mobile")` → MobilePlatform, `"steam"` → SteamPlatform, 그 외 NullPlatform. 컴파일 심볼 분기 금지. 백엔드 부재 시 경고 후 no-op(우아한 강등).
 - 상세 설계: `docs/ARCHITECTURE.md` (이벤트 계약 표, 모드/피스 추가 레시피 포함).
 - v1~v1.6 개발 연대기는 git에 없다(2026-07-13 초기화) — 메모리 문서가 유일한 기록.
@@ -149,6 +150,11 @@ cd server && npm test           # 매치메이커 통합 테스트
 - 전역 서비스 접근점은 `Bootstrap.Instance` (Save/Audio/Platform/Router/Bg).
 - 화면 = `Control` 서브클래스 + C# 이벤트로 의도 노출(`BackRequested`, `ModeChosen`) → `SceneRouter.GoTo*`가 new + 배선 + 크로스페이드 Swap (`_busy` 재진입 가드).
 - 루트 Control 필수 2단계: `UiTheme.ApplyTo(this)` → `SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect)`.
+- **안전영역(노치/홈인디케이터)은 `ScreenHost` 한 곳에서만 인셋한다** (`Bootstrap.FitScreenHost` → position=(l,t), size=safe-inner). 모든 화면/컨트롤러는 `ScreenHost` 자식이다(SceneRouter). 따라서:
+  - Control 화면은 `FullRect`로 `ScreenHost`를 채우면 **자동으로 안전영역 안**에 들어간다 — `SafeArea.Insets`를 다시 부르지 말 것.
+  - Node2D 컨트롤러(`GameController`/`Versus`/`Net`/`Tutorial`/`ReplayViewer`/`BlockFit`)는 부모 Control의 오프셋을 **상속한다**(헤드리스로 검증). 그러므로 자기 `_uiHost`는 `Position=Vector2.Zero`, `Size=Bootstrap.Instance.SafeCanvasSize`로 둔다. `SafeArea.Insets`로 `(l,t)`를 **재적용하면 이중 인셋**이 되어 하단 버튼이 홈인디케이터로 짤린다(2026-07 실제 발생·수정). 기준 구현은 `BlockFitController`.
+  - `_uiHost` 초기 `Size`도 raw viewport가 아니라 `SafeCanvasSize`로 — 컨트롤러에 따라 첫 `LayoutBoard()`가 `_uiHost` 생성보다 먼저 돌아 사이징이 스킵될 수 있다.
+  - 긴 세로 목록은 `ScrollContainer`(FullRect)로 감싸 하단 버튼이 밀려나지 않게. 떠 있는(BottomWide) 요소는 스크롤 col 하단에 여백을 남겨 겹치지 않게.
 - 스타일은 ThemeTypeVariation 문자열: Button `PrimaryButton/GhostButton/ChipButton/CardButton`, Label `TitleLabel/HeadlineLabel/StatValueLabel/SectionLabel/DimLabel`, PanelContainer `Card`.
 - 모든 애니메이션은 `Motion.Reduced` 게이트, 모든 텍스트는 `Loc.T()`.
 
