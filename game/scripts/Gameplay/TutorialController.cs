@@ -78,9 +78,12 @@ public partial class TutorialController : Node2D
 
     private void LayoutBoard()
     {
-        var vp = Bootstrap.Instance.SafeCanvasSize;   // safe-area rect (clears notch / home bar)
-        if (GodotObject.IsInstanceValid(_root)) { _root.Position = Vector2.Zero; _root.Size = vp; }
-        _view.Layout(new Vector2(vp.X * 0.60f, vp.Y * 0.62f), new Vector2(vp.X * 0.20f, vp.Y * 0.26f));
+        var full = GetViewport().GetVisibleRect().Size;
+        var (l, t, r, b) = SafeArea.Insets(GetViewport());
+        var origin = new Vector2(l, t);
+        var vp = new Vector2(full.X - l - r, full.Y - t - b);
+        if (GodotObject.IsInstanceValid(_root)) { _root.Position = origin; _root.Size = vp; }
+        _view.Layout(new Vector2(vp.X * 0.60f, vp.Y * 0.62f), origin + new Vector2(vp.X * 0.20f, vp.Y * 0.26f));
     }
 
     private void WireEvents()

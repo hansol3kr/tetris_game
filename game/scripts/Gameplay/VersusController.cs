@@ -31,6 +31,7 @@ public partial class VersusController : Node2D
     private Label _playerScore = null!, _botScore = null!;
     private ColorRect _playerMeter = null!, _botMeter = null!;
     private Control _overlay = null!;
+    private Button _pauseBtn = null!;
     private bool _paused;
     private bool _resolved;
 
@@ -68,6 +69,7 @@ public partial class VersusController : Node2D
 
         BuildHud();
         BuildOverlay();
+        BuildPauseButton();
         WireEvents();
 
         LayoutBoards();
@@ -87,14 +89,17 @@ public partial class VersusController : Node2D
     // ---- Layout -----------------------------------------------------------
     private void LayoutBoards()
     {
-        var vp = Bootstrap.Instance.SafeCanvasSize;   // safe-area rect (clears notch / home bar)
-        if (GodotObject.IsInstanceValid(_uiHost)) { _uiHost.Position = Vector2.Zero; _uiHost.Size = vp; }
+        var full = GetViewport().GetVisibleRect().Size;
+        var (l, t, r, b) = SafeArea.Insets(GetViewport());
+        var origin = new Vector2(l, t);
+        var vp = new Vector2(full.X - l - r, full.Y - t - b);
+        if (GodotObject.IsInstanceValid(_uiHost)) { _uiHost.Position = origin; _uiHost.Size = vp; }
         float top = vp.Y * 0.16f;
         float h = vp.Y * 0.70f;
         float w = vp.X * 0.45f;
 
-        _playerView.Layout(new Vector2(w, h), new Vector2(vp.X * 0.03f, top));
-        _botView.Layout(new Vector2(w, h), new Vector2(vp.X * 0.52f, top));
+        _playerView.Layout(new Vector2(w, h), origin + new Vector2(vp.X * 0.03f, top));
+        _botView.Layout(new Vector2(w, h), origin + new Vector2(vp.X * 0.52f, top));
 
         PositionLabelsAndMeters();
     }
@@ -205,6 +210,7 @@ public partial class VersusController : Node2D
     {
         if (_resolved) return;
         _resolved = true;
+        _pauseBtn.Visible = false;   // the win/lose overlay owns the exit now
         bool playerWon = winner == VersusSide.Player;
         Bootstrap.Instance.Audio.PlaySfx(playerWon ? "win" : "game_over");
         ShowOverlay(playerWon ? Loc.T("YOU WIN!") : Loc.T("DEFEATED"),
@@ -268,6 +274,7 @@ public partial class VersusController : Node2D
         {
             _match.PlayerGame.Pause();
             _match.BotGame.Pause();
+            _pauseBtn.Visible = false;   // the overlay's own RESUME/MENU take over
             // Pause menu: RESUME + MENU only — never REMATCH (that abandons a live match).
             ShowOverlay(Loc.T("PAUSED"), Palette.Accent,
                 (Loc.T("RESUME"), TogglePause),
@@ -278,7 +285,40 @@ public partial class VersusController : Node2D
             _match.PlayerGame.Resume();
             _match.BotGame.Resume();
             _overlay.Visible = false;
+            _pauseBtn.Visible = true;
         }
+    }
+
+    // A visible pause/exit affordance. The PAUSED menu (RESUME / MENU) was only
+    // reachable via the "pause_game" key, so on touch there was no way out of a
+    // live CPU match. Mirrors GameController's glass pause button (top-right,
+    // inside the safe-area host so it clears the notch).
+    private void BuildPauseButton()
+    {
+        _pauseBtn = new Button
+        {
+            Text = "II",
+            CustomMinimumSize = new Vector2(60, 60),
+            Modulate = new Color(1, 1, 1, 0.85f),
+            FocusMode = Control.FocusModeEnum.None,
+            TooltipText = Loc.T("PAUSE"),
+        };
+        _pauseBtn.AddThemeStyleboxOverride("normal", new StyleBoxTexture {
+            Texture = TextureFactory.Circle(96, new Color(0.72f, 0.76f, 1f, 0.06f), new Color(1, 1, 1, 0.14f), 1.5f) });
+        _pauseBtn.AddThemeStyleboxOverride("hover", new StyleBoxTexture {
+            Texture = TextureFactory.Circle(96, new Color(0.72f, 0.76f, 1f, 0.09f), new Color(1, 1, 1, 0.20f), 1.5f) });
+        _pauseBtn.AddThemeStyleboxOverride("pressed", new StyleBoxTexture {
+            Texture = TextureFactory.Circle(96, new Color(Palette.Accent.R, Palette.Accent.G, Palette.Accent.B, 0.28f),
+                                                new Color(Palette.Accent.R, Palette.Accent.G, Palette.Accent.B, 0.9f), 2f) });
+        _pauseBtn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+        _pauseBtn.AddThemeFontOverride("font", Fonts.UiBold);
+        _pauseBtn.AddThemeFontSizeOverride("font_size", 20);
+        _pauseBtn.AddThemeColorOverride("font_color", Palette.TextPrimary);
+        Motion.BindButtonFeel(_pauseBtn);
+        _pauseBtn.Pressed += () => { if (!_resolved) TogglePause(); };
+        _pauseBtn.SetAnchorsPreset(Control.LayoutPreset.TopRight);
+        _pauseBtn.Position = new Vector2(-76, 16);
+        _uiHost.AddChild(_pauseBtn);
     }
 
     private static Button MakeButton(string text, Action onPressed, bool primary)

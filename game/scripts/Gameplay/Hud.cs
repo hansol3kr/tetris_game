@@ -139,7 +139,7 @@ public partial class Hud : Control
     private void BuildStrip()
     {
         var vp = GetViewport().GetVisibleRect().Size;
-        float h = Mathf.Clamp(vp.Y * 0.11f, 96f, 190f);
+        float h = Mathf.Clamp(vp.Y * 0.085f, 66f, 120f);
 
         var bar = new HBoxContainer { MouseFilter = MouseFilterEnum.Ignore };
         bar.SetAnchorsPreset(LayoutPreset.TopWide);
@@ -153,6 +153,7 @@ public partial class Hud : Control
         // clipped on the sides. LEVEL + FINESSE are still created (so _Process never
         // NREs) but parked in a hidden holder off the strip.
         var statsCard = GlassPanel();
+        statsCard.SizeFlagsVertical = SizeFlags.ShrinkCenter;   // hug content, don't stretch to the bar height
         var stats = new HBoxContainer { MouseFilter = MouseFilterEnum.Ignore };
         stats.AddThemeConstantOverride("separation", 10);
         statsCard.AddChild(stats);
@@ -213,6 +214,7 @@ public partial class Hud : Control
     private Control MiniCard(string caption, MiniPieceView[] minis)
     {
         var card = GlassPanel();
+        card.SizeFlagsVertical = SizeFlags.ShrinkCenter;   // hug content, don't stretch to the bar height
         var v = new VBoxContainer { MouseFilter = MouseFilterEnum.Ignore };
         v.AddThemeConstantOverride("separation", 2);
         v.AddChild(Section(caption));

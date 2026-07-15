@@ -129,13 +129,17 @@ public partial class GameController : Node2D
 
     private void LayoutBoard()
     {
-        var vp = Bootstrap.Instance.SafeCanvasSize;   // safe-area rect (clears notch / home bar)
-        if (GodotObject.IsInstanceValid(_uiHost)) { _uiHost.Position = Vector2.Zero; _uiHost.Size = vp; }
-        // Phone portrait: near-full-width board (HUD moves to a top strip).
-        // Desktop / landscape: roomy side columns for the HUD.
+        // Node2D controllers do NOT inherit the safe-inset ScreenHost's offset, so
+        // apply the device safe area here directly — position AND size — otherwise
+        // the HUD hits the notch and the touch buttons get clipped at screen edges.
+        var full = GetViewport().GetVisibleRect().Size;
+        var (l, t, r, b) = SafeArea.Insets(GetViewport());
+        var origin = new Vector2(l, t);
+        var vp = new Vector2(full.X - l - r, full.Y - t - b);
+        if (GodotObject.IsInstanceValid(_uiHost)) { _uiHost.Position = origin; _uiHost.Size = vp; }
         var m = BoardView.MobilePortraitArea(vp);
-        if (m is { } ma) _view.Layout(ma.area, ma.offset);
-        else _view.Layout(new Vector2(vp.X * 0.62f, vp.Y * 0.80f), new Vector2(vp.X * 0.19f, vp.Y * 0.12f));
+        if (m is { } ma) _view.Layout(ma.area, origin + ma.offset);
+        else _view.Layout(new Vector2(vp.X * 0.62f, vp.Y * 0.80f), origin + new Vector2(vp.X * 0.19f, vp.Y * 0.12f));
     }
 
     // Compare your progress to the time-aligned ghost: lines for time-attack modes

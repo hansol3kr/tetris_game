@@ -110,14 +110,17 @@ public partial class NetVersusController : Node2D
 
     private void LayoutBoards()
     {
-        var vp = Bootstrap.Instance.SafeCanvasSize;   // safe-area rect (clears notch / home bar)
-        if (GodotObject.IsInstanceValid(_uiHost)) { _uiHost.Position = Vector2.Zero; _uiHost.Size = vp; }
+        var full = GetViewport().GetVisibleRect().Size;
+        var (l, t, r, b) = SafeArea.Insets(GetViewport());
+        var origin = new Vector2(l, t);
+        var vp = new Vector2(full.X - l - r, full.Y - t - b);
+        if (GodotObject.IsInstanceValid(_uiHost)) { _uiHost.Position = origin; _uiHost.Size = vp; }
         float top = vp.Y * 0.16f;
         float h = vp.Y * 0.70f;
         float w = vp.X * 0.45f;
 
-        _view.Layout(new Vector2(w, h), new Vector2(vp.X * 0.03f, top));
-        _remote.Layout(new Vector2(w, h), new Vector2(vp.X * 0.52f, top));
+        _view.Layout(new Vector2(w, h), origin + new Vector2(vp.X * 0.03f, top));
+        _remote.Layout(new Vector2(w, h), origin + new Vector2(vp.X * 0.52f, top));
 
         _youTag.Position = new Vector2(_view.BoardOrigin.X, _view.BoardOrigin.Y - 44);
         _rivalTag.Position = new Vector2(_remote.BoardOrigin.X, _remote.BoardOrigin.Y - 44);

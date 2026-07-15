@@ -195,7 +195,9 @@ public partial class GestureBoardControls : Control
 
         Place(ccw, LayoutPreset.BottomRight, new Vector2(-210, -116));
         Place(hold, LayoutPreset.BottomRight, new Vector2(-112, -116));
-        Place(pause, LayoutPreset.TopRight, new Vector2(-84, 24));
+        // Pause lives bottom-LEFT: the top-right corner is taken by the NEXT card
+        // (they overlapped and the button clipped the screen edge).
+        Place(pause, LayoutPreset.BottomLeft, new Vector2(24, -116));
     }
 
     private Button MakeGlassButton(string glyph, int size, Action onDown)
