@@ -424,9 +424,10 @@ public partial class MainMenu : Control
         var b = new Button
         {
             ThemeTypeVariation = "GhostButton",
-            CustomMinimumSize = new Vector2(0, 50),
-            // No ExpandFill: the pill hugs the icon + label instead of stretching
-            // to full width (which left the box far bigger than the text).
+            // Uniform width so all five pills are the SAME size (they looked
+            // mismatched when each hugged its own label / stretched to fill).
+            // Sized to fit the longest label ("HOW TO PLAY") snugly.
+            CustomMinimumSize = new Vector2(168, 50),
         };
         var content = CardContent(b, marginH: 0);
         content.Alignment = BoxContainer.AlignmentMode.Center;
