@@ -141,12 +141,15 @@ workflows:
     name: Blockfall Android → Play (internal)
     instance_type: linux_x2
     max_build_duration: 90
-    triggering:
-      events: [tag]
-      tag_patterns:
-        - pattern: 'v*.*.*'
-          include: true
-      cancel_previous_builds: true
+    # iOS 우선 출시: Android 자동 트리거를 꺼둔다 — 태그(v*.*.*) push 시 iOS 워크플로만
+    # 돈다. Android는 키스토어·Play 서비스계정 자격증명(docs/DEPLOYMENT.md §4)이 준비되면
+    # 아래 triggering 블록을 되살리거나, Codemagic에서 "Start new build"로 수동 실행한다.
+    #   triggering:
+    #     events: [tag]
+    #     tag_patterns:
+    #       - pattern: 'v*.*.*'
+    #         include: true
+    #     cancel_previous_builds: true
     environment:
       groups:
         - blockfall_android   # ← Codemagic 환경변수 그룹: 키스토어/비밀번호 (docs/DEPLOYMENT.md §4)

@@ -74,6 +74,19 @@ public sealed class BlockFitGame
     public int LastClearedRows { get; private set; } // for the clear animation / feedback
     public int LastClearedCols { get; private set; }
 
+    /// <summary>0 at the start → 1 once the score saturates. Ramps the deal toward bigger,
+    /// trickier pieces and retires the early-game "always a move" safety net as it climbs.</summary>
+    public double Difficulty => DifficultyFor(Score);
+
+    // Tunable difficulty curve. Below <see cref="SafetyNetBelow"/> the deal guarantees a
+    // placeable piece while the board still has room (so early play never dead-ends); above
+    // it, a crowded board can finally end the run.
+    private const long DifficultyScoreSpan = 1500;   // score at which difficulty saturates to 1
+    private const double SafetyNetBelow = 0.5;       // guarantee a move while difficulty < this
+
+    public static double DifficultyFor(long score) =>
+        Math.Min(1.0, Math.Max(0.0, score / (double)DifficultyScoreSpan));
+
     public BlockFitGame(int seed = 0)
     {
         _rng = seed == 0 ? new Random() : new Random(seed);
@@ -179,14 +192,67 @@ public sealed class BlockFitGame
 
     private void Deal()
     {
-        for (int i = 0; i < Tray.Length; i++) Tray[i] = RandomPiece();
+        double d = Difficulty;
+        for (int i = 0; i < Tray.Length; i++) Tray[i] = WeightedRandomPiece(d);
+
+        // Max solvability early: while the game is still forgiving, never hand a fully dead
+        // set if the board still has an empty cell — swap one slot for a piece that fits.
+        // Past the threshold this net is gone, so a crowded board can finally end the run.
+        if (d < SafetyNetBelow && HasEmptyCell() && !AnyMovePossible())
+        {
+            var fit = FittingPiece();
+            if (fit is not null) Tray[0] = fit;
+        }
+
         if (!AnyMovePossible()) GameOver = true;
     }
 
-    private BlockPiece RandomPiece()
+    /// <summary>Pick a shape weighted by difficulty: easy favours small pieces (easy to
+    /// place), hard favours big, awkward ones. Colour stays uniform.</summary>
+    private BlockPiece WeightedRandomPiece(double d)
     {
-        var shape = BlockShapes.All[_rng.Next(BlockShapes.All.Count)];
+        double total = 0;
+        for (int i = 0; i < BlockShapes.All.Count; i++) total += ShapeWeight(i, d);
+        double roll = _rng.NextDouble() * total;
+        int idx = BlockShapes.All.Count - 1;
+        for (int i = 0; i < BlockShapes.All.Count; i++)
+        {
+            roll -= ShapeWeight(i, d);
+            if (roll <= 0) { idx = i; break; }
+        }
         var color = BlockShapes.Colors[_rng.Next(BlockShapes.Colors.Length)];
-        return new BlockPiece(shape, color);
+        return new BlockPiece(BlockShapes.All[idx], color);
+    }
+
+    // size = cell count (1..9). Easy (d→0): weight ∝ (10 − size), so small pieces are common.
+    // Hard (d→1): weight ∝ size·1.6, so big awkward pieces dominate. Floor keeps every shape
+    // reachable at any difficulty.
+    private static double ShapeWeight(int shapeIndex, double d)
+    {
+        int size = BlockShapes.All[shapeIndex].Count;
+        double w = (1 - d) * (10 - size) + d * (size * 1.6);
+        return w < 0.05 ? 0.05 : w;
+    }
+
+    private bool HasEmptyCell()
+    {
+        for (int i = 0; i < _grid.Length; i++) if (_grid[i] == PieceType.Empty) return true;
+        return false;
+    }
+
+    /// <summary>The first (smallest) shape that fits somewhere on the current board, coloured
+    /// randomly. A single always fits while any cell is empty, so this is null only on a full
+    /// board. Powers the early-game safety net.</summary>
+    private BlockPiece? FittingPiece()
+    {
+        for (int i = 0; i < BlockShapes.All.Count; i++)
+        {
+            var probe = new BlockPiece(BlockShapes.All[i], PieceType.I);
+            for (int r = 0; r < Size; r++)
+                for (int c = 0; c < Size; c++)
+                    if (CanPlace(probe, r, c))
+                        return new BlockPiece(BlockShapes.All[i], BlockShapes.Colors[_rng.Next(BlockShapes.Colors.Length)]);
+        }
+        return null;
     }
 }

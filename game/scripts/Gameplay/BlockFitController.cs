@@ -20,6 +20,7 @@ public partial class BlockFitController : Node2D
 
     private BlockFitGame _game = new();
     private Control _uiHost = null!;
+    private Button _back = null!;
     private Label _score = null!, _best = null!, _combo = null!;
     private Control _overlay = null!;
     private Label _overScore = null!;
@@ -49,14 +50,14 @@ public partial class BlockFitController : Node2D
         _combo.AddThemeColorOverride("font_color", Palette.AccentGold);
         _uiHost.AddChild(_combo);
 
-        // Back button (top-left corner).
-        var back = new Button { Text = "‹", CustomMinimumSize = new Vector2(48, 48), MouseFilter = Control.MouseFilterEnum.Stop };
-        back.AddThemeFontSizeOverride("font_size", 30);
-        back.Pressed += () => QuitRequested?.Invoke();
-        Motion.BindButtonFeel(back);
-        back.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
-        back.Position = new Vector2(6, 6);
-        _uiHost.AddChild(back);
+        // Back button (top-left corner). Sized/positioned in Layout so it lines up with the
+        // score in the header band.
+        _back = new Button { Text = "‹", CustomMinimumSize = new Vector2(52, 52), MouseFilter = Control.MouseFilterEnum.Stop };
+        _back.AddThemeFontSizeOverride("font_size", 32);
+        _back.Pressed += () => QuitRequested?.Invoke();
+        Motion.BindButtonFeel(_back);
+        _back.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
+        _uiHost.AddChild(_back);
 
         BuildGameOverOverlay();
         _best.Text = Loc.T("BEST {0}", (long)(Bootstrap.Instance.Save.BlockFitBest));
@@ -70,8 +71,13 @@ public partial class BlockFitController : Node2D
 
     private Label Header(HorizontalAlignment align)
     {
-        var l = new Label { HorizontalAlignment = align, MouseFilter = Control.MouseFilterEnum.Ignore };
-        l.AddThemeFontSizeOverride("font_size", 22);
+        var l = new Label
+        {
+            HorizontalAlignment = align,
+            VerticalAlignment = VerticalAlignment.Center,   // centre in the header band → lines up with the back button
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        l.AddThemeFontSizeOverride("font_size", 24);
         l.AddThemeColorOverride("font_color", Palette.TextPrimary);
         _uiHost.AddChild(l);
         return l;
@@ -97,9 +103,16 @@ public partial class BlockFitController : Node2D
         for (int i = 0; i < 3; i++)
             _traySlot[i] = new Rect2(i * slotW, trayTop, slotW, trayH);
 
-        // Header label placement.
-        _score.Position = new Vector2(56, headerH * 0.28f); _score.Size = new Vector2(safe.X * 0.5f, headerH);
-        _best.Position = new Vector2(safe.X * 0.5f - 12, headerH * 0.28f); _best.Size = new Vector2(safe.X * 0.5f - 12, headerH);
+        // Header row: back button, score (left) and best (right) all vertically centred in
+        // the header band so they line up (the score used to sit above a smaller button).
+        float pad = Mathf.Max(12f, safe.X * 0.035f);
+        const float backSize = 52f;
+        _back.Size = new Vector2(backSize, backSize);
+        _back.Position = new Vector2(pad, (headerH - backSize) / 2f);
+
+        float scoreLeft = _back.Position.X + backSize + 14f;
+        _score.Position = new Vector2(scoreLeft, 0f); _score.Size = new Vector2(Mathf.Max(40f, safe.X * 0.5f - scoreLeft), headerH);
+        _best.Position = new Vector2(safe.X * 0.5f, 0f); _best.Size = new Vector2(safe.X * 0.5f - pad, headerH);
         _combo.Position = new Vector2(0, headerH); _combo.Size = new Vector2(safe.X, 40);
         if (GodotObject.IsInstanceValid(_overlay)) { _overlay.Position = Vector2.Zero; _overlay.Size = safe; }
         QueueRedraw();
