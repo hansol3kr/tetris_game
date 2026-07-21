@@ -11,6 +11,7 @@ public enum GameModeId
     Survival, // garbage rises over time; your clears cancel it — last as long as you can
     Master,   // 20G instant gravity + tight lock — pure execution
     Versus,   // 1v1 garbage battle against a CPU bot (or, later, a network peer)
+    Descent,  // charm-draft gauntlet: five escalating strata, drafting rule-bending charms between them
 }
 
 public enum GameStatus
@@ -62,6 +63,12 @@ public sealed class GameMode
     /// <summary>Garbage lines queued per rise (Survival).</summary>
     public int GarbageRiseAmount { get; init; } = 1;
 
+    /// <summary>
+    /// Complete the run once this many attack lines have been sent (Descent's
+    /// Siege stages — "break the shield"). 0 = no attack goal.
+    /// </summary>
+    public int AttackGoal { get; init; }
+
     public GameConfig Config { get; init; } = GameConfig.Default;
 
     /// <summary>Time-attack modes rank by lowest time (rather than highest score).</summary>
@@ -85,6 +92,7 @@ public sealed class GameMode
         GarbageRiseInterval = GarbageRiseInterval,
         GarbageRiseAccel = GarbageRiseAccel,
         GarbageRiseAmount = GarbageRiseAmount,
+        AttackGoal = AttackGoal,
         Config = config,
     };
 
@@ -189,6 +197,21 @@ public sealed class GameMode
         Config = GameConfig.Default,
     };
 
+    /// <summary>
+    /// Identity preset for Descent. The mode is a five-stage gauntlet whose actual
+    /// stage rules are composed per stratum by <see cref="RunDirector"/>; this preset
+    /// exists for menu metadata and record keying (leaderboards key on the id).
+    /// </summary>
+    public static GameMode Descent => new()
+    {
+        Id = GameModeId.Descent,
+        Name = "Descent",
+        LevelCap = 0,
+        StartLevel = 1,
+        CanTopOut = true,
+        Config = GameConfig.Default,
+    };
+
     public static GameMode ById(GameModeId id) => id switch
     {
         GameModeId.Marathon => Marathon,
@@ -200,6 +223,7 @@ public sealed class GameMode
         GameModeId.Survival => Survival,
         GameModeId.Master => Master,
         GameModeId.Versus => Versus,
+        GameModeId.Descent => Descent,
         _ => Marathon,
     };
 }

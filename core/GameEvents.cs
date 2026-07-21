@@ -57,4 +57,25 @@ public sealed class RunStats
 
     /// <summary>Pieces per second — the key speed metric for Sprint leaderboards.</summary>
     public double PiecesPerSecond => FinishTime > 0 ? PiecesPlaced / FinishTime : 0;
+
+    /// <summary>
+    /// Fold another run's counters into this one — Descent aggregates its per-stage
+    /// stats into a single run summary. Counters add; peaks (combo/B2B) take the max;
+    /// FinishTime accumulates total play time across stages.
+    /// </summary>
+    public void Accumulate(RunStats other)
+    {
+        PiecesPlaced += other.PiecesPlaced;
+        Singles += other.Singles;
+        Doubles += other.Doubles;
+        Triples += other.Triples;
+        Quads += other.Quads;
+        TSpins += other.TSpins;
+        TSpinMinis += other.TSpinMinis;
+        PerfectClears += other.PerfectClears;
+        if (other.MaxCombo > MaxCombo) MaxCombo = other.MaxCombo;
+        if (other.MaxBackToBack > MaxBackToBack) MaxBackToBack = other.MaxBackToBack;
+        TotalLines += other.TotalLines;
+        FinishTime += other.FinishTime;
+    }
 }

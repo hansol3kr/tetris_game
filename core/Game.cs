@@ -84,7 +84,7 @@ public sealed class Game
         // 7-bag stream so garbage doesn't perturb piece order).
         _garbageRng = garbageRng ?? new XorShiftRandom(0x5DEECE66DUL);
         Board = new Board();
-        Scoring = new Scoring(mode.StartLevel);
+        Scoring = new Scoring(mode.StartLevel, mode.Config.ScoreMultiplier);
     }
 
     /// <summary>
@@ -438,6 +438,14 @@ public sealed class Game
             _pendingGarbage -= cancel;
             int outgoing = attack - cancel;
             if (outgoing > 0) GarbageSentToOpponent?.Invoke(outgoing);
+        }
+
+        // Descent Siege: the stage completes the moment enough attack lines are
+        // sent — checked before the garbage commit so meeting the goal is an escape.
+        if (Mode.AttackGoal > 0 && TotalGarbageSent >= Mode.AttackGoal)
+        {
+            Finish(GameStatus.Completed);
+            return true;
         }
 
         // Dig: finished the instant the board is garbage-free.

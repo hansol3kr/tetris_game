@@ -155,6 +155,9 @@ public partial class AutoPlay : Node
         await Nav("BlockFit", () => R.StartBlockFit());
         await Nav("→Menu", () => R.GoToMainMenu(), typeof(MainMenu));
 
+        // 디센트: 지층 러너 + 드래프트/결과 화면 (신규 Control — 0×0 회귀 감시)
+        await CheckDescent();
+
         // ── 4) 일시정지 오버레이 레이아웃 (Node2D 밑 스크림 — 0×0 회귀 이력) ──
         await CheckPauseOverlay();
 
@@ -197,6 +200,40 @@ public partial class AutoPlay : Node
         {
             Fail("Marathon: 게임오버→Results 전이 실패 (타임아웃 — 입력/락/탑아웃 경로 점검)");
         }
+        await Nav("→Menu", () => R.GoToMainMenu(), typeof(MainMenu));
+    }
+
+    /// <summary>Descent smoke: the stage controller loads, and the two NEW Control
+    /// screens (charm draft, run results) fill the viewport — the 0×0 bug class.</summary>
+    private async Task CheckDescent()
+    {
+        // Stage 1 (Dig stratum) controller boots and lays out.
+        await Nav("Descent(S1)", () => R.StartDescent(seed: 12345UL));
+        await Nav("→Menu", () => R.GoToMainMenu(), typeof(MainMenu));
+
+        // Charm draft: enter with a state whose first stratum is already cleared.
+        var drafted = new Blockfall.Gameplay.DescentRunState(12345UL);
+        drafted.RecordStage(new Blockfall.Gameplay.RunResults
+        {
+            Mode = GameModeId.Descent, Completed = true, Score = 1000,
+            Stats = new RunStats(),
+            Modifiers = Array.Empty<GameModifier>(),
+            UnlockedAchievements = Array.Empty<string>(),
+        });
+        await Nav("CharmDraft", () => R.GoToCharmDraft(drafted), typeof(CharmDraftScreen));
+        await Nav("→Menu", () => R.GoToMainMenu(), typeof(MainMenu));
+
+        // Run results: layout only — record:false keeps this fabricated run out of
+        // the real save's career stats, achievements, and platform submits.
+        var failed = new Blockfall.Gameplay.DescentRunState(54321UL);
+        failed.RecordStage(new Blockfall.Gameplay.RunResults
+        {
+            Mode = GameModeId.Descent, Completed = false, Score = 0,
+            Stats = new RunStats(),
+            Modifiers = Array.Empty<GameModifier>(),
+            UnlockedAchievements = Array.Empty<string>(),
+        });
+        await Nav("DescentResults", () => R.GoToDescentResults(failed, record: false), typeof(DescentResultsScreen));
         await Nav("→Menu", () => R.GoToMainMenu(), typeof(MainMenu));
     }
 

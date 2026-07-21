@@ -210,7 +210,8 @@ public partial class SaveManager : Node
     /// run, for the results toast.
     /// </summary>
     public IReadOnlyList<string> RecordRun(GameModeId mode, RunStats stats, long score, double time,
-        bool completed, GameModifier[] modifiers, bool revived, ulong seed, ReplayData? replay)
+        bool completed, GameModifier[] modifiers, bool revived, ulong seed, ReplayData? replay,
+        int depth = 0)
     {
         _data.Lifetime.Fold(mode, stats, score, time, completed);
 
@@ -231,7 +232,7 @@ public partial class SaveManager : Node
             if (!_data.Leaderboards.TryGetValue(key, out var board))
                 _data.Leaderboards[key] = board = new List<LeaderboardEntry>();
             long now = (long)Time.GetUnixTimeFromSystem();
-            var entry = new LeaderboardEntry(score, time, stats.TotalLines, seed, now);
+            var entry = new LeaderboardEntry(score, time, stats.TotalLines, seed, now) { Depth = depth };
             int rank = LeaderboardLogic.Insert(board, entry, GameMode.IsTimeAttack(mode));
             if (rank >= 0 && replay is not null)
                 entry.ReplayPath = ReplayStore.Save(replay); // watchable record run

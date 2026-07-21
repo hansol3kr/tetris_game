@@ -105,12 +105,73 @@ public class ScoringTests
     }
 
     [Fact]
-    public void PerfectClearTetris_AddsBigBonus()
+    public void PerfectClearQuad_AddsBigBonus()
     {
         var s = new Scoring(1);
         var r = s.ApplyLock(4, SpinType.None, perfectClear: true);
         Assert.True(r.PerfectClear);
-        // 800 (tetris) + 2000 (non-b2b PC quad) = 2800 at level 1.
+        // 800 (quad) + 2000 (non-b2b PC quad) = 2800 at level 1.
         Assert.Equal(2800, r.ScoreGained);
+    }
+
+    // ----- Descent charm score multiplier -----------------------------------
+
+    [Fact]
+    public void ApplyLock_ScoreMultiplier_ScalesLineClearGainRounded()
+    {
+        var s = new Scoring(startLevel: 1, scoreMultiplier: 1.5);
+        var r = s.ApplyLock(1, SpinType.None, false); // base 100 -> 150
+        Assert.Equal(150, r.ScoreGained);
+        Assert.Equal(150, s.Score);
+    }
+
+    [Fact]
+    public void ApplyLock_DefaultMultiplier_ProducesBitIdenticalLegacyScores()
+    {
+        // Regression gate: multiplier 1.0 must be indistinguishable from the
+        // pre-multiplier scorer for a mixed guideline sequence.
+        var legacy = new Scoring(1);
+        var gated = new Scoring(1, scoreMultiplier: 1.0);
+        foreach (var (lines, spin, pc) in new[]
+        {
+            (4, SpinType.None, false), (4, SpinType.None, false),
+            (2, SpinType.Full, false), (0, SpinType.None, false),
+            (1, SpinType.None, true),
+        })
+        {
+            var a = legacy.ApplyLock(lines, spin, pc);
+            var b = gated.ApplyLock(lines, spin, pc);
+            Assert.Equal(a.ScoreGained, b.ScoreGained);
+        }
+        Assert.Equal(legacy.Score, gated.Score);
+    }
+
+    [Fact]
+    public void ApplyLock_Multiplier_DoesNotScaleSoftOrHardDropPoints()
+    {
+        var s = new Scoring(1, scoreMultiplier: 2.0);
+        s.AddSoftDrop(10); // 10 pts, NOT 20
+        s.AddHardDrop(5);  // 10 pts, NOT 20
+        Assert.Equal(20, s.Score);
+    }
+
+    [Fact]
+    public void ApplyLock_Multiplier_ScalesWholeLockGainIncludingBonuses()
+    {
+        // The multiplier applies once to the COMPOSED gain, not per component:
+        // single 100 + non-b2b PC single 800 = 900 -> x1.5 = 1350.
+        var s = new Scoring(1, scoreMultiplier: 1.5);
+        var r = s.ApplyLock(1, SpinType.None, perfectClear: true);
+        Assert.Equal(1350, r.ScoreGained);
+    }
+
+    [Fact]
+    public void ApplyLock_FractionalMultiplier_RoundsGain()
+    {
+        // Hourglass's x0.85 produces non-integer products; the gain rounds once.
+        var a = new Scoring(1, scoreMultiplier: 0.85);
+        Assert.Equal(85, a.ApplyLock(1, SpinType.None, false).ScoreGained);  // 100 -> 85
+        var b = new Scoring(1, scoreMultiplier: 0.85);
+        Assert.Equal(255, b.ApplyLock(2, SpinType.None, false).ScoreGained); // 300 -> 255
     }
 }

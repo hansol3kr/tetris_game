@@ -36,11 +36,13 @@ public sealed class Scoring
     public bool BackToBackActive { get; private set; }
 
     private readonly int _startLevel;
+    private readonly double _scoreMultiplier;
 
-    public Scoring(int startLevel = 1)
+    public Scoring(int startLevel = 1, double scoreMultiplier = 1.0)
     {
         _startLevel = Math.Max(1, startLevel);
         Level = _startLevel;
+        _scoreMultiplier = scoreMultiplier;
     }
 
     public void AddSoftDrop(int cells) => Score += cells; // 1 pt/cell
@@ -86,6 +88,10 @@ public sealed class Scoring
         // Perfect clear (all-clear) bonuses stack on top.
         if (perfectClear && lines > 0)
             points += PerfectClearBonus(lines, b2bThisClear) ;
+
+        // Descent charm multiplier scales the whole lock gain exactly once.
+        // Guarded so legacy modes (multiplier 1.0) keep bit-identical scores.
+        if (_scoreMultiplier != 1.0) points *= _scoreMultiplier;
 
         int gained = (int)Math.Round(points);
         Score += gained;

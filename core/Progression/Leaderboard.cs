@@ -12,6 +12,10 @@ public sealed class LeaderboardEntry
     public long DateUnix { get; set; }
     public string? ReplayPath { get; set; } // if a replay was saved for this run
 
+    /// <summary>Descent: strata cleared (0 elsewhere). Old saves deserialize to 0 —
+    /// the JSON-append-compatible pattern the whole SaveData relies on.</summary>
+    public int Depth { get; set; }
+
     public LeaderboardEntry() { }
 
     public LeaderboardEntry(long score, double time, int lines, ulong seed, long dateUnix, string? replayPath = null)
@@ -52,8 +56,22 @@ public static class LeaderboardLogic
 
     public static void Sort(List<LeaderboardEntry> entries, bool timeAttack)
     {
-        entries.Sort((a, b) => timeAttack
-            ? a.TimeSeconds.CompareTo(b.TimeSeconds)
-            : b.Score.CompareTo(a.Score));
+        // A board containing depth-carrying entries (Descent) ranks by depth first —
+        // descending IS the achievement — with banked score as the tiebreaker.
+        // Auto-detected per board so merge/insert paths need no extra plumbing;
+        // legacy entries (depth 0) are unaffected.
+        bool depthFirst = entries.Exists(e => e.Depth > 0);
+        entries.Sort((a, b) =>
+        {
+            if (depthFirst)
+            {
+                int d = b.Depth.CompareTo(a.Depth);
+                if (d != 0) return d;
+                return b.Score.CompareTo(a.Score);
+            }
+            return timeAttack
+                ? a.TimeSeconds.CompareTo(b.TimeSeconds)
+                : b.Score.CompareTo(a.Score);
+        });
     }
 }

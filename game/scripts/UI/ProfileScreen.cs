@@ -20,7 +20,7 @@ public partial class ProfileScreen : Control
     private static readonly GameModeId[] RankModes =
     {
         GameModeId.Marathon, GameModeId.Sprint, GameModeId.Ultra, GameModeId.Zen,
-        GameModeId.Dig, GameModeId.Survival, GameModeId.Master,
+        GameModeId.Dig, GameModeId.Survival, GameModeId.Master, GameModeId.Descent,
     };
 
     private OptionButton _modePick = null!;
@@ -176,7 +176,11 @@ public partial class ProfileScreen : Control
             rank.AddThemeFontSizeOverride("font_size", 18);
             rank.AddThemeColorOverride("font_color", i == 0 ? Palette.AccentGold : Palette.TextPrimary);
 
-            var metric = new Label { Text = timeAttack ? FormatTime(e.TimeSeconds) : e.Score.ToString("N0"), SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            // Descent rows lead with the depth the board actually ranks by.
+            string metricText = mode == GameModeId.Descent
+                ? $"{e.Depth}/{RunDirector.StageCount} · {e.Score:N0}"
+                : timeAttack ? FormatTime(e.TimeSeconds) : e.Score.ToString("N0");
+            var metric = new Label { Text = metricText, SizeFlagsHorizontal = SizeFlags.ExpandFill };
             metric.AddThemeFontSizeOverride("font_size", 18);
             var date = new Label { Text = Time.GetDatetimeStringFromUnixTime(e.DateUnix, true), ThemeTypeVariation = "DimLabel" };
             date.AddThemeFontSizeOverride("font_size", 12);

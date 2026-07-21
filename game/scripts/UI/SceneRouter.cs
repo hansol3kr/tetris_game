@@ -1,4 +1,5 @@
 using Godot;
+using System.Collections.Generic;
 using Blockfall.Core;
 using Blockfall.Gameplay;
 using Blockfall.Theme;
@@ -102,7 +103,112 @@ public partial class SceneRouter : Node
         menu.ReplaysChosen += GoToReplays;
         menu.ProfileChosen += GoToProfile;
         menu.BlockFitChosen += StartBlockFit;
+        menu.DescentChosen += () => StartDescent();
         Swap(menu);
+    }
+
+    // ---- Descent (charm-draft gauntlet) ------------------------------------
+    // One run = stage → draft → stage → … → run results. Stages report through
+    // the normal GameController.RunFinished, but records/ads fire ONLY at the
+    // end of the run (a stage is not a run).
+
+    /// <summary>Begin a fresh Descent run on a random seed (or a given one).</summary>
+    public void StartDescent(ulong? seed = null, bool fast = false)
+    {
+        if (Busy) return;
+        StartDescentStage(new DescentRunState(seed ?? GenerateSeed()), fast);
+    }
+
+    private void StartDescentStage(DescentRunState state, bool fast)
+    {
+        if (Busy) return;
+        Bootstrap.Instance.Bg.SetGameplayDim(true);
+        var controller = new GameController(GameModeId.Descent, state.Run.CurrentStage.StageSeed, descent: state);
+        controller.RunFinished += results => OnDescentStageFinished(state, results);
+        // Quitting mid-stage ends the run like a top-out: the bank keeps what's
+        // earned, the unfinished stage's score is forfeit.
+        controller.QuitRequested += () => AbandonDescent(state);
+        Swap(controller, fast);
+    }
+
+    private void OnDescentStageFinished(DescentRunState state, RunResults results)
+    {
+        state.RecordStage(results);
+        if (state.Run.Finished) GoToDescentResults(state);
+        else GoToCharmDraft(state);
+    }
+
+    private void AbandonDescent(DescentRunState state)
+    {
+        if (Busy) return;
+        state.RecordAbandon();
+        GoToDescentResults(state);
+    }
+
+    /// <summary>The between-strata draft: pick one of three charms, or skip for bank.</summary>
+    public void GoToCharmDraft(DescentRunState state)
+    {
+        if (Busy) return;
+        Bootstrap.Instance.Bg.SetGameplayDim(false);
+        var screen = new CharmDraftScreen(state);
+        screen.CharmPicked += charm =>
+        {
+            if (state.Run.PickCharm(charm)) StartDescentStage(state, fast: true);
+        };
+        screen.Skipped += () =>
+        {
+            if (state.Run.SkipDraft()) StartDescentStage(state, fast: true);
+        };
+        Swap(screen);
+    }
+
+    /// <summary>
+    /// End of a Descent run: fold the WHOLE run into records once, then show it.
+    /// <paramref name="record"/> exists for the smoke harness, which drives this
+    /// screen's layout with fabricated states — those must not fold into the real
+    /// save's career stats/achievements.
+    /// </summary>
+    public void GoToDescentResults(DescentRunState state, bool record = true)
+    {
+        if (Busy) return;
+        Bootstrap.Instance.Bg.SetGameplayDim(false);
+        var run = state.Run;
+        var save = Bootstrap.Instance.Save;
+
+        bool isBest = false;
+        IReadOnlyList<string> unlocked = System.Array.Empty<string>();
+        if (record)
+        {
+            // NEW BEST follows the leaderboard's ordering — depth first, bank as
+            // the tiebreaker ("descending IS the achievement") — NOT the raw bank,
+            // or a shallow greed-build could deny the first full clear its badge.
+            // Compared against the board head BEFORE this run is inserted.
+            var board = save.GetLeaderboard(GameModeId.Descent);
+            bool qualifies = run.Bank > 0 || run.Victory;
+            isBest = qualifies && (board.Count == 0
+                || run.StrataCleared > board[0].Depth
+                || (run.StrataCleared == board[0].Depth && run.Bank > board[0].Score));
+
+            // The single record funnel for the run: bank best (cloud-merge continuity),
+            // depth-ranked leaderboard entry, career fold + achievements, platform submit.
+            save.SubmitResult(GameModeId.Descent, run.Bank,
+                state.TotalStats.FinishTime, state.TotalStats.TotalLines, run.Victory);
+            unlocked = save.RecordRun(GameModeId.Descent, state.TotalStats, run.Bank,
+                state.TotalStats.FinishTime, run.Victory, System.Array.Empty<GameModifier>(),
+                revived: false, run.RunSeed, replay: null, depth: run.StrataCleared);
+            // Platform boards sort by plain descending score; encode depth-major so
+            // their ordering can never disagree with the canonical local ranking
+            // (depth first, bank tiebreak). Backends decode for display.
+            long platformScore = run.StrataCleared * 100_000_000L
+                + System.Math.Min(run.Bank, 99_999_999L);
+            Bootstrap.Instance.Platform.SubmitScore(GameModeId.Descent, platformScore, state.TotalStats.FinishTime);
+            Bootstrap.Instance.Platform.ReportAchievements(state.TotalStats, run.Victory, GameModeId.Descent);
+        }
+
+        var screen = new DescentResultsScreen(state, isBest, unlocked);
+        screen.PlayAgain += () => StartDescent(fast: true);
+        screen.BackToMenu += GoToMainMenu;
+        Swap(screen);
     }
 
     /// <summary>Progression hub: stats, achievements, and per-mode leaderboards.</summary>

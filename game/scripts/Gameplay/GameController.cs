@@ -1,5 +1,6 @@
 using Godot;
 using System;
+using System.Collections.Generic;
 using Blockfall.Core;
 using Blockfall.Core.Localization;
 using Blockfall.Theme;
@@ -44,17 +45,27 @@ public partial class GameController : Node2D
     private ReplayPlayer? _ghost;
     private Label? _ghostLabel;
 
+    // Descent: this controller hosts ONE stratum of a multi-stage run. The run
+    // context suppresses per-stage records/ads/revive; the router folds stage
+    // outcomes into a single run-level record when the run ends.
+    private readonly DescentRunState? _descent;
+
     /// <param name="dailyKey">
     /// Non-null only for the daily challenge ("yyyy-MM-dd"); routes the score to the
     /// per-date best instead of the per-mode best.
     /// </param>
+    /// <param name="descent">
+    /// Non-null when this session is one stratum of a Descent run — the stage's
+    /// Game is built from the run's pre-planned spec + drafted charms.
+    /// </param>
     public GameController(GameModeId modeId, ulong seed, string? dailyKey = null,
-        GameModifier[]? modifiers = null, ReplayData? ghost = null)
+        GameModifier[]? modifiers = null, ReplayData? ghost = null, DescentRunState? descent = null)
     {
         _modeId = modeId;
         _seed = seed;
         _dailyKey = dailyKey;
         _ghostData = ghost;
+        _descent = descent;
         _modifiers = modifiers ?? System.Array.Empty<GameModifier>();
     }
 
@@ -62,10 +73,21 @@ public partial class GameController : Node2D
     {
         // Apply player handling settings (DAS/ARR/ghost) on top of the mode's config.
         var settings = Bootstrap.Instance.Save.Settings;
-        var cfg = GameMode.ById(_modeId).Config
-            .With(das: settings.DasSeconds, arr: settings.ArrSeconds, ghost: settings.GhostEnabled);
-        if (_modifiers.Length > 0) cfg = ModifierSet.Apply(cfg, _modifiers);
-        _game = Game.Create(_modeId, _seed, cfg);
+        if (_descent is not null)
+        {
+            // Stage rules = stratum preset + handling overlay + drafted charms,
+            // composed in core (charms last, so a charm's seal can't be undone).
+            var handling = GameConfig.Default
+                .With(das: settings.DasSeconds, arr: settings.ArrSeconds, ghost: settings.GhostEnabled);
+            _game = _descent.Run.CreateStageGame(handling);
+        }
+        else
+        {
+            var cfg = GameMode.ById(_modeId).Config
+                .With(das: settings.DasSeconds, arr: settings.ArrSeconds, ghost: settings.GhostEnabled);
+            if (_modifiers.Length > 0) cfg = ModifierSet.Apply(cfg, _modifiers);
+            _game = Game.Create(_modeId, _seed, cfg);
+        }
         _finesse = new FinesseTracker();
         _sampler = new ButtonSampler();
         _proc = new InputProcessor(_game.Config, _finesse);
@@ -103,6 +125,25 @@ public partial class GameController : Node2D
         _hud.Bind(_game);
         _hud.BindFinesse(_finesse);
         _uiHost.AddChild(_hud);
+
+        // Descent: pin the depth + stage objective where the ghost label would sit
+        // (descent stages never race a ghost, so the slot is free).
+        if (_descent is not null)
+        {
+            var spec = _descent.Run.CurrentStage;
+            var depthLabel = new Label
+            {
+                Text = Loc.T("DEPTH {0}/{1}", spec.Stratum, RunDirector.StageCount)
+                       + "  ·  " + StageKindLabel(spec.Kind),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                CustomMinimumSize = new Vector2(280, 0),
+            };
+            depthLabel.AddThemeFontSizeOverride("font_size", 18);
+            depthLabel.AddThemeColorOverride("font_color", Palette.AccentRed);
+            depthLabel.SetAnchorsPreset(Control.LayoutPreset.CenterTop);
+            depthLabel.Position = new Vector2(-140, 8);
+            _uiHost.AddChild(depthLabel);
+        }
 
         // Ghost race: run the best replay in lockstep and show a live pace readout.
         if (_ghostData is not null)
@@ -230,6 +271,7 @@ public partial class GameController : Node2D
     {
         if (_revived || _finished) return false;
         if (_dailyKey is not null) return false; // daily: one seed, one shot — no comebacks
+        if (_descent is not null) return false;  // descent: death is the run's ending — the bank is the mercy
         bool hasBooster = Bootstrap.Instance.Save.BoosterCount(Platform.StoreCatalog.BoosterSecondChance) > 0;
         bool hasAd = Bootstrap.Instance.Platform.SupportsAds;
         return hasBooster || hasAd;
@@ -396,29 +438,39 @@ public partial class GameController : Node2D
         _finished = true;
         Bootstrap.Instance.Audio.PlaySfx(completed ? "win" : "game_over");
 
-        var save = Bootstrap.Instance.Save;
-        bool isBest;
-        if (_dailyKey is not null)
-            isBest = save.SubmitDaily(_dailyKey, _game.Scoring.Score);
-        else if (_modifiers.Length > 0 || _revived)
-            isBest = false; // modified/revived runs are for fun — they don't set records
-        else
-            isBest = save.SubmitResult(_modeId, _game.Scoring.Score, _game.Elapsed, _game.Scoring.LinesCleared, completed);
+        bool isBest = false;
+        ReplayData? replay = null;
+        IReadOnlyList<string> unlocked = System.Array.Empty<string>();
+        if (_descent is null)
+        {
+            var save = Bootstrap.Instance.Save;
+            if (_dailyKey is not null)
+                isBest = save.SubmitDaily(_dailyKey, _game.Scoring.Score);
+            else if (_modifiers.Length > 0 || _revived)
+                isBest = false; // modified/revived runs are for fun — they don't set records
+            else
+                isBest = save.SubmitResult(_modeId, _game.Scoring.Score, _game.Elapsed, _game.Scoring.LinesCleared, completed);
 
-        // Report to the platform leaderboard (Steam / mobile) fire-and-forget.
-        // Revived runs stay OFF public leaderboards — a bought comeback must
-        // never outrank a clean run.
-        if (!_revived)
-            Bootstrap.Instance.Platform.SubmitScore(_modeId, _game.Scoring.Score, _game.Elapsed);
-        Bootstrap.Instance.Platform.ReportAchievements(_game.Stats, completed, _modeId);
+            // Report to the platform leaderboard (Steam / mobile) fire-and-forget.
+            // Revived runs stay OFF public leaderboards — a bought comeback must
+            // never outrank a clean run.
+            if (!_revived)
+                Bootstrap.Instance.Platform.SubmitScore(_modeId, _game.Scoring.Score, _game.Elapsed);
+            Bootstrap.Instance.Platform.ReportAchievements(_game.Stats, completed, _modeId);
 
-        // Revived runs can't be reproduced from inputs alone (the board wipe isn't in
-        // the stream), so they carry no replay.
-        var replay = _revived ? null : _recorder.Build(_game);
+            // Revived runs can't be reproduced from inputs alone (the board wipe isn't in
+            // the stream), so they carry no replay.
+            replay = _revived ? null : _recorder.Build(_game);
 
-        // Fold career stats, unlock achievements, and record a leaderboard entry.
-        var unlocked = save.RecordRun(_modeId, _game.Stats, _game.Scoring.Score, _game.Elapsed,
-            completed, _modifiers, _revived, _seed, replay);
+            // Fold career stats, unlock achievements, and record a leaderboard entry.
+            unlocked = save.RecordRun(_modeId, _game.Stats, _game.Scoring.Score, _game.Elapsed,
+                completed, _modifiers, _revived, _seed, replay);
+        }
+        // Descent: a stage is not a run. Records, platform submits, achievements,
+        // and the interstitial slot all belong to the END of the run (the router's
+        // GoToDescentResults) — a mid-run ad or per-stage record would break both
+        // the flow and the fairness ledger. Stage replays are Stage 2 scope
+        // (RunReplayData container), so no replay is built here either.
 
         var results = new RunResults
         {
@@ -528,6 +580,14 @@ public partial class GameController : Node2D
         scrim.AddChild(center);
         _uiHost.AddChild(_pauseOverlay);
     }
+
+    private static string StageKindLabel(StageKind k) => k switch
+    {
+        StageKind.Dig => Loc.T("DIG"),
+        StageKind.Burst => Loc.T("BURST"),
+        StageKind.Siege => Loc.T("SIEGE"),
+        _ => k.ToString().ToUpperInvariant(),
+    };
 
     private static Button MakeMenuButton(string text, Action onPressed, bool primary)
     {

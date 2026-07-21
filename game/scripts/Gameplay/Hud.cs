@@ -108,11 +108,19 @@ public partial class Hud : Control
         rightCol.Position = new Vector2(-158, 40);
         rightCol.AddThemeConstantOverride("separation", 8);
 
-        rightCol.AddChild(Section(Loc.T("HOLD")));
+        var holdSection = Section(Loc.T("HOLD"));
+        rightCol.AddChild(holdSection);
         var holdCard = GlassPanel();
         _hold = new MiniPieceView { CustomMinimumSize = new Vector2(112, 68) };
         holdCard.AddChild(_hold);
         rightCol.AddChild(holdCard);
+        // A charm-sealed hold (Descent's Monk/Prophet) must read as OFF, not as an
+        // empty-but-usable slot the player keeps flicking pieces at.
+        if (_game is not null && !_game.Config.HoldEnabled)
+        {
+            holdSection.Modulate = new Color(1, 1, 1, 0.3f);
+            holdCard.Modulate = new Color(1, 1, 1, 0.3f);
+        }
 
         rightCol.AddChild(Spacer(6));
         rightCol.AddChild(Section(Loc.T("NEXT")));
@@ -120,7 +128,8 @@ public partial class Hud : Control
         var nextCol = new VBoxContainer();
         nextCol.AddThemeConstantOverride("separation", 4);
         nextCard.AddChild(nextCol);
-        for (int i = 0; i < 5; i++)
+        int slots = PreviewSlotCount(strip: false);
+        for (int i = 0; i < slots; i++)
         {
             // The first preview is the one that matters — it gets the size.
             var mv = new MiniPieceView
@@ -177,11 +186,15 @@ public partial class Hud : Control
 
         // HOLD.
         _hold = new MiniPieceView { CustomMinimumSize = new Vector2(58, 46) };
-        bar.AddChild(MiniCard(Loc.T("HOLD"), new[] { _hold }));
+        var holdMini = MiniCard(Loc.T("HOLD"), new[] { _hold });
+        if (_game is not null && !_game.Config.HoldEnabled)
+            holdMini.Modulate = new Color(1, 1, 1, 0.3f); // charm-sealed hold reads as OFF
+        bar.AddChild(holdMini);
 
-        // NEXT (3, first emphasized).
+        // NEXT (3 by default, first emphasized).
         var minis = new System.Collections.Generic.List<MiniPieceView>();
-        for (int i = 0; i < 3; i++)
+        int slots = PreviewSlotCount(strip: true);
+        for (int i = 0; i < slots; i++)
         {
             var mv = new MiniPieceView
             {
@@ -192,6 +205,19 @@ public partial class Hud : Control
             minis.Add(mv);
         }
         bar.AddChild(MiniCard(Loc.T("NEXT"), minis.ToArray()));
+    }
+
+    /// <summary>
+    /// Preview slots follow the game's config, not a constant: Descent's Prophet
+    /// charm raises PreviewCount, and a reward that's computed but never rendered
+    /// is a strictly-negative charm. Desktop shows the whole queue; the phone strip
+    /// shows its usual 3 plus any charm-granted extras beyond the default 5.
+    /// </summary>
+    private int PreviewSlotCount(bool strip)
+    {
+        int count = _game?.Config.PreviewCount ?? 5;
+        if (!strip) return count;
+        return Mathf.Min(count, 3) + Mathf.Max(0, count - 5);
     }
 
     private Label CompactStat(BoxContainer parent, string caption, float width, out VBoxContainer box)
@@ -337,8 +363,20 @@ public partial class Hud : Control
         GameModeId.Dig => Loc.T("{0} rows", _game.Board.GarbageRowCount()),     // garbage left to dig
         GameModeId.Survival => $"▲ {_game.PendingGarbage}",            // incoming garbage
         GameModeId.Master => Loc.T("Lv {0}", _game.Scoring.Level),
+        GameModeId.Descent => DescentGoalText(),
         _ => "∞", // infinity for Zen
     };
+
+    // Descent stages are shaped by data, not by mode id — dispatch on what the
+    // stage actually asks for (siege shield, dig rows, or the burst clock).
+    private string DescentGoalText()
+    {
+        var m = _game.Mode;
+        if (m.AttackGoal > 0) return $"{_game.TotalGarbageSent}/{m.AttackGoal} ▲";
+        if (m.DigGoal) return Loc.T("{0} rows", _game.Board.GarbageRowCount());
+        if (m.TimeLimit > 0) return FormatTime(System.Math.Max(0.0, m.TimeLimit - _game.Elapsed));
+        return "∞";
+    }
 
     private static string FormatTime(double t)
     {

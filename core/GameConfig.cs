@@ -47,6 +47,15 @@ public sealed class GameConfig
     /// <summary>Reward immobile spins of ANY piece, not just T ("all-spin").</summary>
     public bool AllSpin { get; init; }
 
+    // --- Scoring -------------------------------------------------------------
+    /// <summary>
+    /// Multiplier applied once to each lock's scoring gain (line clears, spins,
+    /// combos, perfect clears). Used by Descent charms to trade risk for reward.
+    /// Deliberately NOT applied to soft/hard-drop points so drop feedback stays
+    /// immediate and readable. 1.0 keeps legacy modes bit-identical.
+    /// </summary>
+    public double ScoreMultiplier { get; init; } = 1.0;
+
     /// <summary>
     /// Gravity (seconds per cell) for a given level using the classic guideline curve:
     ///     time = (0.8 - (level-1)*0.007) ^ (level-1)
@@ -71,7 +80,8 @@ public sealed class GameConfig
     /// </summary>
     public GameConfig With(double? das = null, double? arr = null, bool? ghost = null,
         bool? hold = null, double? baseGravity = null, int? previewCount = null,
-        double? lockDelay = null, int? maxGravityLevel = null, bool? allSpin = null)
+        double? lockDelay = null, int? maxGravityLevel = null, bool? allSpin = null,
+        double? scoreMultiplier = null)
         => new()
         {
             BaseGravity = baseGravity ?? BaseGravity,
@@ -86,6 +96,7 @@ public sealed class GameConfig
             HoldEnabled = hold ?? HoldEnabled,
             GhostEnabled = ghost ?? GhostEnabled,
             AllSpin = allSpin ?? AllSpin,
+            ScoreMultiplier = scoreMultiplier ?? ScoreMultiplier,
         };
 
     public static GameConfig Default => new();

@@ -27,6 +27,7 @@ public partial class MainMenu : Control
     public event Action? ReplaysChosen;
     public event Action? ProfileChosen;
     public event Action? BlockFitChosen;
+    public event Action? DescentChosen;
 
     private readonly HashSet<GameModifier> _mods = new();
     private static bool _introPlayed; // full entrance choreography only once per session
@@ -83,6 +84,7 @@ public partial class MainMenu : Control
         var hero = ResolveHeroMode();
         col.AddChild(BuildHeroCard(hero));
         col.AddChild(BuildDailyCard());
+        col.AddChild(BuildDescentCard());
         col.AddChild(Spacer(2));
         col.AddChild(BuildModeGrid(hero));
         col.AddChild(Spacer(2));
@@ -241,6 +243,44 @@ public partial class MainMenu : Control
             content.AddChild(ChipLabel($"★ {best.Value:N0}", Palette.AccentGold));
 
         b.Pressed += () => DailyChosen?.Invoke();
+        return b;
+    }
+
+    /// <summary>The flagship run mode: five strata, charm drafts between them.</summary>
+    private Control BuildDescentCard()
+    {
+        var b = Card(Palette.AccentRed, 76);
+        var content = CardContent(b);
+
+        content.AddChild(AccentBar(Palette.AccentRed, 44));
+        content.AddChild(new Theme.Icon(IconKind.Dice, Palette.AccentRed, 26) { SizeFlagsVertical = SizeFlags.ShrinkCenter });
+
+        var text = new VBoxContainer { SizeFlagsVertical = SizeFlags.ShrinkCenter, SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        text.AddThemeConstantOverride("separation", 0);
+        var name = new Label { Text = Loc.T("DESCENT") };
+        name.AddThemeFontOverride("font", Fonts.UiBold);
+        name.AddThemeFontSizeOverride("font_size", 21);
+        name.AddThemeColorOverride("font_color", Palette.AccentRed);
+        var sub = new Label
+        {
+            Text = Loc.T("FIVE STRATA · DRAFT CHARMS · GO DEEP"),
+            ThemeTypeVariation = "DimLabel",
+            ClipText = true,
+            TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
+        };
+        sub.AddThemeFontSizeOverride("font_size", 14);
+        text.AddChild(name);
+        text.AddChild(sub);
+        content.AddChild(text);
+
+        // The chip mirrors the leaderboard's #1 (depth-first ordering), not the raw
+        // bank best — the two can disagree and the board's ranking is canonical.
+        var board = Bootstrap.Instance.Save.GetLeaderboard(GameModeId.Descent);
+        if (board.Count > 0)
+            content.AddChild(ChipLabel(
+                $"★ {board[0].Depth}/{RunDirector.StageCount} · {board[0].Score:N0}", Palette.AccentRed));
+
+        b.Pressed += () => DescentChosen?.Invoke();
         return b;
     }
 
@@ -533,6 +573,7 @@ public partial class MainMenu : Control
         GameModeId.Dig => Loc.T("DIG RACE"),
         GameModeId.Survival => Loc.T("SURVIVAL"),
         GameModeId.Master => Loc.T("MASTER 20G"),
+        GameModeId.Descent => Loc.T("DESCENT"),
         _ => m.ToString().ToUpperInvariant(),
     };
 
@@ -545,6 +586,7 @@ public partial class MainMenu : Control
         GameModeId.Dig => Loc.T("DIG THROUGH THE GARBAGE"),
         GameModeId.Survival => Loc.T("THE FLOOR KEEPS RISING"),
         GameModeId.Master => Loc.T("INSTANT GRAVITY"),
+        GameModeId.Descent => Loc.T("DRAFT CHARMS, DIVE DEEP"),
         _ => "",
     };
 
@@ -557,6 +599,7 @@ public partial class MainMenu : Control
         GameModeId.Dig => IconKind.Shovel,
         GameModeId.Survival => IconKind.Skull,
         GameModeId.Master => IconKind.Diamond,
+        GameModeId.Descent => IconKind.Dice,
         _ => IconKind.Play,
     };
 
