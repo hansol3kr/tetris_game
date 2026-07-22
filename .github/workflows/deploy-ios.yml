@@ -1,0 +1,73 @@
+name: Deploy iOS (Codemagic trigger)
+
+# 태그(vX.Y.Z)를 push하면 Codemagic의 ios-testflight 워크플로를 자동으로 시작한다.
+#
+# ⚠ 왜 이게 필요한가:
+#   Codemagic 자체 웹훅이 이 리포에 연결돼 있지 않아, codemagic.yaml 의
+#   `triggering: events:[tag]` 가 실제로는 발화하지 않는다 — 태그를 push해도
+#   Codemagic 은 그 사실을 통보받지 못한다(v1.0.2 / v1.0.3 이 이 문제로 빌드
+#   자체가 누락됐다). GitHub Actions 는 GitHub 네이티브라 태그 push 를 100%
+#   감지하므로, 여기서 Codemagic REST API(POST /builds)를 직접 호출해
+#   빌드를 확실하게 트리거한다.
+#
+#   ↳ 나중에 Codemagic 대시보드에서 GitHub 웹훅을 정상 연결하면 이 파일은
+#     지워도 된다(그 경우 이 워크플로와 웹훅이 둘 다 돌아 빌드가 2번 걸리므로
+#     둘 중 하나만 남길 것).
+#
+# 사전 준비 (딱 1회):
+#   리포 Settings → Secrets and variables → Actions → New repository secret
+#     Name  : CODEMAGIC_API_TOKEN
+#     Secret: Codemagic Teams/User settings 의 API 토큰 값
+#   이 시크릿이 없으면 아래 잡이 명시적 에러로 실패한다(조용히 넘어가지 않음).
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+# 같은 태그 이벤트가 겹쳐도 트리거는 한 번만.
+concurrency:
+  group: codemagic-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  trigger:
+    name: Trigger Codemagic ios-testflight
+    runs-on: ubuntu-latest
+    steps:
+      - name: Kick off Codemagic build for ${{ github.ref_name }}
+        env:
+          CM_TOKEN: ${{ secrets.CODEMAGIC_API_TOKEN }}
+          APP_ID: 6a547c24f4d1c90eb73f3c46
+          WORKFLOW_ID: ios-testflight
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CM_TOKEN:-}" ]; then
+            echo "::error::CODEMAGIC_API_TOKEN 시크릿이 없습니다. 리포 Settings → Secrets and variables → Actions 에 등록하세요."
+            exit 1
+          fi
+          echo "Triggering Codemagic '$WORKFLOW_ID' for tag '$TAG'…"
+          code=$(curl -sS -o response.json -w '%{http_code}' -X POST "https://api.codemagic.io/builds" \
+            -H "Content-Type: application/json" \
+            -H "x-auth-token: $CM_TOKEN" \
+            -d "{\"appId\":\"$APP_ID\",\"workflowId\":\"$WORKFLOW_ID\",\"tag\":\"$TAG\"}")
+          echo "HTTP $code"
+          cat response.json || true
+          echo
+          if [ "$code" != "200" ] && [ "$code" != "201" ]; then
+            echo "::error::Codemagic 트리거 실패 (HTTP $code)"
+            exit 1
+          fi
+          build_id=$(jq -r '.buildId // empty' response.json)
+          if [ -z "$build_id" ]; then
+            echo "::error::응답에 buildId 가 없습니다 — 트리거 실패."
+            exit 1
+          fi
+          echo "✅ Codemagic 빌드 시작: $build_id"
+          {
+            echo "### ✅ Codemagic 빌드 시작됨"
+            echo "- 태그: \`$TAG\`"
+            echo "- 워크플로: \`$WORKFLOW_ID\`"
+            echo "- Build: https://codemagic.io/app/$APP_ID/build/$build_id"
+          } >> "$GITHUB_STEP_SUMMARY"
