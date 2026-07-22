@@ -8,7 +8,7 @@ using Blockfall.Theme;
 namespace Blockfall.Gameplay;
 
 /// <summary>
-/// Free-placement block puzzle mode (Block Blast style): an 8×8 grid and a tray
+/// Free-placement block puzzle mode (Block Blast style): a 10×10 grid and a tray
 /// of 3 fixed-orientation neon pieces you drag anywhere they fit (no gravity, no
 /// rotation). Fill a full row/column to clear it. The dragged piece floats ABOVE
 /// the finger so the fingertip never hides it — the key mobile control detail.
@@ -35,6 +35,8 @@ public partial class BlockFitController : Node2D
     private Vector2 _finger;
     private int _touchId = int.MinValue;
     private float _comboFlash;
+    // Reused per-frame buffers for the drag-time line-clear preview (no per-frame alloc).
+    private readonly System.Collections.Generic.List<int> _pvRows = new(), _pvCols = new();
 
     public override void _Ready()
     {
@@ -246,6 +248,29 @@ public partial class BlockFitController : Node2D
         {
             bool ok = _game.CanPlace(dp, gr, gc);
             var origin = _boardOrigin + new Vector2(gc * _cell, gr * _cell);
+
+            // Clear preview: if dropping here completes any line, flood that whole
+            // row/column bright green so the payoff is unmistakable before releasing
+            // (Block Blast "these lines pop" cue). Drawn under the ghost outline.
+            if (ok)
+            {
+                _game.LinesClearedBy(dp, gr, gc, _pvRows, _pvCols);
+                var glow = new Color(0.15f, 1f, 0.45f, 0.32f);
+                var edge = new Color(0.3f, 1f, 0.55f, 0.9f);
+                foreach (int rr in _pvRows)
+                {
+                    var band = new Rect2(_boardOrigin + new Vector2(0, rr * _cell), new Vector2(boardPx, _cell));
+                    DrawRect(band, glow, filled: true);
+                    DrawRect(band, edge, filled: false, width: 2f);
+                }
+                foreach (int cc in _pvCols)
+                {
+                    var band = new Rect2(_boardOrigin + new Vector2(cc * _cell, 0), new Vector2(_cell, boardPx));
+                    DrawRect(band, glow, filled: true);
+                    DrawRect(band, edge, filled: false, width: 2f);
+                }
+            }
+
             // Ghost footprint.
             foreach (var (drr, dcc) in dp.Cells)
             {

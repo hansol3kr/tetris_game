@@ -7,6 +7,13 @@ namespace Blockfall.Core.Tests;
 
 public class BlockFitGameTests
 {
+    // Board dimensions come from the single core constant, so a size change
+    // (8 → 10 → …) re-parameterises every fixture below instead of silently
+    // breaking hardcoded 8/64 indices.
+    private const int N = BlockFitGame.Size;
+    private static PieceType[] EmptyGrid() => new PieceType[N * N];
+    private static int Idx(int r, int c) => r * N + c;
+
     [Fact]
     public void FreshGame_HasThreePieces_NotOver()
     {
@@ -24,7 +31,7 @@ public class BlockFitGameTests
         // Empty board; 3 pieces so placing slot 0 doesn't empty the tray (no refill).
         var single = new BlockPiece(new[] { (0, 0) }, PieceType.I);
         var other = new BlockPiece(new[] { (0, 0) }, PieceType.O);
-        var g = new BlockFitGame(new PieceType[64], new BlockPiece?[] { single, other, other });
+        var g = new BlockFitGame(EmptyGrid(), new BlockPiece?[] { single, other, other });
 
         Assert.True(g.TryPlace(0, 3, 4));
         Assert.Equal(PieceType.I, g.At(3, 4));
@@ -37,15 +44,15 @@ public class BlockFitGameTests
     [Fact]
     public void FillingARow_ClearsIt()
     {
-        // Pre-fill row 0 cols 0..6; a single piece completes col 7 → the row clears.
-        var grid = new PieceType[64];
-        for (int c = 0; c < 7; c++) grid[0 * 8 + c] = PieceType.O;
+        // Pre-fill row 0 except its last column; a single completes it → the row clears.
+        var grid = EmptyGrid();
+        for (int c = 0; c < N - 1; c++) grid[Idx(0, c)] = PieceType.O;
         var single = new BlockPiece(new[] { (0, 0) }, PieceType.T);
         var g = new BlockFitGame(grid, new BlockPiece?[] { single, null, null });
 
-        Assert.True(g.TryPlace(0, 0, 7));
+        Assert.True(g.TryPlace(0, 0, N - 1));
         // Entire row 0 must now be empty (cleared), and the clear is recorded.
-        for (int c = 0; c < 8; c++) Assert.Equal(PieceType.Empty, g.At(0, c));
+        for (int c = 0; c < N; c++) Assert.Equal(PieceType.Empty, g.At(0, c));
         Assert.Equal(1, g.LastClearedRows);
         Assert.Equal(1, g.Streak);
         Assert.True(g.Score > 1); // placement point + line-clear bonus
@@ -55,8 +62,8 @@ public class BlockFitGameTests
     public void NoFittingPiece_IsGameOver()
     {
         // Completely full board + a piece that cannot fit anywhere.
-        var grid = new PieceType[64];
-        for (int i = 0; i < 64; i++) grid[i] = PieceType.Z;
+        var grid = EmptyGrid();
+        for (int i = 0; i < grid.Length; i++) grid[i] = PieceType.Z;
         var single = new BlockPiece(new[] { (0, 0) }, PieceType.I);
         var g = new BlockFitGame(grid, new BlockPiece?[] { single, null, null });
 
@@ -78,7 +85,7 @@ public class BlockFitGameTests
     {
         // A 3×3 block (9 cells) on an empty board scores 9 and completes no line → no clear.
         var big = new BlockPiece(new[] { (0, 0), (0, 1), (0, 2), (1, 0), (1, 1), (1, 2), (2, 0), (2, 1), (2, 2) }, PieceType.O);
-        var g = new BlockFitGame(new PieceType[64], new BlockPiece?[] { big, big, big });
+        var g = new BlockFitGame(EmptyGrid(), new BlockPiece?[] { big, big, big });
         double before = g.Difficulty;
         Assert.True(g.TryPlace(0, 0, 0));
         Assert.True(g.Difficulty > before);
@@ -88,10 +95,10 @@ public class BlockFitGameTests
     public void LowDifficulty_FreshDeal_KeepsAMoveWhileRoomRemains()
     {
         // Board full of Z except a 2×2 empty pocket at rows 3-4, cols 3-4.
-        var grid = new PieceType[64];
-        for (int i = 0; i < 64; i++) grid[i] = PieceType.Z;
-        grid[3 * 8 + 3] = PieceType.Empty; grid[3 * 8 + 4] = PieceType.Empty;
-        grid[4 * 8 + 3] = PieceType.Empty; grid[4 * 8 + 4] = PieceType.Empty;
+        var grid = EmptyGrid();
+        for (int i = 0; i < grid.Length; i++) grid[i] = PieceType.Z;
+        grid[Idx(3, 3)] = PieceType.Empty; grid[Idx(3, 4)] = PieceType.Empty;
+        grid[Idx(4, 3)] = PieceType.Empty; grid[Idx(4, 4)] = PieceType.Empty;
         // The one tray slot holds a single: placing it empties the tray → forces a fresh Deal.
         var single = new BlockPiece(new[] { (0, 0) }, PieceType.I);
         var g = new BlockFitGame(grid, new BlockPiece?[] { single, null, null });
@@ -101,6 +108,54 @@ public class BlockFitGameTests
         // still leave a playable move while the board has room (max solvability early).
         Assert.False(g.GameOver);
         Assert.True(g.AnyMovePossible());
+    }
+
+    [Fact]
+    public void LinesClearedBy_PreviewsRowAndColumnCompletions_WithoutMutating()
+    {
+        // Row 0 filled except its last column; column 0 filled except its last row.
+        var grid = EmptyGrid();
+        for (int c = 0; c < N - 1; c++) grid[Idx(0, c)] = PieceType.O;
+        for (int r = 0; r < N - 1; r++) grid[Idx(r, 0)] = PieceType.O;
+        var single = new BlockPiece(new[] { (0, 0) }, PieceType.T);
+        var g = new BlockFitGame(grid, new BlockPiece?[] { single, null, null });
+
+        var rows = new List<int>();
+        var cols = new List<int>();
+
+        g.LinesClearedBy(single, 0, N - 1, rows, cols); // completes row 0 only
+        Assert.Equal(new[] { 0 }, rows);
+        Assert.Empty(cols);
+
+        g.LinesClearedBy(single, N - 1, 0, rows, cols); // completes column 0 only
+        Assert.Empty(rows);
+        Assert.Equal(new[] { 0 }, cols);
+
+        // Preview is pure — the board is untouched.
+        Assert.Equal(PieceType.Empty, g.At(0, N - 1));
+        Assert.Equal(PieceType.O, g.At(0, 0));
+    }
+
+    [Fact]
+    public void LinesClearedBy_InvalidOrNoCompletion_YieldsEmpty()
+    {
+        var single = new BlockPiece(new[] { (0, 0) }, PieceType.T);
+        var rows = new List<int>();
+        var cols = new List<int>();
+
+        // Valid placement on an empty board completes nothing.
+        var g = new BlockFitGame(EmptyGrid(), new BlockPiece?[] { single, null, null });
+        g.LinesClearedBy(single, 3, 3, rows, cols);
+        Assert.Empty(rows);
+        Assert.Empty(cols);
+
+        // Invalid placement (cell occupied) yields nothing.
+        var full = EmptyGrid();
+        for (int i = 0; i < full.Length; i++) full[i] = PieceType.Z;
+        var g2 = new BlockFitGame(full, new BlockPiece?[] { single, null, null });
+        g2.LinesClearedBy(single, 0, 0, rows, cols);
+        Assert.Empty(rows);
+        Assert.Empty(cols);
     }
 
     [Fact]

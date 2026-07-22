@@ -54,7 +54,7 @@ public static class BlockShapes
 }
 
 /// <summary>
-/// Free-placement block puzzle (Block Blast style): an 8×8 grid and a tray of 3
+/// Free-placement block puzzle (Block Blast style): a 10×10 grid and a tray of 3
 /// fixed-orientation pieces you drag anywhere they fit — no gravity, no rotation,
 /// no timer. Filling a full row OR column clears it; multi-line clears and
 /// consecutive-clear streaks score more. Game over when none of the tray pieces
@@ -62,7 +62,7 @@ public static class BlockShapes
 /// </summary>
 public sealed class BlockFitGame
 {
-    public const int Size = 8;
+    public const int Size = 10;
 
     private readonly PieceType[] _grid = new PieceType[Size * Size];
     private readonly Random _rng;
@@ -114,6 +114,50 @@ public sealed class BlockFitGame
             if (_grid[r * Size + c] != PieceType.Empty) return false;
         }
         return true;
+    }
+
+    /// <summary>
+    /// Preview: the rows and columns that WOULD clear if <paramref name="p"/> were
+    /// placed with its top-left origin at (row,col) — without mutating the board.
+    /// Fills the caller-owned lists; both stay empty when the placement is invalid or
+    /// completes no line. Drives the drag-time "this drop clears these lines" highlight
+    /// so the player sees the payoff before releasing. Pure and allocation-free.
+    /// </summary>
+    public void LinesClearedBy(BlockPiece p, int row, int col, List<int> rows, List<int> cols)
+    {
+        rows.Clear();
+        cols.Clear();
+        if (p is null || !CanPlace(p, row, col)) return;
+
+        Span<bool> covered = stackalloc bool[Size * Size];
+        Span<bool> touchedRow = stackalloc bool[Size];
+        Span<bool> touchedCol = stackalloc bool[Size];
+        foreach (var (dr, dc) in p.Cells)
+        {
+            int r = row + dr, c = col + dc;
+            covered[r * Size + c] = true;
+            touchedRow[r] = true;
+            touchedCol[c] = true;
+        }
+
+        // Only lines the piece touches can newly complete: the board carries no
+        // pre-existing full line (those clear the instant they are completed).
+        for (int r = 0; r < Size; r++)
+        {
+            if (!touchedRow[r]) continue;
+            bool full = true;
+            for (int c = 0; c < Size; c++)
+                if (_grid[r * Size + c] == PieceType.Empty && !covered[r * Size + c]) { full = false; break; }
+            if (full) rows.Add(r);
+        }
+        for (int c = 0; c < Size; c++)
+        {
+            if (!touchedCol[c]) continue;
+            bool full = true;
+            for (int r = 0; r < Size; r++)
+                if (_grid[r * Size + c] == PieceType.Empty && !covered[r * Size + c]) { full = false; break; }
+            if (full) cols.Add(c);
+        }
     }
 
     /// <summary>
