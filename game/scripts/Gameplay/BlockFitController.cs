@@ -38,6 +38,16 @@ public partial class BlockFitController : Node2D
     // Reused per-frame buffers for the drag-time line-clear preview (no per-frame alloc).
     private readonly System.Collections.Generic.List<int> _pvRows = new(), _pvCols = new();
 
+    // Line-clear celebration: a bright band flash over each cleared row/column plus a
+    // spark burst. Bands are always on (they read as "these lines popped"); sparks and
+    // the background pulse are pure juice, gated off under reduced motion.
+    private const float ClearBandLife = 0.4f;
+    private struct ClearBand { public bool Row; public int Index; public float Age; }
+    private struct FxSpark { public Vector2 Pos, Vel; public float Age, Life, Size; }
+    private readonly System.Collections.Generic.List<ClearBand> _bands = new();
+    private readonly System.Collections.Generic.List<FxSpark> _fx = new();
+    private readonly RandomNumberGenerator _fxRng = new();
+
     public override void _Ready()
     {
         _uiHost = new Control { Name = "UiHost", MouseFilter = Control.MouseFilterEnum.Ignore };
@@ -129,6 +139,18 @@ public partial class BlockFitController : Node2D
             _combo.Modulate = new Color(1, 1, 1, Mathf.Clamp(_comboFlash / 0.9f, 0, 1));
         }
         else _combo.Text = "";
+
+        float dt = (float)delta;
+        for (int i = _bands.Count - 1; i >= 0; i--)
+        {
+            var b = _bands[i]; b.Age += dt;
+            if (b.Age >= ClearBandLife) _bands.RemoveAt(i); else _bands[i] = b;
+        }
+        for (int i = _fx.Count - 1; i >= 0; i--)
+        {
+            var s = _fx[i]; s.Age += dt; s.Pos += s.Vel * dt; s.Vel *= 0.9f;
+            if (s.Age >= s.Life) _fx.RemoveAt(i); else _fx[i] = s;
+        }
         QueueRedraw();
     }
 
@@ -175,7 +197,9 @@ public partial class BlockFitController : Node2D
         var piece = _game.Tray[idx];
         if (piece is not null && TargetCell(piece, pos, out int gr, out int gc) && _game.CanPlace(piece, gr, gc))
         {
-            long before = _game.Score;
+            // Capture the exact lines this drop completes BEFORE placing — TryPlace
+            // then clears them, so the celebration needs the indices up front.
+            _game.LinesClearedBy(piece, gr, gc, _pvRows, _pvCols);
             _game.TryPlace(idx, gr, gc);
             Bootstrap.Instance.Audio.PlaySfx("lock");
             if (_game.LastClearedRows + _game.LastClearedCols > 0)
@@ -184,6 +208,9 @@ public partial class BlockFitController : Node2D
                 int lines = _game.LastClearedRows + _game.LastClearedCols;
                 _combo.Text = lines >= 2 ? Loc.T("COMBO ×{0}", lines) : Loc.T("CLEAR");
                 _comboFlash = 0.9f;
+                SpawnClearFx();
+                if (!Motion.Reduced)
+                    Bootstrap.Instance.Bg.Pulse(Palette.AccentGold, Mathf.Min(0.55f, 0.22f + lines * 0.1f));
             }
             if (_game.Score > (long)Bootstrap.Instance.Save.BlockFitBest)
             {
@@ -210,6 +237,41 @@ public partial class BlockFitController : Node2D
         gc = Mathf.Clamp(gc, 0, BlockFitGame.Size - p.Width);
         gr = Mathf.Clamp(gr, 0, BlockFitGame.Size - p.Height);
         return true;
+    }
+
+    private void SpawnClearFx()
+    {
+        // Bright fading band over each cleared line (_pvRows/_pvCols were captured
+        // just before the placement that completed them).
+        foreach (int r in _pvRows) _bands.Add(new ClearBand { Row = true, Index = r });
+        foreach (int c in _pvCols) _bands.Add(new ClearBand { Row = false, Index = c });
+
+        if (Motion.Reduced || _cell <= 0) return; // sparks are pure juice
+        foreach (int r in _pvRows) BurstLine(rowLine: true, r);
+        foreach (int c in _pvCols) BurstLine(rowLine: false, c);
+    }
+
+    private void BurstLine(bool rowLine, int index)
+    {
+        for (int k = 0; k < BlockFitGame.Size; k++)
+        {
+            var center = rowLine
+                ? _boardOrigin + new Vector2((k + 0.5f) * _cell, (index + 0.5f) * _cell)
+                : _boardOrigin + new Vector2((index + 0.5f) * _cell, (k + 0.5f) * _cell);
+            for (int s = 0; s < 2; s++)
+            {
+                float ang = _fxRng.RandfRange(0f, Mathf.Tau);
+                float spd = _fxRng.RandfRange(60f, 220f);
+                _fx.Add(new FxSpark
+                {
+                    Pos = center,
+                    Vel = new Vector2(Mathf.Cos(ang), Mathf.Sin(ang)) * spd,
+                    Age = 0f,
+                    Life = _fxRng.RandfRange(0.35f, 0.6f),
+                    Size = _fxRng.RandfRange(2.5f, 5f),
+                });
+            }
+        }
     }
 
     // ---- Render ----
@@ -282,6 +344,24 @@ public partial class BlockFitController : Node2D
             var lift = _cell * 0.6f;
             var floatOrigin = new Vector2(_finger.X - dp.Width * _cell / 2f, _finger.Y - lift - dp.Height * _cell);
             DrawPiece(dp, floatOrigin, _cell, ok ? 1f : 0.6f, tex);
+        }
+
+        // Line-clear celebration (top layer): bright bands over cleared lines + sparks.
+        foreach (var b in _bands)
+        {
+            float t = b.Age / ClearBandLife;               // 0 → 1
+            float a = (1f - t) * (1f - t);                 // ease-out fade
+            float thick = _cell * (1f + 0.5f * (1f - t));  // swell then settle
+            var col = new Color(1f, 1f, 1f, a).Lerp(new Color(1f, 0.82f, 0.2f, a), t);
+            if (b.Row)
+                DrawRect(new Rect2(_boardOrigin.X, _boardOrigin.Y + (b.Index + 0.5f) * _cell - thick / 2f, boardPx, thick), col, filled: true);
+            else
+                DrawRect(new Rect2(_boardOrigin.X + (b.Index + 0.5f) * _cell - thick / 2f, _boardOrigin.Y, thick, boardPx), col, filled: true);
+        }
+        foreach (var s in _fx)
+        {
+            float a = 1f - s.Age / s.Life;
+            DrawCircle(s.Pos, s.Size * a, new Color(1f, 0.95f, 0.6f, a));
         }
     }
 

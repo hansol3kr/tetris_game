@@ -81,7 +81,10 @@ public sealed class BlockFitGame
     // Tunable difficulty curve. Below <see cref="SafetyNetBelow"/> the deal guarantees a
     // placeable piece while the board still has room (so early play never dead-ends); above
     // it, a crowded board can finally end the run.
-    private const long DifficultyScoreSpan = 1500;   // score at which difficulty saturates to 1
+    // Scaled for the 10×10 board: placement scores per-cell, so points accumulate
+    // ~board-area faster than at 8×8 — stretch the ramp so the difficulty curve rises
+    // at the same rate per unit of player progress rather than spiking early.
+    private const long DifficultyScoreSpan = 2400;   // score at which difficulty saturates to 1
     private const double SafetyNetBelow = 0.5;       // guarantee a move while difficulty < this
 
     public static double DifficultyFor(long score) =>
