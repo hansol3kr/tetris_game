@@ -132,10 +132,10 @@ workflows:
         # 자동 배포: 업로드+처리 후 이 TestFlight 그룹에 빌드를 자동 배정 → 테스터에게
         # "테스트 준비됨" 알림이 가고 폰에 바로 뜬다. 이게 없으면 빌드는 올라가도 "그룹 –"
         # 상태로 대기만 하고 테스터에게 안 풀린다(#22~#26이 그래서 안 떴음).
-        # "App Store Connect Users" = Apple 기본 내부 그룹(ASC 역할 있는 팀 계정 자동 포함,
-        # builds 14~20을 받던 경로). 별도 내부 그룹을 만들었다면 그 이름으로 교체할 것.
+        # "Internal" = ASC의 실제 내부 테스트 그룹 이름(TestFlight → 내부 테스팅).
+        # 이 이름이 ASC 그룹과 정확히 일치해야 빌드가 그 그룹에 배정되어 테스터에게 풀린다.
         beta_groups:
-          - App Store Connect Users
+          - Internal
         # 심사 자동 제출까지 원하면 아래 주석 해제 (처음엔 수동 제출 권장 — docs/DEPLOYMENT.md).
         # submit_to_app_store: false
 
