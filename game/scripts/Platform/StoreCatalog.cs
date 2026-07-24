@@ -5,7 +5,8 @@ namespace Blockfall.Platform;
 
 public enum StoreItemKind
 {
-    Theme,       // permanent cosmetic (block palette + backdrop)
+    Theme,       // permanent cosmetic (block palette + backdrop + optional glyph)
+    Artifact,    // permanent cosmetic (Block Fit line-clear burst style)
     BoosterPack, // consumable bundle (adds N uses)
     RemoveAds,   // permanent entitlement (mobile)
 }
@@ -121,6 +122,73 @@ public static class StoreCatalog
                 L: new Color(1.00f, 0.65f, 0.25f),
                 BgTop: new Color(0.090f, 0.050f, 0.020f), BgBottom: new Color(0.160f, 0.090f, 0.040f)),
         },
+        // Emoji-like glyph skins (free): vivid palettes that also stamp a cute mark on
+        // every block. The glyph reads globally through Palette.EquippedGlyph.
+        new()
+        {
+            Id = "theme_smiley", ProductId = "", Kind = StoreItemKind.Theme,
+            Name = "SMILEY POP", Blurb = "CANDY BRIGHTS WITH A HAPPY FACE ON EVERY BLOCK.",
+            PriceLabel = "FREE",
+            Theme = new BlockTheme("theme_smiley",
+                I: new Color(0.25f, 0.90f, 1.00f), O: new Color(1.00f, 0.85f, 0.25f),
+                T: new Color(0.85f, 0.45f, 1.00f), S: new Color(0.40f, 1.00f, 0.55f),
+                Z: new Color(1.00f, 0.40f, 0.50f), J: new Color(0.40f, 0.60f, 1.00f),
+                L: new Color(1.00f, 0.60f, 0.25f),
+                BgTop: new Color(0.055f, 0.035f, 0.075f), BgBottom: new Color(0.120f, 0.070f, 0.140f),
+                Glyph: SkinGlyph.Smile),
+        },
+        new()
+        {
+            Id = "theme_starlight", ProductId = "", Kind = StoreItemKind.Theme,
+            Name = "STARLIGHT", Blurb = "COSMIC NEON WITH A STAR ON EVERY BLOCK.",
+            PriceLabel = "FREE",
+            Theme = new BlockTheme("theme_starlight",
+                I: new Color(0.45f, 0.85f, 1.00f), O: new Color(1.00f, 0.90f, 0.45f),
+                T: new Color(0.70f, 0.50f, 1.00f), S: new Color(0.50f, 0.95f, 0.80f),
+                Z: new Color(1.00f, 0.50f, 0.70f), J: new Color(0.50f, 0.65f, 1.00f),
+                L: new Color(1.00f, 0.70f, 0.40f),
+                BgTop: new Color(0.020f, 0.024f, 0.075f), BgBottom: new Color(0.050f, 0.055f, 0.160f),
+                Glyph: SkinGlyph.Star),
+        },
+        new()
+        {
+            Id = "theme_lovecore", ProductId = "", Kind = StoreItemKind.Theme,
+            Name = "LOVECORE", Blurb = "ROSY POP WITH A HEART ON EVERY BLOCK.",
+            PriceLabel = "FREE",
+            Theme = new BlockTheme("theme_lovecore",
+                I: new Color(0.55f, 0.90f, 1.00f), O: new Color(1.00f, 0.80f, 0.45f),
+                T: new Color(1.00f, 0.50f, 0.85f), S: new Color(0.65f, 0.95f, 0.65f),
+                Z: new Color(1.00f, 0.40f, 0.55f), J: new Color(0.65f, 0.60f, 1.00f),
+                L: new Color(1.00f, 0.60f, 0.55f),
+                BgTop: new Color(0.090f, 0.030f, 0.055f), BgBottom: new Color(0.170f, 0.055f, 0.100f),
+                Glyph: SkinGlyph.Heart),
+        },
+        new()
+        {
+            Id = "theme_bloom", ProductId = "", Kind = StoreItemKind.Theme,
+            Name = "BLOOM", Blurb = "SPRING BRIGHTS WITH A FLOWER ON EVERY BLOCK.",
+            PriceLabel = "FREE",
+            Theme = new BlockTheme("theme_bloom",
+                I: new Color(0.40f, 0.95f, 0.90f), O: new Color(1.00f, 0.85f, 0.35f),
+                T: new Color(0.85f, 0.55f, 1.00f), S: new Color(0.45f, 1.00f, 0.60f),
+                Z: new Color(1.00f, 0.45f, 0.60f), J: new Color(0.45f, 0.70f, 1.00f),
+                L: new Color(1.00f, 0.65f, 0.30f),
+                BgTop: new Color(0.025f, 0.065f, 0.045f), BgBottom: new Color(0.055f, 0.130f, 0.090f),
+                Glyph: SkinGlyph.Flower),
+        },
+        new()
+        {
+            Id = "theme_voltage", ProductId = "", Kind = StoreItemKind.Theme,
+            Name = "VOLTAGE", Blurb = "ELECTRIC NEON WITH A BOLT ON EVERY BLOCK.",
+            PriceLabel = "FREE",
+            Theme = new BlockTheme("theme_voltage",
+                I: new Color(0.30f, 1.00f, 1.00f), O: new Color(1.00f, 0.95f, 0.20f),
+                T: new Color(0.80f, 0.40f, 1.00f), S: new Color(0.45f, 1.00f, 0.45f),
+                Z: new Color(1.00f, 0.35f, 0.45f), J: new Color(0.35f, 0.65f, 1.00f),
+                L: new Color(1.00f, 0.60f, 0.20f),
+                BgTop: new Color(0.030f, 0.035f, 0.055f), BgBottom: new Color(0.070f, 0.080f, 0.120f),
+                Glyph: SkinGlyph.Bolt),
+        },
         new()
         {
             Id = "theme_sunset_drive", ProductId = "com.blockfall.theme.sunset", Kind = StoreItemKind.Theme,
@@ -156,6 +224,44 @@ public static class StoreCatalog
                 Z: new Color(0.53f, 0.53f, 0.60f), J: new Color(0.83f, 0.86f, 0.93f),
                 L: new Color(0.60f, 0.65f, 0.75f),
                 BgTop: new Color(0.039f, 0.039f, 0.055f), BgBottom: new Color(0.102f, 0.102f, 0.141f)),
+        },
+        // Burst-FX artifacts (free): the line-clear celebration Block Fit plays.
+        // Cosmetic only — never touches scoring. "artifact_sparks" is the default.
+        new()
+        {
+            Id = "artifact_sparks", ProductId = "", Kind = StoreItemKind.Artifact,
+            Name = "SPARKLE", Blurb = "THE ORIGINAL GOLDEN SPARK BURST.",
+            PriceLabel = "FREE",
+        },
+        new()
+        {
+            Id = "artifact_fireworks", ProductId = "", Kind = StoreItemKind.Artifact,
+            Name = "FIREWORKS", Blurb = "MULTICOLOUR BURSTS AND BOOMING RINGS.",
+            PriceLabel = "FREE",
+        },
+        new()
+        {
+            Id = "artifact_confetti", ProductId = "", Kind = StoreItemKind.Artifact,
+            Name = "CONFETTI", Blurb = "A RAIN OF COLOURFUL PAPER BITS.",
+            PriceLabel = "FREE",
+        },
+        new()
+        {
+            Id = "artifact_supernova", ProductId = "", Kind = StoreItemKind.Artifact,
+            Name = "SUPERNOVA", Blurb = "A BLINDING FLASH AND A HUGE SHOCKWAVE.",
+            PriceLabel = "FREE",
+        },
+        new()
+        {
+            Id = "artifact_shards", ProductId = "", Kind = StoreItemKind.Artifact,
+            Name = "PRISM SHARDS", Blurb = "CHUNKY NEON SHARDS BLASTED OUTWARD.",
+            PriceLabel = "FREE",
+        },
+        new()
+        {
+            Id = "artifact_rainbow", ProductId = "", Kind = StoreItemKind.Artifact,
+            Name = "RAINBOW WAVE", Blurb = "A FULL-SPECTRUM SWEEP ALONG THE LINE.",
+            PriceLabel = "FREE",
         },
         new()
         {

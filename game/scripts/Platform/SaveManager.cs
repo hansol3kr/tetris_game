@@ -76,6 +76,8 @@ internal sealed class SaveData
     public List<string> OwnedItems { get; set; } = new();
     /// <summary>Store: the equipped cosmetic theme's item id.</summary>
     public string EquippedTheme { get; set; } = "theme_neon_flux";
+    /// <summary>Store: the equipped Block Fit burst-FX artifact's item id.</summary>
+    public string EquippedArtifact { get; set; } = "artifact_sparks";
     /// <summary>Store: consumable booster counts by booster id.</summary>
     public Dictionary<string, int> Boosters { get; set; } = new();
 
@@ -254,7 +256,9 @@ public partial class SaveManager : Node
     {
         if (itemId == StoreCatalog.DefaultThemeId || _data.OwnedItems.Contains(itemId)) return true;
         var item = StoreCatalog.ById(itemId);
-        return item is { Kind: StoreItemKind.Theme } && string.IsNullOrEmpty(item.ProductId);
+        // Free cosmetics (themes AND burst-FX artifacts with no store product) are always owned.
+        return item is { Kind: StoreItemKind.Theme or StoreItemKind.Artifact }
+            && string.IsNullOrEmpty(item.ProductId);
     }
 
     public void GrantItem(string itemId)
@@ -271,6 +275,16 @@ public partial class SaveManager : Node
     {
         if (_data.EquippedTheme == itemId) return;
         _data.EquippedTheme = itemId;
+        _dirty = true;
+        Flush();
+    }
+
+    public string EquippedArtifactId => _data.EquippedArtifact;
+
+    public void EquipArtifact(string itemId)
+    {
+        if (_data.EquippedArtifact == itemId) return;
+        _data.EquippedArtifact = itemId;
         _dirty = true;
         Flush();
     }

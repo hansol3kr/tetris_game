@@ -65,6 +65,10 @@ public static class Palette
     /// </summary>
     public static bool ColorblindMode { get; set; }
 
+    /// <summary>The glyph the equipped skin stamps on each block (None = plain). Set by
+    /// <see cref="ApplyTheme"/>; read by the Block Fit renderer per draw.</summary>
+    public static SkinGlyph EquippedGlyph { get; private set; } = SkinGlyph.None;
+
     // Neon-pastel piece fills (the default "NEON FLUX" theme): hue identities
     // preserved, saturation/luminance pulled into one band so the set reads as a
     // family on the navy background. Mutable — retinted by cosmetic themes.
@@ -96,6 +100,7 @@ public static class Palette
         I = t.I; O = t.O; T = t.T; S = t.S; Z = t.Z; J = t.J; L = t.L;
         Background = t.BgTop;
         BgBottom = t.BgBottom;
+        EquippedGlyph = t.Glyph;
     }
 
     // Colorblind-safe fills (Okabe–Ito). Kept bright so the neon glow still reads.

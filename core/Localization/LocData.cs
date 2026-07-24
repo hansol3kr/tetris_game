@@ -184,6 +184,8 @@ internal static class LocData
 
         // ---- Store screen -------------------------------------------------
         ["THEMES"] = "테마",
+        ["BURST FX"] = "클리어 연출",
+        ["BLOCK FIT · DRAG & FIT, NO GRAVITY"] = "블록 핏 · 끼워 맞추기, 중력 없음",
         ["BOOSTERS"] = "부스터",
         ["PREMIUM"] = "프리미엄",
         ["RESTORE PURCHASES"] = "구매 복원",

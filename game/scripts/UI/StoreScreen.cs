@@ -83,6 +83,12 @@ public partial class StoreScreen : Control
             if (item.Kind == StoreItemKind.Theme && (paidOk || save.OwnsItem(item.Id)))
                 _list.AddChild(ThemeRow(item));
 
+        // Burst-FX artifacts (all free ⇒ always shown, even on a mobile build without billing).
+        _list.AddChild(Section(Loc.T("BURST FX")));
+        foreach (var item in StoreCatalog.Items)
+            if (item.Kind == StoreItemKind.Artifact && (paidOk || save.OwnsItem(item.Id)))
+                _list.AddChild(ArtifactRow(item));
+
         if (paidOk)
         {
             _list.AddChild(Section(Loc.T("BOOSTERS")));
@@ -128,7 +134,17 @@ public partial class StoreScreen : Control
         if (equipped) name.AddThemeColorOverride("font_color", Palette.Accent);
         info.AddChild(name);
         if (item.Theme is { } theme)
-            info.AddChild(SwatchStrip(theme));
+        {
+            if (theme.Glyph != SkinGlyph.None)
+            {
+                var previewRow = new HBoxContainer();
+                previewRow.AddThemeConstantOverride("separation", 8);
+                previewRow.AddChild(SwatchStrip(theme));
+                previewRow.AddChild(new GlyphIcon(theme.Glyph, new Color(0.95f, 0.95f, 1f), 20) { SizeFlagsVertical = SizeFlags.ShrinkCenter });
+                info.AddChild(previewRow);
+            }
+            else info.AddChild(SwatchStrip(theme));
+        }
         var blurb = new Label { Text = item.Blurb, ThemeTypeVariation = "DimLabel" };
         blurb.AddThemeFontSizeOverride("font_size", 13);
         info.AddChild(blurb);
@@ -156,6 +172,61 @@ public partial class StoreScreen : Control
         }
         return card;
     }
+
+    private Control ArtifactRow(StoreItem item)
+    {
+        var save = Bootstrap.Instance.Save;
+        bool owned = save.OwnsItem(item.Id);
+        bool equipped = save.EquippedArtifactId == item.Id;
+
+        var card = Card();
+        var row = CardRow(card);
+        row.AddChild(new Theme.Icon(IconKind.Diamond, ArtifactColor(item.Id), 26) { SizeFlagsVertical = SizeFlags.ShrinkCenter });
+
+        var info = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ShrinkCenter };
+        info.AddThemeConstantOverride("separation", 4);
+        var name = new Label { Text = item.Name };
+        name.AddThemeFontOverride("font", Fonts.UiBold);
+        name.AddThemeFontSizeOverride("font_size", 20);
+        if (equipped) name.AddThemeColorOverride("font_color", Palette.Accent);
+        info.AddChild(name);
+        var blurb = new Label { Text = item.Blurb, ThemeTypeVariation = "DimLabel", AutowrapMode = TextServer.AutowrapMode.WordSmart };
+        blurb.AddThemeFontSizeOverride("font_size", 13);
+        info.AddChild(blurb);
+        row.AddChild(info);
+
+        if (equipped)
+        {
+            row.AddChild(StateChip(Loc.T("EQUIPPED"), Palette.Accent));
+        }
+        else if (owned)
+        {
+            var equip = ActionBtn(Loc.T("EQUIP"), "GhostButton");
+            equip.Pressed += () => EquipArtifact(item);
+            row.AddChild(equip);
+        }
+        else
+        {
+            var buy = ActionBtn(item.PriceLabel, "PrimaryButton");
+            buy.Pressed += () => Purchase(item, onGranted: () =>
+            {
+                Bootstrap.Instance.Save.GrantItem(item.Id);
+                EquipArtifact(item);
+            });
+            row.AddChild(buy);
+        }
+        return card;
+    }
+
+    private static Color ArtifactColor(string id) => id switch
+    {
+        "artifact_fireworks" => Palette.AccentGold,
+        "artifact_confetti" => Palette.AccentGreen,
+        "artifact_supernova" => new Color(1f, 0.98f, 0.9f),
+        "artifact_shards" => Palette.Accent,
+        "artifact_rainbow" => Palette.AccentViolet,
+        _ => Palette.AccentGold,
+    };
 
     private Control BoosterRow(StoreItem item)
     {
@@ -228,6 +299,12 @@ public partial class StoreScreen : Control
         save.EquipTheme(item.Id);
         Palette.ApplyTheme(item.Theme);
         Bootstrap.Instance.Bg.ApplyThemeColors(); // backdrop retints live behind the store
+        Rebuild();
+    }
+
+    private void EquipArtifact(StoreItem item)
+    {
+        Bootstrap.Instance.Save.EquipArtifact(item.Id);
         Rebuild();
     }
 
