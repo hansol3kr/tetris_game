@@ -159,6 +159,90 @@ public class BlockFitGameTests
     }
 
     [Fact]
+    public void FindHint_PrefersLineClearingPlacement()
+    {
+        // Row 0 filled except its last column: dropping the single there clears the row.
+        var grid = EmptyGrid();
+        for (int c = 0; c < N - 1; c++) grid[Idx(0, c)] = PieceType.O;
+        var single = new BlockPiece(new[] { (0, 0) }, PieceType.T);
+        var g = new BlockFitGame(grid, new BlockPiece?[] { single, null, null });
+
+        Assert.True(g.FindHint(out int ti, out int hr, out int hc));
+        Assert.Equal(0, ti);
+        Assert.Equal(0, hr);
+        Assert.Equal(N - 1, hc);   // the one placement that completes row 0
+
+        // Purely advisory — the hint must not have touched the board.
+        Assert.Equal(PieceType.Empty, g.At(0, N - 1));
+    }
+
+    [Fact]
+    public void FindHint_FallsBackToAnyValidFit_WhenNothingClears()
+    {
+        // Empty board + a single: no placement can ever complete a whole line here.
+        var single = new BlockPiece(new[] { (0, 0) }, PieceType.I);
+        var g = new BlockFitGame(EmptyGrid(), new BlockPiece?[] { single, null, null });
+
+        Assert.True(g.FindHint(out int ti, out int r, out int c));
+        Assert.Equal(0, ti);
+        Assert.True(g.CanPlace(g.Tray[ti]!, r, c));   // whatever it points at, it must actually fit
+    }
+
+    [Fact]
+    public void FindHint_FullBoard_ReturnsFalse()
+    {
+        var grid = EmptyGrid();
+        for (int i = 0; i < grid.Length; i++) grid[i] = PieceType.Z;
+        var single = new BlockPiece(new[] { (0, 0) }, PieceType.I);
+        var g = new BlockFitGame(grid, new BlockPiece?[] { single, null, null });
+
+        Assert.False(g.FindHint(out _, out _, out _));
+    }
+
+    [Fact]
+    public void TryMerge_FusesTwoPieces_IntoOneWiderPiece_ConsumingSource()
+    {
+        // Two singles on an empty board → merge slot 1 into slot 0 → a 1×2 piece in slot 0.
+        var a = new BlockPiece(new[] { (0, 0) }, PieceType.I);
+        var b = new BlockPiece(new[] { (0, 0) }, PieceType.O);
+        var g = new BlockFitGame(EmptyGrid(), new BlockPiece?[] { a, b, null });
+
+        Assert.True(g.TryMerge(srcIndex: 1, dstIndex: 0));
+        Assert.NotNull(g.Tray[0]);
+        Assert.Null(g.Tray[1]);                       // source consumed
+        Assert.Equal(2, g.Tray[0]!.Cells.Count);      // union of both cells
+        Assert.Equal(2, g.Tray[0]!.Width);            // concatenated horizontally
+        Assert.Equal(1, g.Tray[0]!.Height);
+        Assert.Equal(PieceType.I, g.Tray[0]!.Color);  // keeps the destination's colour
+        Assert.False(g.GameOver);                     // the 1×2 still fits the empty board
+    }
+
+    [Fact]
+    public void TryMerge_RefusesResultTooBigToEverFit()
+    {
+        // Two width-6 pieces → a width-12 result can never fit the 10-wide board → refused.
+        var wide = new BlockPiece(new[] { (0, 0), (0, 5) }, PieceType.I);
+        var wide2 = new BlockPiece(new[] { (0, 0), (0, 5) }, PieceType.O);
+        var g = new BlockFitGame(EmptyGrid(), new BlockPiece?[] { wide, wide2, null });
+
+        Assert.False(g.TryMerge(1, 0));
+        Assert.NotNull(g.Tray[0]);   // tray untouched
+        Assert.NotNull(g.Tray[1]);
+    }
+
+    [Fact]
+    public void TryMerge_RefusesInvalidIndicesOrEmptySlots()
+    {
+        var single = new BlockPiece(new[] { (0, 0) }, PieceType.I);
+        var g = new BlockFitGame(EmptyGrid(), new BlockPiece?[] { single, null, null });
+
+        Assert.False(g.TryMerge(0, 0));   // same slot
+        Assert.False(g.TryMerge(1, 0));   // source slot empty
+        Assert.False(g.TryMerge(0, 5));   // out of range
+        Assert.NotNull(g.Tray[0]);        // untouched
+    }
+
+    [Fact]
     public void SameSeed_IsDeterministic()
     {
         var a = new BlockFitGame(seed: 7);

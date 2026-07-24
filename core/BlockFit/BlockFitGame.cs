@@ -189,6 +189,42 @@ public sealed class BlockFitGame
         return true;
     }
 
+    /// <summary>
+    /// Fuse tray[<paramref name="srcIndex"/>] into tray[<paramref name="dstIndex"/>]:
+    /// the source piece is concatenated immediately to the right of the destination's
+    /// bounding box, forming one larger composite piece (destination's colour) that
+    /// consumes both slots. Lets the player deliberately build a big shape to sweep
+    /// several lines at once. Refuses the merge (returns false, tray untouched) when the
+    /// indices are invalid/equal, either slot is empty, or the result would be too big to
+    /// ever fit the board. Flips GameOver when the post-merge tray can no longer move.
+    /// </summary>
+    public bool TryMerge(int srcIndex, int dstIndex)
+    {
+        if (srcIndex == dstIndex) return false;
+        if (srcIndex < 0 || srcIndex >= Tray.Length) return false;
+        if (dstIndex < 0 || dstIndex >= Tray.Length) return false;
+        var src = Tray[srcIndex];
+        var dst = Tray[dstIndex];
+        if (src is null || dst is null) return false;
+
+        // Source occupies columns [dst.Width, dst.Width+src.Width) — disjoint from the
+        // destination's [0, dst.Width), so the union never overlaps and stays top-left based.
+        int offset = dst.Width;
+        int mergedW = dst.Width + src.Width;
+        int mergedH = Math.Max(dst.Height, src.Height);
+        if (mergedW > Size || mergedH > Size) return false;   // could never be placed → refuse
+
+        var cells = new List<(int r, int c)>(dst.Cells.Count + src.Cells.Count);
+        foreach (var (r, c) in dst.Cells) cells.Add((r, c));
+        foreach (var (r, c) in src.Cells) cells.Add((r, c + offset));
+
+        Tray[dstIndex] = new BlockPiece(cells, dst.Color);
+        Tray[srcIndex] = null;
+
+        if (!AnyMovePossible()) GameOver = true;
+        return true;
+    }
+
     private void ClearFullLines()
     {
         var fullRows = new List<int>();
@@ -234,6 +270,40 @@ public sealed class BlockFitGame
                 for (int c = 0; c < Size; c++)
                     if (CanPlace(p, r, c)) return true;
         }
+        return false;
+    }
+
+    /// <summary>
+    /// Suggest a placement to surface when the player stalls (the 5-second hint). Prefers a
+    /// placement that clears at least one line; otherwise returns the first valid fit found
+    /// (smallest pieces are scanned first, so the suggestion is the easiest to eyeball).
+    /// Returns false only when nothing in the tray fits anywhere — i.e. the run is over.
+    /// Pure: never mutates the board or tray.
+    /// </summary>
+    public bool FindHint(out int trayIndex, out int row, out int col)
+    {
+        trayIndex = -1; row = -1; col = -1;
+        int fbIndex = -1, fbRow = -1, fbCol = -1;
+        var rows = new List<int>();
+        var cols = new List<int>();
+        for (int i = 0; i < Tray.Length; i++)
+        {
+            var p = Tray[i];
+            if (p is null) continue;
+            for (int r = 0; r < Size; r++)
+                for (int c = 0; c < Size; c++)
+                {
+                    if (!CanPlace(p, r, c)) continue;
+                    if (fbIndex < 0) { fbIndex = i; fbRow = r; fbCol = c; }
+                    LinesClearedBy(p, r, c, rows, cols);
+                    if (rows.Count + cols.Count > 0)   // a clearing placement is the best hint
+                    {
+                        trayIndex = i; row = r; col = c;
+                        return true;
+                    }
+                }
+        }
+        if (fbIndex >= 0) { trayIndex = fbIndex; row = fbRow; col = fbCol; return true; }
         return false;
     }
 

@@ -48,6 +48,14 @@ public partial class BlockFitController : Node2D
     private readonly System.Collections.Generic.List<FxSpark> _fx = new();
     private readonly RandomNumberGenerator _fxRng = new();
 
+    // Idle hint: after HintDelay seconds without a placement, surface a valid move
+    // (FindHint prefers one that clears a line) as a pulsing green "put it here" cue.
+    private const float HintDelay = 5f;
+    private float _idle;
+    private bool _hintOn;
+    private int _hintIdx = -1, _hintR, _hintC;
+    private float _hintPulse;
+
     public override void _Ready()
     {
         _uiHost = new Control { Name = "UiHost", MouseFilter = Control.MouseFilterEnum.Ignore };
@@ -151,6 +159,17 @@ public partial class BlockFitController : Node2D
             var s = _fx[i]; s.Age += dt; s.Pos += s.Vel * dt; s.Vel *= 0.9f;
             if (s.Age >= s.Life) _fx.RemoveAt(i); else _fx[i] = s;
         }
+
+        // Idle hint timer: only advances while the run is live and nothing is being dragged.
+        if (!_game.GameOver && _dragIndex == -1)
+        {
+            _idle += dt;
+            if (_idle >= HintDelay)
+            {
+                if (!_hintOn) _hintOn = _game.FindHint(out _hintIdx, out _hintR, out _hintC);
+                _hintPulse += dt;
+            }
+        }
         QueueRedraw();
     }
 
@@ -178,6 +197,7 @@ public partial class BlockFitController : Node2D
     private void Grab(int id, Vector2 pos)
     {
         if (_game.GameOver || _dragIndex != -1) return;
+        ResetIdle();
         for (int i = 0; i < 3; i++)
             if (_game.Tray[i] is not null && _traySlot[i].HasPoint(pos))
             {
@@ -193,6 +213,22 @@ public partial class BlockFitController : Node2D
         int idx = _dragIndex;
         _dragIndex = -1; _touchId = int.MinValue;
         _finger = pos;
+        ResetIdle();
+
+        // Merge intent: released over a different, occupied tray slot → fuse the two pieces
+        // into one larger composite (checked before board placement so it always wins here).
+        int mergeInto = MergeTargetSlot(pos, idx);
+        if (mergeInto >= 0)
+        {
+            if (_game.TryMerge(srcIndex: idx, dstIndex: mergeInto))
+            {
+                Bootstrap.Instance.Audio.PlaySfx("hold");   // fuse cue
+                if (_game.GameOver) ShowGameOver();
+            }
+            else Bootstrap.Instance.Audio.PlaySfx("move");  // refused (result too big to fit)
+            QueueRedraw();
+            return;
+        }
 
         var piece = _game.Tray[idx];
         if (piece is not null && TargetCell(piece, pos, out int gr, out int gc) && _game.CanPlace(piece, gr, gc))
@@ -238,6 +274,18 @@ public partial class BlockFitController : Node2D
         gr = Mathf.Clamp(gr, 0, BlockFitGame.Size - p.Height);
         return true;
     }
+
+    /// <summary>The occupied tray slot the finger is over — other than the dragged one — or
+    /// -1. When ≥0 a release fuses the pieces (merge) instead of placing on the board.</summary>
+    private int MergeTargetSlot(Vector2 pos, int dragIdx)
+    {
+        for (int i = 0; i < 3; i++)
+            if (i != dragIdx && _game.Tray[i] is not null && _traySlot[i].HasPoint(pos))
+                return i;
+        return -1;
+    }
+
+    private void ResetIdle() { _idle = 0f; _hintOn = false; _hintIdx = -1; _hintPulse = 0f; }
 
     private void SpawnClearFx()
     {
@@ -305,8 +353,35 @@ public partial class BlockFitController : Node2D
             DrawPiece(p, TrayPieceOrigin(p, i), _trayCell, 1f, tex: TextureFactory.Cell(Mathf.Clamp((int)_trayCell, 8, 128)));
         }
 
+        // Idle hint (after 5s without a move): pulse the suggested placement + its tray slot
+        // so a stuck player sees exactly where a piece fits (FindHint prefers a line-clearing spot).
+        if (_hintOn && _dragIndex == -1 && _hintIdx >= 0 && _game.Tray[_hintIdx] is { } hp)
+        {
+            float pulse = 0.5f + 0.5f * Mathf.Sin(_hintPulse * 4f);
+            var horigin = _boardOrigin + new Vector2(_hintC * _cell, _hintR * _cell);
+            var fill = new Color(0.25f, 1f, 0.5f, 0.16f + 0.26f * pulse);
+            var edge = new Color(0.4f, 1f, 0.6f, 0.55f + 0.35f * pulse);
+            foreach (var (drr, dcc) in hp.Cells)
+            {
+                var hc = new Rect2(horigin + new Vector2(dcc * _cell, drr * _cell) + new Vector2(2, 2), new Vector2(_cell - 4, _cell - 4));
+                DrawRect(hc, fill, filled: true);
+                DrawRect(hc, edge, filled: false, width: 2f);
+            }
+            DrawRect(_traySlot[_hintIdx].Grow(-4f), edge, filled: false, width: 3f);
+        }
+
+        // Merge preview: while dragging over another occupied tray slot, ring it in cyan —
+        // releasing there fuses the two pieces instead of dropping on the board.
+        int mergeHover = _dragIndex == -1 ? -1 : MergeTargetSlot(_finger, _dragIndex);
+        if (mergeHover >= 0 && _game.Tray[_dragIndex] is { } mdp)
+        {
+            DrawRect(_traySlot[mergeHover].Grow(-6f), new Color(0.55f, 0.85f, 1f, 0.85f), filled: false, width: 3f);
+            float lift0 = _cell * 0.6f;
+            DrawPiece(mdp, new Vector2(_finger.X - mdp.Width * _cell / 2f, _finger.Y - lift0 - mdp.Height * _cell), _cell, 1f, tex);
+        }
+
         // Dragged piece: snapped ghost on the board (valid = bright, invalid = red).
-        if (_dragIndex != -1 && _game.Tray[_dragIndex] is { } dp && TargetCell(dp, _finger, out int gr, out int gc))
+        if (mergeHover < 0 && _dragIndex != -1 && _game.Tray[_dragIndex] is { } dp && TargetCell(dp, _finger, out int gr, out int gc))
         {
             bool ok = _game.CanPlace(dp, gr, gc);
             var origin = _boardOrigin + new Vector2(gc * _cell, gr * _cell);
@@ -426,6 +501,7 @@ public partial class BlockFitController : Node2D
         _game = new BlockFitGame();
         _overlay.Visible = false;
         _dragIndex = -1; _touchId = int.MinValue;
+        ResetIdle();
         QueueRedraw();
     }
 }
