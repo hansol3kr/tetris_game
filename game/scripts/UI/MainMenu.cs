@@ -81,16 +81,13 @@ public partial class MainMenu : Control
         BuildLogo(col);
         col.AddChild(Spacer(14));
 
-        var hero = ResolveHeroMode();
-        col.AddChild(BuildHeroCard(hero));
+        col.AddChild(BuildHeroCard());
         col.AddChild(BuildDailyCard());
         col.AddChild(BuildDescentCard());
         col.AddChild(Spacer(2));
-        col.AddChild(BuildModeGrid(hero));
+        col.AddChild(BuildModeGrid());
         col.AddChild(Spacer(2));
         col.AddChild(BuildVersusCard());
-        col.AddChild(Spacer(6));
-        col.AddChild(BuildBlockFitCard());
         col.AddChild(Spacer(6));
         BuildCustomRun(col);
         col.AddChild(BuildBottomButtons());
@@ -171,20 +168,13 @@ public partial class MainMenu : Control
 
     // ---- Cards -----------------------------------------------------------------
 
-    private GameModeId ResolveHeroMode()
-    {
-        var last = Bootstrap.Instance.Save.Settings.LastPlayedMode;
-        return Enum.TryParse<GameModeId>(last, out var m) && Array.IndexOf(SoloModes, m) >= 0
-            ? m : GameModeId.Marathon;
-    }
-
-    private Control BuildHeroCard(GameModeId hero)
+    private Control BuildHeroCard()
     {
         var b = Card(Palette.Accent, 96);
         var content = CardContent(b);
 
         content.AddChild(AccentBar(Palette.Accent, 60));
-        content.AddChild(new Theme.Icon(IconKind.Play, Palette.Accent, 30) { SizeFlagsVertical = SizeFlags.ShrinkCenter });
+        content.AddChild(new Theme.Icon(IconKind.Blocks, Palette.Accent, 30) { SizeFlagsVertical = SizeFlags.ShrinkCenter });
 
         var text = new VBoxContainer { SizeFlagsVertical = SizeFlags.ShrinkCenter, SizeFlagsHorizontal = SizeFlags.ExpandFill };
         text.AddThemeConstantOverride("separation", 0);
@@ -193,7 +183,7 @@ public partial class MainMenu : Control
         play.AddThemeFontSizeOverride("font_size", 27);
         var sub = new Label
         {
-            Text = $"{ModeTitle(hero)} · {ModeBlurb(hero)}",
+            Text = Loc.T("BLOCK FIT · DRAG & FIT, NO GRAVITY"),
             ThemeTypeVariation = "DimLabel",
             ClipText = true, // never push the best-chip off the card
             TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
@@ -203,9 +193,11 @@ public partial class MainMenu : Control
         text.AddChild(sub);
         content.AddChild(text);
 
-        content.AddChild(BestChip(hero));
+        // The primary PLAY is now the placement puzzle; the chip shows the Block Fit best.
+        long bfBest = (long)Bootstrap.Instance.Save.BlockFitBest;
+        content.AddChild(ChipLabel(bfBest > 0 ? $"★ {bfBest:N0}" : Loc.T("FIRST RUN"), Palette.TextSecondary));
 
-        b.Pressed += () => ModeChosen?.Invoke(hero);
+        b.Pressed += () => BlockFitChosen?.Invoke();
         return b;
     }
 
@@ -284,15 +276,15 @@ public partial class MainMenu : Control
         return b;
     }
 
-    private Control BuildModeGrid(GameModeId hero)
+    private Control BuildModeGrid()
     {
         var grid = new GridContainer { Columns = 2 };
         grid.AddThemeConstantOverride("h_separation", 12);
         grid.AddThemeConstantOverride("v_separation", 12);
 
+        // The hero card is now Block Fit, so every falling mode lives here (none is skipped).
         foreach (var mode in SoloModes)
         {
-            if (mode == hero) continue;
             var m = mode;
             var b = Card(Palette.Accent, 72);
             b.SizeFlagsHorizontal = SizeFlags.ExpandFill;
@@ -343,30 +335,6 @@ public partial class MainMenu : Control
         content.AddChild(text);
 
         b.Pressed += () => VersusChosen?.Invoke();
-        return b;
-    }
-
-    private Control BuildBlockFitCard()
-    {
-        var b = Card(Palette.AccentGreen, 72);
-        var content = CardContent(b);
-
-        content.AddChild(AccentBar(Palette.AccentGreen, 40));
-        content.AddChild(new Theme.Icon(IconKind.Blocks, Palette.AccentGreen, 26) { SizeFlagsVertical = SizeFlags.ShrinkCenter });
-
-        var text = new VBoxContainer { SizeFlagsVertical = SizeFlags.ShrinkCenter, SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        text.AddThemeConstantOverride("separation", 0);
-        var name = new Label { Text = Loc.T("BLOCK FIT") };
-        name.AddThemeFontOverride("font", Fonts.UiBold);
-        name.AddThemeFontSizeOverride("font_size", 21);
-        name.AddThemeColorOverride("font_color", Palette.AccentGreen);
-        var sub = new Label { Text = Loc.T("DRAG & FIT · NO GRAVITY"), ThemeTypeVariation = "DimLabel" };
-        sub.AddThemeFontSizeOverride("font_size", 14);
-        text.AddChild(name);
-        text.AddChild(sub);
-        content.AddChild(text);
-
-        b.Pressed += () => BlockFitChosen?.Invoke();
         return b;
     }
 
@@ -542,12 +510,6 @@ public partial class MainMenu : Control
             SizeFlagsVertical = SizeFlags.ShrinkCenter,
             MouseFilter = MouseFilterEnum.Ignore,
         };
-    }
-
-    private Control BestChip(GameModeId mode)
-    {
-        var best = Bootstrap.Instance.Save.GetBest(mode);
-        return ChipLabel(best.HasValue ? FormatBest(mode, best.Value) : Loc.T("FIRST RUN"), Palette.TextSecondary);
     }
 
     private static Control ChipLabel(string text, Color color)
