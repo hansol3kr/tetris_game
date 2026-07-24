@@ -209,6 +209,15 @@ public sealed class BlockFitVersus
         return ok;
     }
 
+    /// <summary>Commit a player tray merge with an explicit join offset (spatial merge).</summary>
+    public bool PlayerMerge(int srcIndex, int dstIndex, int srcRowOffset, int srcColOffset)
+    {
+        if (IsOver) return false;
+        bool ok = PlayerGame.TryMerge(srcIndex, dstIndex, srcRowOffset, srcColOffset);
+        if (ok) CheckEnd();
+        return ok;
+    }
+
     /// <summary>Advance the bot; garbage flows to the player when the bot clears.</summary>
     public void Update(double dt)
     {

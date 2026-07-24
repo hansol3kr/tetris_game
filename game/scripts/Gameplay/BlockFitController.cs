@@ -235,14 +235,15 @@ public partial class BlockFitController : Node2D
         // Merge intent: released over a different, occupied tray slot → fuse the two pieces
         // into one larger composite (checked before board placement so it always wins here).
         int mergeInto = MergeTargetSlot(pos, idx);
-        if (mergeInto >= 0)
+        if (mergeInto >= 0 && _game.Tray[idx] is { } msrc)
         {
-            if (_game.TryMerge(srcIndex: idx, dstIndex: mergeInto))
+            MergeOffset(msrc, mergeInto, out int mr, out int mc);   // where the finger says to join
+            if (_game.TryMerge(idx, mergeInto, mr, mc))
             {
                 Bootstrap.Instance.Audio.PlaySfx("hold");   // fuse cue
                 if (_game.GameOver) ShowGameOver();
             }
-            else Bootstrap.Instance.Audio.PlaySfx("move");  // refused (result too big to fit)
+            else Bootstrap.Instance.Audio.PlaySfx("move");  // overlap or too big to fit
             QueueRedraw();
             return;
         }
@@ -298,6 +299,18 @@ public partial class BlockFitController : Node2D
             if (i != dragIdx && _game.Tray[i] is not null && _traySlot[i].HasPoint(pos))
                 return i;
         return -1;
+    }
+
+    /// <summary>Cell offset (relative to the destination piece's top-left in its slot) where the
+    /// dragged source snaps for a merge — centred under the finger so the join follows the drop.</summary>
+    private void MergeOffset(BlockPiece src, int dstSlot, out int rowOff, out int colOff)
+    {
+        var dst = _game.Tray[dstSlot]!;
+        var borigin = TrayPieceOrigin(dst, dstSlot);
+        float fc = (_finger.X - borigin.X) / _trayCell - (src.Width - 1) * 0.5f;
+        float fr = (_finger.Y - borigin.Y) / _trayCell - (src.Height - 1) * 0.5f;
+        colOff = Mathf.RoundToInt(fc);
+        rowOff = Mathf.RoundToInt(fr);
     }
 
     private void ResetIdle() { _idle = 0f; _hintOn = false; _hintIdx = -1; _hintPulse = 0f; }
@@ -421,12 +434,14 @@ public partial class BlockFitController : Node2D
                 }
             }
 
-        // Tray pieces (skip the one being dragged).
+        // Tray pieces (skip the dragged one, and the merge target — the merge preview redraws it).
+        int mergeHover = _dragIndex == -1 ? -1 : MergeTargetSlot(_finger, _dragIndex);
+        var trayTex = TextureFactory.Cell(Mathf.Clamp((int)_trayCell, 8, 128));
         for (int i = 0; i < 3; i++)
         {
             var p = _game.Tray[i];
-            if (p is null || i == _dragIndex) continue;
-            DrawPiece(p, TrayPieceOrigin(p, i), _trayCell, 1f, tex: TextureFactory.Cell(Mathf.Clamp((int)_trayCell, 8, 128)));
+            if (p is null || i == _dragIndex || i == mergeHover) continue;
+            DrawPiece(p, TrayPieceOrigin(p, i), _trayCell, 1f, trayTex);
         }
 
         // Idle hint (after 5s without a move): pulse the suggested placement + its tray slot
@@ -446,14 +461,23 @@ public partial class BlockFitController : Node2D
             DrawRect(_traySlot[_hintIdx].Grow(-4f), edge, filled: false, width: 3f);
         }
 
-        // Merge preview: while dragging over another occupied tray slot, ring it in cyan —
-        // releasing there fuses the two pieces instead of dropping on the board.
-        int mergeHover = _dragIndex == -1 ? -1 : MergeTargetSlot(_finger, _dragIndex);
+        // Merge preview: while dragging over another occupied tray slot, show the fused shape
+        // LIVE in that slot — the source snaps to the finger cell-by-cell so the pieces join
+        // EXACTLY where the player wants (green = legal, red = overlap / too big to fit).
         if (mergeHover >= 0 && _game.Tray[_dragIndex] is { } mdp)
         {
-            DrawRect(_traySlot[mergeHover].Grow(-6f), new Color(0.55f, 0.85f, 1f, 0.85f), filled: false, width: 3f);
-            float lift0 = _cell * 0.6f;
-            DrawPiece(mdp, new Vector2(_finger.X - mdp.Width * _cell / 2f, _finger.Y - lift0 - mdp.Height * _cell), _cell, 1f, tex);
+            var mdst = _game.Tray[mergeHover]!;
+            MergeOffset(mdp, mergeHover, out int mr, out int mc);
+            bool okMerge = _game.CanMerge(_dragIndex, mergeHover, mr, mc);
+            var borigin = TrayPieceOrigin(mdst, mergeHover);
+            DrawRect(_traySlot[mergeHover].Grow(-4f), new Color(0.55f, 0.85f, 1f, 0.4f), filled: false, width: 2f);
+            DrawPiece(mdst, borigin, _trayCell, 0.5f, trayTex);   // destination, dimmed
+            var srcCol = okMerge ? new Color(0.4f, 1f, 0.6f) : Palette.AccentRed;
+            foreach (var (dr, dc) in mdp.Cells)
+            {
+                var rect = new Rect2(borigin + new Vector2((dc + mc) * _trayCell, (dr + mr) * _trayCell) + new Vector2(1, 1), new Vector2(_trayCell - 2, _trayCell - 2));
+                DrawTextureRect(trayTex, rect, false, new Color(srcCol.R, srcCol.G, srcCol.B, okMerge ? 0.95f : 0.6f));
+            }
         }
 
         // Dragged piece: snapped ghost on the board (valid = bright, invalid = red).

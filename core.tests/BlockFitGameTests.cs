@@ -231,6 +231,47 @@ public class BlockFitGameTests
     }
 
     [Fact]
+    public void TryMerge_WithOffset_JoinsExactlyWhereAsked()
+    {
+        // Two singles → place the source one cell BELOW the destination → a vertical domino,
+        // not the default horizontal concatenation.
+        var a = new BlockPiece(new[] { (0, 0) }, PieceType.I);
+        var b = new BlockPiece(new[] { (0, 0) }, PieceType.O);
+        var g = new BlockFitGame(EmptyGrid(), new BlockPiece?[] { a, b, null });
+
+        Assert.True(g.TryMerge(srcIndex: 1, dstIndex: 0, srcRowOffset: 1, srcColOffset: 0));
+        Assert.Null(g.Tray[1]);
+        var m = g.Tray[0]!;
+        Assert.Equal(2, m.Cells.Count);
+        Assert.Equal(1, m.Width);
+        Assert.Equal(2, m.Height);   // stacked vertically — the offset was honoured
+    }
+
+    [Fact]
+    public void TryMerge_OverlappingCells_IsRefused()
+    {
+        var a = new BlockPiece(new[] { (0, 0) }, PieceType.I);
+        var b = new BlockPiece(new[] { (0, 0) }, PieceType.O);
+        var g = new BlockFitGame(EmptyGrid(), new BlockPiece?[] { a, b, null });
+
+        Assert.False(g.CanMerge(1, 0, 0, 0));   // source would land on the destination's cell
+        Assert.False(g.TryMerge(1, 0, 0, 0));
+        Assert.NotNull(g.Tray[0]);              // tray untouched
+        Assert.NotNull(g.Tray[1]);
+    }
+
+    [Fact]
+    public void CanMerge_AgreesWithTryMerge_ForAValidOffset()
+    {
+        var a = new BlockPiece(new[] { (0, 0) }, PieceType.I);
+        var b = new BlockPiece(new[] { (0, 0) }, PieceType.O);
+        var g = new BlockFitGame(EmptyGrid(), new BlockPiece?[] { a, b, null });
+
+        Assert.True(g.CanMerge(1, 0, 0, 1));    // source to the right — legal
+        Assert.True(g.TryMerge(1, 0, 0, 1));
+    }
+
+    [Fact]
     public void TryMerge_RefusesInvalidIndicesOrEmptySlots()
     {
         var single = new BlockPiece(new[] { (0, 0) }, PieceType.I);

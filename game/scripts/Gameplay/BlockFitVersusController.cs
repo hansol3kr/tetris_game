@@ -216,11 +216,13 @@ public partial class BlockFitVersusController : Node2D
         _dragIndex = -1; _touchId = int.MinValue;
         _finger = pos;
 
-        // Merge onto another occupied tray slot (same as solo — no attack).
+        // Merge onto another occupied tray slot (same as solo — no attack), joining exactly
+        // where the finger says.
         int mergeInto = MergeTargetSlot(pos, idx);
-        if (mergeInto >= 0)
+        if (mergeInto >= 0 && _match.PlayerGame.Tray[idx] is { } msrc)
         {
-            if (_match.PlayerMerge(idx, mergeInto)) Bootstrap.Instance.Audio.PlaySfx("hold");
+            MergeOffset(msrc, mergeInto, out int mr, out int mc);
+            if (_match.PlayerMerge(idx, mergeInto, mr, mc)) Bootstrap.Instance.Audio.PlaySfx("hold");
             else Bootstrap.Instance.Audio.PlaySfx("move");
             QueueRedraw();
             return;
@@ -251,6 +253,16 @@ public partial class BlockFitVersusController : Node2D
             if (i != dragIdx && _match.PlayerGame.Tray[i] is not null && _pTraySlot[i].HasPoint(pos))
                 return i;
         return -1;
+    }
+
+    private void MergeOffset(BlockPiece src, int dstSlot, out int rowOff, out int colOff)
+    {
+        var dst = _match.PlayerGame.Tray[dstSlot]!;
+        var borigin = TrayPieceOrigin(dst, dstSlot);
+        float fc = (_finger.X - borigin.X) / _pTrayCell - (src.Width - 1) * 0.5f;
+        float fr = (_finger.Y - borigin.Y) / _pTrayCell - (src.Height - 1) * 0.5f;
+        colOff = Mathf.RoundToInt(fc);
+        rowOff = Mathf.RoundToInt(fr);
     }
 
     private bool TargetCell(BlockPiece p, Vector2 finger, out int gr, out int gc)
@@ -347,24 +359,34 @@ public partial class BlockFitVersusController : Node2D
                      new Color(Palette.AccentRed.R, Palette.AccentRed.G, Palette.AccentRed.B, 0.8f * a), filled: false, width: 4f);
         }
 
-        // Player tray (skip the dragged slot).
+        // Player tray (skip the dragged slot, and the merge target — the preview redraws it).
+        int mergeHover = _dragIndex == -1 ? -1 : MergeTargetSlot(_finger, _dragIndex);
         var trayTex = TextureFactory.Cell(Mathf.Clamp((int)_pTrayCell, 8, 128));
         for (int i = 0; i < 3; i++)
         {
             var p = _match.PlayerGame.Tray[i];
-            if (p is null || i == _dragIndex) continue;
+            if (p is null || i == _dragIndex || i == mergeHover) continue;
             DrawPiece(p, TrayPieceOrigin(p, i), _pTrayCell, 1f, trayTex, glyph);
         }
 
         var tex = TextureFactory.Cell(Mathf.Clamp((int)_pCell, 8, 128));
 
-        // Merge preview (cyan ring) or board ghost for the dragged piece.
-        int mergeHover = _dragIndex == -1 ? -1 : MergeTargetSlot(_finger, _dragIndex);
+        // Merge preview: live fused shape in the target slot (source snaps to the finger), or
+        // the board ghost for the dragged piece.
         if (mergeHover >= 0 && _match.PlayerGame.Tray[_dragIndex] is { } mdp)
         {
-            DrawRect(_pTraySlot[mergeHover].Grow(-6f), new Color(0.55f, 0.85f, 1f, 0.85f), filled: false, width: 3f);
-            float lift0 = _pCell * 0.6f;
-            DrawPiece(mdp, new Vector2(_finger.X - mdp.Width * _pCell / 2f, _finger.Y - lift0 - mdp.Height * _pCell), _pCell, 1f, tex, glyph);
+            var mdst = _match.PlayerGame.Tray[mergeHover]!;
+            MergeOffset(mdp, mergeHover, out int mr, out int mc);
+            bool okMerge = _match.PlayerGame.CanMerge(_dragIndex, mergeHover, mr, mc);
+            var borigin = TrayPieceOrigin(mdst, mergeHover);
+            DrawRect(_pTraySlot[mergeHover].Grow(-4f), new Color(0.55f, 0.85f, 1f, 0.4f), filled: false, width: 2f);
+            DrawPiece(mdst, borigin, _pTrayCell, 0.5f, trayTex, glyph);
+            var srcCol = okMerge ? new Color(0.4f, 1f, 0.6f) : Palette.AccentRed;
+            foreach (var (dr, dc) in mdp.Cells)
+            {
+                var rect = new Rect2(borigin + new Vector2((dc + mc) * _pTrayCell, (dr + mr) * _pTrayCell) + new Vector2(1, 1), new Vector2(_pTrayCell - 2, _pTrayCell - 2));
+                DrawTextureRect(trayTex, rect, false, new Color(srcCol.R, srcCol.G, srcCol.B, okMerge ? 0.95f : 0.6f));
+            }
         }
         else if (mergeHover < 0 && _dragIndex != -1 && _match.PlayerGame.Tray[_dragIndex] is { } dp && TargetCell(dp, _finger, out int gr, out int gc))
         {

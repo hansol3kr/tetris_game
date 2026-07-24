@@ -190,39 +190,73 @@ public sealed class BlockFitGame
     }
 
     /// <summary>
-    /// Fuse tray[<paramref name="srcIndex"/>] into tray[<paramref name="dstIndex"/>]:
-    /// the source piece is concatenated immediately to the right of the destination's
-    /// bounding box, forming one larger composite piece (destination's colour) that
-    /// consumes both slots. Lets the player deliberately build a big shape to sweep
-    /// several lines at once. Refuses the merge (returns false, tray untouched) when the
-    /// indices are invalid/equal, either slot is empty, or the result would be too big to
-    /// ever fit the board. Flips GameOver when the post-merge tray can no longer move.
+    /// Fuse tray[<paramref name="srcIndex"/>] into tray[<paramref name="dstIndex"/>] with the
+    /// source placed at (<paramref name="srcRowOffset"/>, <paramref name="srcColOffset"/>) cells
+    /// relative to the destination's top-left — so the player controls EXACTLY where the two
+    /// pieces join. The union (destination's colour) is normalised to top-left and replaces the
+    /// destination slot; the source slot empties. Refuses (returns false, tray untouched) when
+    /// the indices are invalid/equal, either slot is empty, the two pieces would overlap, or the
+    /// result is too big to ever fit the board. Flips GameOver when the tray can no longer move.
     /// </summary>
+    public bool TryMerge(int srcIndex, int dstIndex, int srcRowOffset, int srcColOffset)
+    {
+        if (!ResolveMerge(srcIndex, dstIndex, out var src, out var dst)) return false;
+        var merged = BuildMerge(src!, dst!, srcRowOffset, srcColOffset);
+        if (merged is null) return false;
+
+        Tray[dstIndex] = new BlockPiece(merged, dst!.Color);
+        Tray[srcIndex] = null;
+        if (!AnyMovePossible()) GameOver = true;
+        return true;
+    }
+
+    /// <summary>Back-compat / default: fuse by butting the source to the right of the
+    /// destination's bounding box (the original horizontal concatenation).</summary>
     public bool TryMerge(int srcIndex, int dstIndex)
     {
+        if (dstIndex < 0 || dstIndex >= Tray.Length || Tray[dstIndex] is null) return false;
+        return TryMerge(srcIndex, dstIndex, 0, Tray[dstIndex]!.Width);
+    }
+
+    /// <summary>Would a merge at this offset be legal (no overlap, fits the board)? Pure —
+    /// drives the drag-time merge preview so the player sees the shape before releasing.</summary>
+    public bool CanMerge(int srcIndex, int dstIndex, int srcRowOffset, int srcColOffset)
+    {
+        if (!ResolveMerge(srcIndex, dstIndex, out var src, out var dst)) return false;
+        return BuildMerge(src!, dst!, srcRowOffset, srcColOffset) is not null;
+    }
+
+    private bool ResolveMerge(int srcIndex, int dstIndex, out BlockPiece? src, out BlockPiece? dst)
+    {
+        src = null; dst = null;
         if (srcIndex == dstIndex) return false;
         if (srcIndex < 0 || srcIndex >= Tray.Length) return false;
         if (dstIndex < 0 || dstIndex >= Tray.Length) return false;
-        var src = Tray[srcIndex];
-        var dst = Tray[dstIndex];
-        if (src is null || dst is null) return false;
+        src = Tray[srcIndex];
+        dst = Tray[dstIndex];
+        return src is not null && dst is not null;
+    }
 
-        // Source occupies columns [dst.Width, dst.Width+src.Width) — disjoint from the
-        // destination's [0, dst.Width), so the union never overlaps and stays top-left based.
-        int offset = dst.Width;
-        int mergedW = dst.Width + src.Width;
-        int mergedH = Math.Max(dst.Height, src.Height);
-        if (mergedW > Size || mergedH > Size) return false;   // could never be placed → refuse
+    /// <summary>Build the normalised (top-left based) union of dst + src-at-offset, or null if
+    /// the cells overlap or the bounding box exceeds the board.</summary>
+    private static List<(int r, int c)>? BuildMerge(BlockPiece src, BlockPiece dst, int rowOff, int colOff)
+    {
+        var used = new HashSet<(int, int)>();
+        foreach (var (r, c) in dst.Cells) used.Add((r, c));
+        foreach (var (r, c) in src.Cells)
+            if (!used.Add((r + rowOff, c + colOff))) return null;   // overlap → illegal merge
 
-        var cells = new List<(int r, int c)>(dst.Cells.Count + src.Cells.Count);
-        foreach (var (r, c) in dst.Cells) cells.Add((r, c));
-        foreach (var (r, c) in src.Cells) cells.Add((r, c + offset));
+        int minR = int.MaxValue, minC = int.MaxValue, maxR = int.MinValue, maxC = int.MinValue;
+        foreach (var (r, c) in used)
+        {
+            if (r < minR) minR = r; if (c < minC) minC = c;
+            if (r > maxR) maxR = r; if (c > maxC) maxC = c;
+        }
+        if (maxR - minR + 1 > Size || maxC - minC + 1 > Size) return null; // could never fit
 
-        Tray[dstIndex] = new BlockPiece(cells, dst.Color);
-        Tray[srcIndex] = null;
-
-        if (!AnyMovePossible()) GameOver = true;
-        return true;
+        var norm = new List<(int r, int c)>(used.Count);
+        foreach (var (r, c) in used) norm.Add((r - minR, c - minC));
+        return norm;
     }
 
     private void ClearFullLines()
