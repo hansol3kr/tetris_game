@@ -298,7 +298,9 @@ public partial class SceneRouter : Node
     {
         if (Busy) return;
         Bootstrap.Instance.Bg.SetGameplayDim(true);
-        var controller = new VersusController(difficulty, GenerateSeed());
+        // The CPU battle is now a Block Fit placement duel (same events as the old falling
+        // VersusController, which stays in the tree for the online/falling path).
+        var controller = new Blockfall.Gameplay.BlockFitVersusController(difficulty, GenerateSeed());
         controller.RematchRequested += () => StartVersus(difficulty, fast: true);
         controller.QuitRequested += GoToMainMenu;
         Swap(controller, fast);

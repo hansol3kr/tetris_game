@@ -307,6 +307,33 @@ public sealed class BlockFitGame
         return false;
     }
 
+    /// <summary>
+    /// Versus attack: scatter up to <paramref name="count"/> garbage blockers into random
+    /// empty cells, crowding the board. Garbage arrives as loose blockers (it does not
+    /// itself complete or clear a line) and flips GameOver if no tray piece can be placed
+    /// afterward. Used only by the LIVE Block Fit versus — it intentionally consumes the
+    /// game RNG, so it carries no replay/determinism contract.
+    /// </summary>
+    public void AddGarbage(int count)
+    {
+        if (count <= 0 || GameOver) return;
+        var empties = new List<int>();
+        for (int i = 0; i < _grid.Length; i++) if (_grid[i] == PieceType.Empty) empties.Add(i);
+
+        int add = Math.Min(count, empties.Count);
+        for (int k = 0; k < add; k++)
+        {
+            int j = _rng.Next(empties.Count);
+            _grid[empties[j]] = PieceType.Garbage;
+            empties[j] = empties[empties.Count - 1];   // swap-remove the chosen index
+            empties.RemoveAt(empties.Count - 1);
+        }
+
+        bool hasPiece = false;
+        foreach (var t in Tray) if (t is not null) { hasPiece = true; break; }
+        if (hasPiece && !AnyMovePossible()) GameOver = true;
+    }
+
     private void Deal()
     {
         double d = Difficulty;
