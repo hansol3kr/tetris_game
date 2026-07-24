@@ -18,6 +18,13 @@ public partial class BlockFitController : Node2D
 {
     public event Action? QuitRequested;
 
+    // Mode flavour (screen is identical — only the rules differ): a fixed seed makes a
+    // deterministic daily; a dailyKey records the daily best; descent rains garbage over time.
+    private readonly int _seed;
+    private readonly string? _dailyKey;
+    private readonly bool _descent;
+    private float _rainTimer;
+
     private BlockFitGame _game = new();
     private Control _uiHost = null!;
     private Button _back = null!;
@@ -66,6 +73,34 @@ public partial class BlockFitController : Node2D
     private int _hintIdx = -1, _hintR, _hintC;
     private float _hintPulse;
 
+    /// <param name="seed">Non-zero → deterministic board (the daily uses today's seed).</param>
+    /// <param name="dailyKey">Set → record the daily best under this date key.</param>
+    /// <param name="descent">True → the survival variant: garbage rises over time.</param>
+    public BlockFitController(int seed = 0, string? dailyKey = null, bool descent = false)
+    {
+        _seed = seed;
+        _dailyKey = dailyKey;
+        _descent = descent;
+        if (seed != 0) _game = new BlockFitGame(seed);
+    }
+
+    /// <summary>The relevant best for this flavour (daily best / descent best / plain best).</summary>
+    private long CurrentBest()
+    {
+        var save = Bootstrap.Instance.Save;
+        if (_descent) return (long)save.DescentFitBest;
+        if (_dailyKey != null) return (long)(save.GetDailyBest(_dailyKey) ?? 0);
+        return (long)save.BlockFitBest;
+    }
+
+    private void SubmitBest(long score)
+    {
+        var save = Bootstrap.Instance.Save;
+        if (_descent) { if (score > save.DescentFitBest) save.DescentFitBest = score; }
+        else if (_dailyKey != null) save.SubmitDaily(_dailyKey, score);
+        else if (score > save.BlockFitBest) save.BlockFitBest = score;
+    }
+
     public override void _Ready()
     {
         _uiHost = new Control { Name = "UiHost", MouseFilter = Control.MouseFilterEnum.Ignore };
@@ -90,7 +125,7 @@ public partial class BlockFitController : Node2D
         _uiHost.AddChild(_back);
 
         BuildGameOverOverlay();
-        _best.Text = Loc.T("BEST {0}", (long)(Bootstrap.Instance.Save.BlockFitBest));
+        _best.Text = Loc.T("BEST {0}", CurrentBest());
         _artifact = BurstArtifacts.FromId(Bootstrap.Instance.Save.EquippedArtifactId);
 
         GetViewport().SizeChanged += Layout;
@@ -187,6 +222,19 @@ public partial class BlockFitController : Node2D
                 _hintPulse += dt;
             }
         }
+
+        // Descent survival: garbage rises — faster and heavier as the score climbs.
+        if (_descent && !_game.GameOver)
+        {
+            _rainTimer += dt;
+            float interval = Mathf.Max(3.5f, 9f - _game.Score / 400f);
+            if (_rainTimer >= interval)
+            {
+                _rainTimer = 0f;
+                _game.AddGarbage(2 + (int)(_game.Score / 600));
+                if (_game.GameOver) ShowGameOver();
+            }
+        }
         QueueRedraw();
     }
 
@@ -264,9 +312,9 @@ public partial class BlockFitController : Node2D
                 _comboFlash = 0.9f;
                 SpawnClearFx();
             }
-            if (_game.Score > (long)Bootstrap.Instance.Save.BlockFitBest)
+            if (_game.Score > CurrentBest())
             {
-                Bootstrap.Instance.Save.BlockFitBest = _game.Score;
+                SubmitBest(_game.Score);
                 _best.Text = Loc.T("BEST {0}", _game.Score);
             }
             if (_game.GameOver) ShowGameOver();
@@ -608,9 +656,10 @@ public partial class BlockFitController : Node2D
 
     private void NewGame()
     {
-        _game = new BlockFitGame();
+        _game = _seed != 0 ? new BlockFitGame(_seed) : new BlockFitGame();
         _overlay.Visible = false;
         _dragIndex = -1; _touchId = int.MinValue;
+        _rainTimer = 0f;
         _artifact = BurstArtifacts.FromId(Bootstrap.Instance.Save.EquippedArtifactId);
         _bands.Clear(); _fx.Clear(); _rings.Clear();
         ResetIdle();

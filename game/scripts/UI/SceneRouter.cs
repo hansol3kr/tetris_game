@@ -103,7 +103,7 @@ public partial class SceneRouter : Node
         menu.ReplaysChosen += GoToReplays;
         menu.ProfileChosen += GoToProfile;
         menu.BlockFitChosen += StartBlockFit;
-        menu.DescentChosen += () => StartDescent();
+        menu.DescentChosen += () => StartBlockFitDescent();
         Swap(menu);
     }
 
@@ -259,6 +259,17 @@ public partial class SceneRouter : Node
         Swap(controller);
     }
 
+    /// <summary>The DESCENT card now launches a Block Fit SURVIVAL run — garbage keeps rising.
+    /// (The falling roguelike <see cref="StartDescent"/> stays in the tree, still smoke-tested.)</summary>
+    public void StartBlockFitDescent(bool fast = false)
+    {
+        if (Busy) return;
+        Bootstrap.Instance.Bg.SetGameplayDim(true);
+        var controller = new Blockfall.Gameplay.BlockFitController(descent: true);
+        controller.QuitRequested += GoToMainMenu;
+        Swap(controller, fast);
+    }
+
     /// <summary>Pick the CPU difficulty (or online) before a versus match.</summary>
     public void GoToVersusSelect()
     {
@@ -346,8 +357,8 @@ public partial class SceneRouter : Node
         if (Busy) return;
         Bootstrap.Instance.Bg.SetGameplayDim(true);
         var (key, seed) = DailyChallenge.Today();
-        var controller = new GameController(GameModeId.Daily, seed, dailyKey: key);
-        controller.RunFinished += results => GoToResults(GameModeId.Daily, results);
+        // Daily is now a deterministic Block Fit challenge — everyone gets the same pieces today.
+        var controller = new Blockfall.Gameplay.BlockFitController(seed: unchecked((int)seed), dailyKey: key);
         controller.QuitRequested += GoToMainMenu;
         Swap(controller, fast);
     }

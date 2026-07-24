@@ -278,6 +278,7 @@ internal static class LocData
 
         // ---- Descent (charm-draft gauntlet) --------------------------------
         ["DESCENT"] = "디센트",
+        ["PLACE & SURVIVE · GARBAGE KEEPS RISING"] = "배치 서바이벌 · 밀려오는 가비지",
         ["FIVE STRATA · DRAFT CHARMS · GO DEEP"] = "다섯 지층 · 참 드래프트 · 더 깊이",
         ["DRAFT CHARMS, DIVE DEEP"] = "참을 모아 더 깊이 강하",
         ["DEPTH {0}/{1}"] = "깊이 {0}/{1}",

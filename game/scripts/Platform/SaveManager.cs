@@ -124,6 +124,14 @@ public partial class SaveManager : Node
         set { _data.Best["__blockfit"] = value; _dirty = true; Flush(); }
     }
 
+    /// <summary>Best score in the Block Fit "Descent" survival variant (garbage keeps rising) —
+    /// kept under its own reserved key so it never mixes with the relaxed Block Fit best.</summary>
+    public double DescentFitBest
+    {
+        get => _data.Best.TryGetValue("__blockfit_descent", out var v) ? v : 0;
+        set { _data.Best["__blockfit_descent"] = value; _dirty = true; Flush(); }
+    }
+
     /// <summary>
     /// Records a run and returns true if it beat the stored best. For Sprint the
     /// best is the LOWEST time; for score modes it's the HIGHEST score.

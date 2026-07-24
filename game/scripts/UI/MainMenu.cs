@@ -81,15 +81,15 @@ public partial class MainMenu : Control
         BuildLogo(col);
         col.AddChild(Spacer(14));
 
+        // Every game entry is now Block Fit: PLAY (endless), DAILY (seeded), DESCENT
+        // (garbage-rising survival), VERSUS (CPU). The falling-mode grid + custom-run are
+        // retired from the menu (the falling engine stays in code, just not menu-reachable).
         col.AddChild(BuildHeroCard());
         col.AddChild(BuildDailyCard());
         col.AddChild(BuildDescentCard());
-        col.AddChild(Spacer(2));
-        col.AddChild(BuildModeGrid());
-        col.AddChild(Spacer(2));
+        col.AddChild(Spacer(6));
         col.AddChild(BuildVersusCard());
         col.AddChild(Spacer(6));
-        BuildCustomRun(col);
         col.AddChild(BuildBottomButtons());
         col.AddChild(Spacer(40)); // reserve room for the floating footer so it can't overlap the bottom pills
 
@@ -255,7 +255,7 @@ public partial class MainMenu : Control
         name.AddThemeColorOverride("font_color", Palette.AccentRed);
         var sub = new Label
         {
-            Text = Loc.T("FIVE STRATA · DRAFT CHARMS · GO DEEP"),
+            Text = Loc.T("PLACE & SURVIVE · GARBAGE KEEPS RISING"),
             ThemeTypeVariation = "DimLabel",
             ClipText = true,
             TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
@@ -265,12 +265,9 @@ public partial class MainMenu : Control
         text.AddChild(sub);
         content.AddChild(text);
 
-        // The chip mirrors the leaderboard's #1 (depth-first ordering), not the raw
-        // bank best — the two can disagree and the board's ranking is canonical.
-        var board = Bootstrap.Instance.Save.GetLeaderboard(GameModeId.Descent);
-        if (board.Count > 0)
-            content.AddChild(ChipLabel(
-                $"★ {board[0].Depth}/{RunDirector.StageCount} · {board[0].Score:N0}", Palette.AccentRed));
+        long dBest = (long)Bootstrap.Instance.Save.DescentFitBest;
+        if (dBest > 0)
+            content.AddChild(ChipLabel($"★ {dBest:N0}", Palette.AccentRed));
 
         b.Pressed += () => DescentChosen?.Invoke();
         return b;
