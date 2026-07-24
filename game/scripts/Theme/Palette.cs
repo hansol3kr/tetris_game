@@ -69,6 +69,13 @@ public static class Palette
     /// <see cref="ApplyTheme"/>; read by the Block Fit renderer per draw.</summary>
     public static SkinGlyph EquippedGlyph { get; private set; } = SkinGlyph.None;
 
+    /// <summary>The equipped skin's block finish (Gel = the default wet-candy look). Read
+    /// per draw by <see cref="BlockRender"/>; orthogonal to hue so colorblind fills survive.</summary>
+    public static CellMaterial EquippedMaterial { get; private set; } = CellMaterial.Gel;
+
+    /// <summary>Optional iridescent rim colour for the equipped skin (alpha 0 = no rim).</summary>
+    public static Color EquippedEdgeTint { get; private set; } = new(0, 0, 0, 0);
+
     // Neon-pastel piece fills (the default "NEON FLUX" theme): hue identities
     // preserved, saturation/luminance pulled into one band so the set reads as a
     // family on the navy background. Mutable — retinted by cosmetic themes.
@@ -101,6 +108,8 @@ public static class Palette
         Background = t.BgTop;
         BgBottom = t.BgBottom;
         EquippedGlyph = t.Glyph;
+        EquippedMaterial = t.Material;
+        EquippedEdgeTint = t.EdgeTint;
     }
 
     // Colorblind-safe fills (Okabe–Ito). Kept bright so the neon glow still reads.

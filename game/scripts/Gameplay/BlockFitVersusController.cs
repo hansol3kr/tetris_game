@@ -50,6 +50,7 @@ public partial class BlockFitVersusController : Node2D
     private readonly RandomNumberGenerator _fxRng = new();
     private float _hitFlash;   // red border pulse on the player board when hit
     private float _flashTtl;   // callout label fade
+    private float _shimmer;    // drives the shared block material breathe/shimmer
 
     public BlockFitVersusController(BotDifficulty difficulty, ulong seed)
     {
@@ -151,6 +152,7 @@ public partial class BlockFitVersusController : Node2D
     public override void _Process(double delta)
     {
         float dt = (float)delta;
+        _shimmer += dt;
         if (!_match.IsOver) _match.Update(delta);
 
         _pScore.Text = Loc.T("YOU {0}", _match.PlayerGame.Score.ToString("N0"));
@@ -434,8 +436,8 @@ public partial class BlockFitVersusController : Node2D
     {
         int n = BlockFitGame.Size;
         float boardPx = cell * n;
-        var tex = TextureFactory.Cell(Mathf.Clamp((int)cell, 8, 128));
-        var ink = new Color(0.05f, 0.06f, 0.10f, 0.82f);
+        var mat = Palette.EquippedMaterial;
+        bool reduced = Motion.Reduced;
         DrawRect(new Rect2(origin - new Vector2(6, 6), new Vector2(boardPx + 12, boardPx + 12)), new Color(0.05f, 0.06f, 0.11f, 0.85f), filled: true);
         for (int r = 0; r < n; r++)
             for (int c = 0; c < n; c++)
@@ -445,11 +447,7 @@ public partial class BlockFitVersusController : Node2D
                 if (t == PieceType.Empty)
                     DrawRect(cellRect, new Color(1, 1, 1, 0.045f), filled: false, width: 1f);
                 else
-                {
-                    DrawTextureRect(tex, cellRect, false, Palette.ForPiece(t));
-                    if (glyph != SkinGlyph.None && cell >= 18f)
-                        GlyphArt.Draw(this, glyph, cellRect.GetCenter(), cell * 0.62f, ink);
-                }
+                    BlockRender.DrawCell(this, cellRect, cell, t, 1f, mat, glyph, _shimmer, r + c, reduced: reduced);
             }
     }
 
@@ -462,13 +460,12 @@ public partial class BlockFitVersusController : Node2D
 
     private void DrawPiece(BlockPiece p, Vector2 origin, float cell, float alpha, Texture2D tex, SkinGlyph glyph)
     {
-        var color = Palette.ForPiece(p.Color);
+        var mat = Palette.EquippedMaterial;
+        bool reduced = Motion.Reduced;
         foreach (var (dr, dc) in p.Cells)
         {
             var rect = new Rect2(origin + new Vector2(dc * cell, dr * cell) + new Vector2(1, 1), new Vector2(cell - 2, cell - 2));
-            DrawTextureRect(tex, rect, false, new Color(color.R, color.G, color.B, alpha));
-            if (glyph != SkinGlyph.None && cell >= 14f)
-                GlyphArt.Draw(this, glyph, rect.GetCenter(), cell * 0.62f, new Color(0.05f, 0.06f, 0.10f, 0.82f * alpha));
+            BlockRender.DrawCell(this, rect, cell, p.Color, alpha, mat, glyph, _shimmer, dr + dc, reduced: reduced);
         }
     }
 

@@ -376,7 +376,7 @@ public partial class SettingsScreen : Control
         name.AddThemeFontSizeOverride("font_size", 18);
         if (active) name.AddThemeColorOverride("font_color", Palette.Accent);
         info.AddChild(name);
-        if (item.Theme is { } theme) info.AddChild(SwatchStrip(theme));
+        if (item.Theme is { } theme) info.AddChild(new ThemePreview(theme, 24f) { Selected = active });
         row.AddChild(info);
 
         if (active)
@@ -399,22 +399,8 @@ public partial class SettingsScreen : Control
         save.EquipTheme(item.Id);
         Palette.ApplyTheme(item.Theme);
         Bootstrap.Instance.Bg.ApplyThemeColors(); // backdrop retints live
+        Bootstrap.Instance.Bg.Pulse(Palette.Accent, 0.28f); // equip flourish (Motion.Reduced-gated)
         RebuildSkins();
-    }
-
-    /// <summary>Seven mini piece-color swatches — the skin preview.</summary>
-    private static Control SwatchStrip(BlockTheme t)
-    {
-        var strip = new HBoxContainer();
-        strip.AddThemeConstantOverride("separation", 4);
-        foreach (var c in new[] { t.I, t.O, t.T, t.S, t.Z, t.J, t.L })
-            strip.AddChild(new ColorRect
-            {
-                Color = c,
-                CustomMinimumSize = new Vector2(22, 12),
-                MouseFilter = Control.MouseFilterEnum.Ignore,
-            });
-        return strip;
     }
 
     // ---- Section / row builders ------------------------------------------------

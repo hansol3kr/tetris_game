@@ -199,7 +199,8 @@ public static class StoreCatalog
                 T: new Color(1.00f, 0.48f, 0.78f), S: new Color(0.50f, 0.90f, 0.39f),
                 Z: new Color(1.00f, 0.36f, 0.36f), J: new Color(0.49f, 0.55f, 1.00f),
                 L: new Color(1.00f, 0.58f, 0.25f),
-                BgTop: new Color(0.094f, 0.039f, 0.118f), BgBottom: new Color(0.200f, 0.063f, 0.180f)),
+                BgTop: new Color(0.094f, 0.039f, 0.118f), BgBottom: new Color(0.200f, 0.063f, 0.180f),
+                Material: CellMaterial.Pearl),
         },
         new()
         {
@@ -211,7 +212,8 @@ public static class StoreCatalog
                 T: new Color(0.65f, 0.55f, 0.98f), S: new Color(0.43f, 0.91f, 0.63f),
                 Z: new Color(0.97f, 0.44f, 0.44f), J: new Color(0.38f, 0.65f, 0.98f),
                 L: new Color(0.98f, 0.71f, 0.36f),
-                BgTop: new Color(0.016f, 0.078f, 0.055f), BgBottom: new Color(0.043f, 0.165f, 0.118f)),
+                BgTop: new Color(0.016f, 0.078f, 0.055f), BgBottom: new Color(0.043f, 0.165f, 0.118f),
+                Material: CellMaterial.Gemstone),
         },
         new()
         {
@@ -223,7 +225,166 @@ public static class StoreCatalog
                 T: new Color(0.77f, 0.77f, 0.82f), S: new Color(0.65f, 0.65f, 0.71f),
                 Z: new Color(0.53f, 0.53f, 0.60f), J: new Color(0.83f, 0.86f, 0.93f),
                 L: new Color(0.60f, 0.65f, 0.75f),
-                BgTop: new Color(0.039f, 0.039f, 0.055f), BgBottom: new Color(0.102f, 0.102f, 0.141f)),
+                BgTop: new Color(0.039f, 0.039f, 0.055f), BgBottom: new Color(0.102f, 0.102f, 0.141f),
+                Material: CellMaterial.Metallic),
+        },
+        // ---- Material skins: the "finish" axis (each feels like a different physical object) ----
+        new()
+        {
+            Id = "theme_bubblegum", ProductId = "", Kind = StoreItemKind.Theme,
+            Name = "BUBBLEGUM", Blurb = "WET PASTEL GEL YOU COULD ALMOST CHEW, WITH A HEART ON EVERY BLOCK.",
+            PriceLabel = "FREE",
+            Theme = new BlockTheme("theme_bubblegum",
+                I: new Color(0.55f, 0.95f, 1.00f), O: new Color(1.00f, 0.92f, 0.70f),
+                T: new Color(1.00f, 0.70f, 0.95f), S: new Color(0.70f, 1.00f, 0.80f),
+                Z: new Color(1.00f, 0.65f, 0.75f), J: new Color(0.70f, 0.80f, 1.00f),
+                L: new Color(1.00f, 0.80f, 0.70f),
+                BgTop: new Color(0.10f, 0.05f, 0.10f), BgBottom: new Color(0.20f, 0.10f, 0.20f),
+                Glyph: SkinGlyph.Heart, Material: CellMaterial.Pearl),
+        },
+        new()
+        {
+            Id = "theme_glacier", ProductId = "", Kind = StoreItemKind.Theme,
+            Name = "GLACIER", Blurb = "MATTE FROSTED PEBBLES — THE QUIET, CALM PREMIUM.",
+            PriceLabel = "FREE",
+            Theme = new BlockTheme("theme_glacier",
+                I: new Color(0.55f, 0.85f, 1.00f), O: new Color(0.90f, 0.90f, 0.75f),
+                T: new Color(0.80f, 0.70f, 0.95f), S: new Color(0.60f, 0.95f, 0.85f),
+                Z: new Color(1.00f, 0.75f, 0.80f), J: new Color(0.60f, 0.75f, 1.00f),
+                L: new Color(0.95f, 0.82f, 0.70f),
+                BgTop: new Color(0.02f, 0.05f, 0.09f), BgBottom: new Color(0.05f, 0.11f, 0.18f),
+                Material: CellMaterial.Frosted),
+        },
+        new()
+        {
+            Id = "theme_galaxy", ProductId = "", Kind = StoreItemKind.Theme,
+            Name = "GALAXY", Blurb = "DEEP-SPACE JEWELS WITH STARS THAT TWINKLE ON EVERY BLOCK.",
+            PriceLabel = "FREE",
+            Theme = new BlockTheme("theme_galaxy",
+                I: new Color(0.45f, 0.65f, 1.00f), O: new Color(1.00f, 0.85f, 0.45f),
+                T: new Color(0.70f, 0.50f, 1.00f), S: new Color(0.45f, 0.90f, 0.75f),
+                Z: new Color(1.00f, 0.50f, 0.70f), J: new Color(0.45f, 0.60f, 1.00f),
+                L: new Color(1.00f, 0.65f, 0.45f),
+                BgTop: new Color(0.03f, 0.02f, 0.09f), BgBottom: new Color(0.08f, 0.04f, 0.18f),
+                Glyph: SkinGlyph.Star, Material: CellMaterial.Starfield),
+        },
+        new()
+        {
+            Id = "theme_circuit", ProductId = "com.blockfall.theme.circuit", Kind = StoreItemKind.Theme,
+            Name = "CIRCUIT", Blurb = "BRUSHED-METAL CELLS WITH A LIVE TEAL EDGE AND A BOLT ON EVERY BLOCK.",
+            PriceLabel = "US$1.99",
+            Theme = new BlockTheme("theme_circuit",
+                I: new Color(0.35f, 0.75f, 0.80f), O: new Color(0.85f, 0.80f, 0.55f),
+                T: new Color(0.55f, 0.55f, 0.78f), S: new Color(0.45f, 0.80f, 0.65f),
+                Z: new Color(0.85f, 0.55f, 0.55f), J: new Color(0.45f, 0.60f, 0.85f),
+                L: new Color(0.85f, 0.70f, 0.50f),
+                BgTop: new Color(0.02f, 0.05f, 0.06f), BgBottom: new Color(0.04f, 0.10f, 0.11f),
+                Glyph: SkinGlyph.Bolt, Material: CellMaterial.Metallic, EdgeTint: new Color(0.25f, 0.95f, 0.85f, 0.7f)),
+        },
+        new()
+        {
+            Id = "theme_prism", ProductId = "com.blockfall.theme.prism", Kind = StoreItemKind.Theme,
+            Name = "PRISM", Blurb = "NEON GLASS THAT BLEEDS IRIDESCENCE, WITH A GEM ON EVERY BLOCK.",
+            PriceLabel = "US$2.99",
+            Theme = new BlockTheme("theme_prism",
+                I: new Color(0.40f, 0.95f, 1.00f), O: new Color(1.00f, 0.88f, 0.40f),
+                T: new Color(0.80f, 0.50f, 1.00f), S: new Color(0.45f, 1.00f, 0.65f),
+                Z: new Color(1.00f, 0.45f, 0.60f), J: new Color(0.45f, 0.65f, 1.00f),
+                L: new Color(1.00f, 0.65f, 0.35f),
+                BgTop: new Color(0.04f, 0.03f, 0.09f), BgBottom: new Color(0.10f, 0.06f, 0.18f),
+                Glyph: SkinGlyph.Gem, Material: CellMaterial.Holographic),
+        },
+        new()
+        {
+            Id = "theme_obsidian", ProductId = "com.blockfall.theme.obsidian", Kind = StoreItemKind.Theme,
+            Name = "OBSIDIAN", Blurb = "FACETED BLACK GLASS THAT BLEEDS RAINBOW AT EVERY EDGE.",
+            PriceLabel = "US$2.99",
+            Theme = new BlockTheme("theme_obsidian",
+                I: new Color(0.20f, 0.35f, 0.50f), O: new Color(0.45f, 0.38f, 0.15f),
+                T: new Color(0.35f, 0.20f, 0.45f), S: new Color(0.18f, 0.42f, 0.32f),
+                Z: new Color(0.48f, 0.18f, 0.24f), J: new Color(0.18f, 0.26f, 0.48f),
+                L: new Color(0.48f, 0.32f, 0.16f),
+                BgTop: new Color(0.02f, 0.02f, 0.03f), BgBottom: new Color(0.05f, 0.05f, 0.07f),
+                Glyph: SkinGlyph.Gem, Material: CellMaterial.Gemstone, EdgeTint: new Color(0.55f, 0.72f, 1.00f, 0.8f)),
+        },
+        // ---- Glyph skins showcasing the new embossed roster (free) ----
+        new()
+        {
+            Id = "theme_meow", ProductId = "", Kind = StoreItemKind.Theme,
+            Name = "MEOW", Blurb = "CREAMY PASTELS WITH A KAWAII CAT ON EVERY BLOCK.",
+            PriceLabel = "FREE",
+            Theme = new BlockTheme("theme_meow",
+                I: new Color(0.55f, 0.90f, 1.00f), O: new Color(1.00f, 0.85f, 0.55f),
+                T: new Color(1.00f, 0.65f, 0.85f), S: new Color(0.65f, 0.95f, 0.70f),
+                Z: new Color(1.00f, 0.55f, 0.60f), J: new Color(0.65f, 0.70f, 1.00f),
+                L: new Color(1.00f, 0.72f, 0.55f),
+                BgTop: new Color(0.09f, 0.05f, 0.06f), BgBottom: new Color(0.17f, 0.10f, 0.12f),
+                Glyph: SkinGlyph.Cat, Material: CellMaterial.Pearl),
+        },
+        new()
+        {
+            Id = "theme_royale", ProductId = "", Kind = StoreItemKind.Theme,
+            Name = "ROYALE", Blurb = "REGAL PURPLE AND GOLD WITH A JEWELLED CROWN ON EVERY BLOCK.",
+            PriceLabel = "FREE",
+            Theme = new BlockTheme("theme_royale",
+                I: new Color(0.45f, 0.80f, 1.00f), O: new Color(1.00f, 0.82f, 0.35f),
+                T: new Color(0.75f, 0.50f, 1.00f), S: new Color(0.50f, 0.90f, 0.70f),
+                Z: new Color(1.00f, 0.50f, 0.65f), J: new Color(0.55f, 0.60f, 1.00f),
+                L: new Color(1.00f, 0.68f, 0.40f),
+                BgTop: new Color(0.06f, 0.03f, 0.09f), BgBottom: new Color(0.13f, 0.07f, 0.18f),
+                Glyph: SkinGlyph.Crown),
+        },
+        new()
+        {
+            Id = "theme_midnight", ProductId = "", Kind = StoreItemKind.Theme,
+            Name = "MIDNIGHT", Blurb = "DEEP VIOLET NIGHT WITH A CRESCENT MOON ON EVERY BLOCK.",
+            PriceLabel = "FREE",
+            Theme = new BlockTheme("theme_midnight",
+                I: new Color(0.50f, 0.75f, 1.00f), O: new Color(0.95f, 0.88f, 0.55f),
+                T: new Color(0.70f, 0.55f, 1.00f), S: new Color(0.55f, 0.90f, 0.80f),
+                Z: new Color(1.00f, 0.55f, 0.70f), J: new Color(0.50f, 0.62f, 1.00f),
+                L: new Color(1.00f, 0.72f, 0.45f),
+                BgTop: new Color(0.02f, 0.02f, 0.08f), BgBottom: new Color(0.06f, 0.05f, 0.17f),
+                Glyph: SkinGlyph.Moon),
+        },
+        new()
+        {
+            Id = "theme_lucky", ProductId = "", Kind = StoreItemKind.Theme,
+            Name = "LUCKY", Blurb = "FRESH GREENS WITH A LUCKY CLOVER ON EVERY BLOCK.",
+            PriceLabel = "FREE",
+            Theme = new BlockTheme("theme_lucky",
+                I: new Color(0.45f, 0.90f, 0.95f), O: new Color(1.00f, 0.88f, 0.40f),
+                T: new Color(0.70f, 0.60f, 1.00f), S: new Color(0.45f, 0.98f, 0.60f),
+                Z: new Color(1.00f, 0.55f, 0.55f), J: new Color(0.45f, 0.72f, 1.00f),
+                L: new Color(1.00f, 0.70f, 0.35f),
+                BgTop: new Color(0.02f, 0.07f, 0.04f), BgBottom: new Color(0.05f, 0.14f, 0.09f),
+                Glyph: SkinGlyph.Clover),
+        },
+        new()
+        {
+            Id = "theme_spooky", ProductId = "", Kind = StoreItemKind.Theme,
+            Name = "SPOOKY", Blurb = "HAUNTED GREEN AND PURPLE WITH A BONE-WHITE SKULL ON EVERY BLOCK.",
+            PriceLabel = "FREE",
+            Theme = new BlockTheme("theme_spooky",
+                I: new Color(0.50f, 0.95f, 0.70f), O: new Color(1.00f, 0.70f, 0.25f),
+                T: new Color(0.75f, 0.45f, 1.00f), S: new Color(0.55f, 1.00f, 0.50f),
+                Z: new Color(1.00f, 0.45f, 0.45f), J: new Color(0.55f, 0.55f, 1.00f),
+                L: new Color(1.00f, 0.60f, 0.25f),
+                BgTop: new Color(0.04f, 0.05f, 0.03f), BgBottom: new Color(0.09f, 0.11f, 0.07f),
+                Glyph: SkinGlyph.Skull),
+        },
+        new()
+        {
+            Id = "theme_pride", ProductId = "", Kind = StoreItemKind.Theme,
+            Name = "PRIDE", Blurb = "JOYFUL BRIGHTS WITH A RAINBOW ON EVERY BLOCK.",
+            PriceLabel = "FREE",
+            Theme = new BlockTheme("theme_pride",
+                I: new Color(0.35f, 0.90f, 1.00f), O: new Color(1.00f, 0.85f, 0.30f),
+                T: new Color(0.85f, 0.45f, 1.00f), S: new Color(0.45f, 1.00f, 0.55f),
+                Z: new Color(1.00f, 0.40f, 0.50f), J: new Color(0.40f, 0.60f, 1.00f),
+                L: new Color(1.00f, 0.60f, 0.25f),
+                BgTop: new Color(0.05f, 0.04f, 0.07f), BgBottom: new Color(0.11f, 0.08f, 0.15f),
+                Glyph: SkinGlyph.Rainbow),
         },
         // Burst-FX artifacts (free): the line-clear celebration Block Fit plays.
         // Cosmetic only — never touches scoring. "artifact_sparks" is the default.
@@ -261,6 +422,36 @@ public static class StoreCatalog
         {
             Id = "artifact_rainbow", ProductId = "", Kind = StoreItemKind.Artifact,
             Name = "RAINBOW WAVE", Blurb = "A FULL-SPECTRUM SWEEP ALONG THE LINE.",
+            PriceLabel = "FREE",
+        },
+        new()
+        {
+            Id = "artifact_aurora", ProductId = "", Kind = StoreItemKind.Artifact,
+            Name = "AURORA", Blurb = "SOFT CURTAINS OF LIGHT RISE INSTEAD OF A BURST.",
+            PriceLabel = "FREE",
+        },
+        new()
+        {
+            Id = "artifact_lightning", ProductId = "", Kind = StoreItemKind.Artifact,
+            Name = "LIGHTNING", Blurb = "ELECTRIC ARCS SNAP ACROSS EACH CLEARED LINE.",
+            PriceLabel = "FREE",
+        },
+        new()
+        {
+            Id = "artifact_bubblepop", ProductId = "", Kind = StoreItemKind.Artifact,
+            Name = "BUBBLE POP", Blurb = "IRIDESCENT SOAP BUBBLES DRIFT UP AND POP.",
+            PriceLabel = "FREE",
+        },
+        new()
+        {
+            Id = "artifact_prismbloom", ProductId = "", Kind = StoreItemKind.Artifact,
+            Name = "PRISM BLOOM", Blurb = "CLEARS DISSOLVE INTO A RISING CLOUD OF RAINBOW LIGHT.",
+            PriceLabel = "FREE",
+        },
+        new()
+        {
+            Id = "artifact_starfall", ProductId = "", Kind = StoreItemKind.Artifact,
+            Name = "STARFALL", Blurb = "A SHOWER OF METEORS STREAKS ACROSS THE CLEAR.",
             PriceLabel = "FREE",
         },
         new()

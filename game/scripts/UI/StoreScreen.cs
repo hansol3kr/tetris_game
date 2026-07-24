@@ -134,17 +134,7 @@ public partial class StoreScreen : Control
         if (equipped) name.AddThemeColorOverride("font_color", Palette.Accent);
         info.AddChild(name);
         if (item.Theme is { } theme)
-        {
-            if (theme.Glyph != SkinGlyph.None)
-            {
-                var previewRow = new HBoxContainer();
-                previewRow.AddThemeConstantOverride("separation", 8);
-                previewRow.AddChild(SwatchStrip(theme));
-                previewRow.AddChild(new GlyphIcon(theme.Glyph, new Color(0.95f, 0.95f, 1f), 20) { SizeFlagsVertical = SizeFlags.ShrinkCenter });
-                info.AddChild(previewRow);
-            }
-            else info.AddChild(SwatchStrip(theme));
-        }
+            info.AddChild(new ThemePreview(theme, 28f) { Selected = equipped });
         var blurb = new Label { Text = item.Blurb, ThemeTypeVariation = "DimLabel" };
         blurb.AddThemeFontSizeOverride("font_size", 13);
         info.AddChild(blurb);
@@ -181,7 +171,7 @@ public partial class StoreScreen : Control
 
         var card = Card();
         var row = CardRow(card);
-        row.AddChild(new Theme.Icon(IconKind.Diamond, ArtifactColor(item.Id), 26) { SizeFlagsVertical = SizeFlags.ShrinkCenter });
+        row.AddChild(new ArtifactPreview(BurstArtifacts.FromId(item.Id)) { SizeFlagsVertical = SizeFlags.ShrinkCenter, Selected = equipped });
 
         var info = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ShrinkCenter };
         info.AddThemeConstantOverride("separation", 4);
@@ -217,16 +207,6 @@ public partial class StoreScreen : Control
         }
         return card;
     }
-
-    private static Color ArtifactColor(string id) => id switch
-    {
-        "artifact_fireworks" => Palette.AccentGold,
-        "artifact_confetti" => Palette.AccentGreen,
-        "artifact_supernova" => new Color(1f, 0.98f, 0.9f),
-        "artifact_shards" => Palette.Accent,
-        "artifact_rainbow" => Palette.AccentViolet,
-        _ => Palette.AccentGold,
-    };
 
     private Control BoosterRow(StoreItem item)
     {
@@ -299,33 +279,29 @@ public partial class StoreScreen : Control
         save.EquipTheme(item.Id);
         Palette.ApplyTheme(item.Theme);
         Bootstrap.Instance.Bg.ApplyThemeColors(); // backdrop retints live behind the store
+        Bootstrap.Instance.Bg.Pulse(Palette.Accent, 0.30f); // equip flourish (Motion.Reduced-gated)
         Rebuild();
     }
 
     private void EquipArtifact(StoreItem item)
     {
         Bootstrap.Instance.Save.EquipArtifact(item.Id);
+        Bootstrap.Instance.Bg.Pulse(ArtifactPulseColor(item.Id), 0.34f); // equip flourish in the burst's colour
         Rebuild();
     }
 
-    // ---- Small builders ------------------------------------------------------------
-
-    /// <summary>Seven mini piece-color swatches — the theme preview.</summary>
-    private static Control SwatchStrip(BlockTheme t)
+    private static Color ArtifactPulseColor(string id) => id switch
     {
-        var strip = new HBoxContainer();
-        strip.AddThemeConstantOverride("separation", 4);
-        foreach (var c in new[] { t.I, t.O, t.T, t.S, t.Z, t.J, t.L })
-        {
-            strip.AddChild(new ColorRect
-            {
-                Color = c,
-                CustomMinimumSize = new Vector2(22, 12),
-                MouseFilter = MouseFilterEnum.Ignore,
-            });
-        }
-        return strip;
-    }
+        "artifact_supernova" => new Color(1f, 0.98f, 0.9f),
+        "artifact_rainbow" or "artifact_prismbloom" => Palette.AccentViolet,
+        "artifact_confetti" => Palette.AccentGreen,
+        "artifact_shards" or "artifact_lightning" or "artifact_bubblepop" => Palette.Accent,
+        "artifact_aurora" => new Color(0.3f, 0.9f, 0.8f),
+        "artifact_starfall" => new Color(0.9f, 0.85f, 1f),
+        _ => Palette.AccentGold,
+    };
+
+    // ---- Small builders ------------------------------------------------------------
 
     private static PanelContainer Card() => new() { ThemeTypeVariation = "Card" };
 

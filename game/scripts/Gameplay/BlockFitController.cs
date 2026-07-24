@@ -50,20 +50,21 @@ public partial class BlockFitController : Node2D
     // the background pulse are pure juice, gated off under reduced motion.
     private const float ClearBandLife = 0.4f;
     private struct ClearBand { public bool Row; public int Index; public float Age; }
-    private struct FxSpark { public Vector2 Pos, Vel; public float Age, Life, Size, Grav; public Color Col; }
-    private struct FxRing { public Vector2 Pos; public float Age, Life, MaxR; public Color Col; }
     private readonly System.Collections.Generic.List<ClearBand> _bands = new();
-    private readonly System.Collections.Generic.List<FxSpark> _fx = new();
-    private readonly System.Collections.Generic.List<FxRing> _rings = new();
-    private readonly RandomNumberGenerator _fxRng = new();
+
+    // Shared particle engine (also driven by the store's ArtifactPreview) + its additive
+    // (BlendMode.Add) surface for real SDR bloom, and a monotonic clock driving the board's
+    // material shimmer/breathe. The bands above are informational (always on); everything
+    // the engine spawns is pure juice, gated off under reduced motion.
+    private readonly BurstEngine _burst = new();
+    private AdditiveFxLayer _fxAdd = null!;
+    private float _shimmer;
+    // Pre-clear cell colours (key = r*Size+c) captured before TryPlace so Shards fly in
+    // the exact hues that shattered.
+    private readonly System.Collections.Generic.Dictionary<int, PieceType> _shardColors = new();
 
     // The equipped burst-FX artifact — the cosmetic line-clear style, read from the save on entry.
     private BurstArtifact _artifact;
-    private static readonly Color[] PartyColors =
-    {
-        new(1f, 0.35f, 0.45f), new(1f, 0.8f, 0.3f), new(0.4f, 0.95f, 0.6f), new(0.35f, 0.8f, 1f),
-        new(0.75f, 0.5f, 1f), new(1f, 0.55f, 0.85f), new(0.5f, 1f, 0.9f),
-    };
 
     // Idle hint: after HintDelay seconds without a placement, surface a valid move
     // (FindHint prefers one that clears a line) as a pulsing green "put it here" cue.
@@ -127,6 +128,15 @@ public partial class BlockFitController : Node2D
         BuildGameOverOverlay();
         _best.Text = Loc.T("BEST {0}", CurrentBest());
         _artifact = BurstArtifacts.FromId(Bootstrap.Instance.Save.EquippedArtifactId);
+
+        // Additive glow surface for the burst FX. A Node2D (NOT CanvasLayer — that would drop
+        // modulate and break crossfades); drawn UNDER _uiHost so the score/back button stay on top.
+        _fxAdd = new AdditiveFxLayer(_burst, () => _cell, () => new Rect2(Vector2.Zero, Bootstrap.Instance.SafeCanvasSize))
+        {
+            Position = Vector2.Zero,
+        };
+        AddChild(_fxAdd);
+        MoveChild(_fxAdd, 0);   // draw before _uiHost (glow under UI)
 
         GetViewport().SizeChanged += Layout;
         Layout();
@@ -200,17 +210,8 @@ public partial class BlockFitController : Node2D
             var b = _bands[i]; b.Age += dt;
             if (b.Age >= ClearBandLife) _bands.RemoveAt(i); else _bands[i] = b;
         }
-        for (int i = _fx.Count - 1; i >= 0; i--)
-        {
-            var s = _fx[i];
-            s.Age += dt; s.Vel.Y += s.Grav * dt; s.Pos += s.Vel * dt; s.Vel *= 0.94f;
-            if (s.Age >= s.Life) _fx.RemoveAt(i); else _fx[i] = s;
-        }
-        for (int i = _rings.Count - 1; i >= 0; i--)
-        {
-            var rg = _rings[i]; rg.Age += dt;
-            if (rg.Age >= rg.Life) _rings.RemoveAt(i); else _rings[i] = rg;
-        }
+        _burst.Update(dt);
+        _shimmer += dt;                 // drives material breathe / holo scroll / starfield twinkle
 
         // Idle hint timer: only advances while the run is live and nothing is being dragged.
         if (!_game.GameOver && _dragIndex == -1)
@@ -236,6 +237,7 @@ public partial class BlockFitController : Node2D
             }
         }
         QueueRedraw();
+        _fxAdd.QueueRedraw();           // additive glow surface tracks the same particle lists
     }
 
     // ---- Input: grab a tray piece, drag it (floating above the finger), release to place ----
@@ -302,6 +304,7 @@ public partial class BlockFitController : Node2D
             // Capture the exact lines this drop completes BEFORE placing — TryPlace
             // then clears them, so the celebration needs the indices up front.
             _game.LinesClearedBy(piece, gr, gc, _pvRows, _pvCols);
+            CaptureShardColors(piece, gr, gc);   // snapshot popped hues before TryPlace clears them
             _game.TryPlace(idx, gr, gc);
             Bootstrap.Instance.Audio.PlaySfx("lock");
             if (_game.LastClearedRows + _game.LastClearedCols > 0)
@@ -372,11 +375,16 @@ public partial class BlockFitController : Node2D
 
         if (Motion.Reduced || _cell <= 0) return; // the burst artifact is pure juice
 
-        foreach (int r in _pvRows) BurstLine(rowLine: true, r);
-        foreach (int c in _pvCols) BurstLine(rowLine: false, c);
+        // Scale counts down on big combos so a huge clear can't flood the particle pool.
+        int lines = _pvRows.Count + _pvCols.Count;
+        float budget = Mathf.Clamp(1f - 0.12f * (lines - 1), 0.4f, 1f);
+        int n = BlockFitGame.Size;
+        foreach (int r in _pvRows)
+            _burst.EmitLine(_artifact, rowLine: true, r, _boardOrigin, _cell, n, budget, k => PreClearColor(r, k));
+        foreach (int c in _pvCols)
+            _burst.EmitLine(_artifact, rowLine: false, c, _boardOrigin, _cell, n, budget, k => PreClearColor(k, c));
 
         // Background wash, tinted and scaled to the equipped artifact.
-        int lines = _pvRows.Count + _pvCols.Count;
         var (pulseCol, pulseBase) = _artifact switch
         {
             BurstArtifact.Supernova => (new Color(1f, 0.98f, 0.9f), 0.34f),
@@ -384,74 +392,36 @@ public partial class BlockFitController : Node2D
             BurstArtifact.Fireworks => (Palette.AccentGold, 0.28f),
             BurstArtifact.Confetti => (Palette.AccentGreen, 0.22f),
             BurstArtifact.Shards => (Palette.Accent, 0.24f),
+            BurstArtifact.Aurora => (new Color(0.3f, 0.9f, 0.8f), 0.20f),
+            BurstArtifact.Lightning => (Palette.Accent, 0.30f),
+            BurstArtifact.BubblePop => (Palette.Accent, 0.18f),
+            BurstArtifact.PrismBloom => (Palette.AccentViolet, 0.26f),
+            BurstArtifact.Starfall => (new Color(0.9f, 0.85f, 1f), 0.24f),
             _ => (Palette.AccentGold, 0.22f),
         };
         Bootstrap.Instance.Bg.Pulse(pulseCol, Mathf.Min(0.6f, pulseBase + lines * 0.1f));
     }
 
-    /// <summary>Spawn the equipped artifact's particle burst along one cleared row/column.</summary>
-    private void BurstLine(bool rowLine, int index)
+    /// <summary>Snapshot the colours of the cells the just-placed piece completes, so the
+    /// Shards artifact can shatter in the popped blocks' real hues (TryPlace clears them next).</summary>
+    private void CaptureShardColors(BlockPiece piece, int gr, int gc)
     {
-        var lineCenter = rowLine
-            ? _boardOrigin + new Vector2(BlockFitGame.Size * 0.5f * _cell, (index + 0.5f) * _cell)
-            : _boardOrigin + new Vector2((index + 0.5f) * _cell, BlockFitGame.Size * 0.5f * _cell);
-
-        switch (_artifact)
+        _shardColors.Clear();
+        int n = BlockFitGame.Size;
+        void Snapshot(int r, int c)
         {
-            case BurstArtifact.Fireworks:
-                EmitAlong(rowLine, index, 3, 80f, 260f, 0.5f, 0.9f, 2.5f, 5f, 150f, _ => BrightRandom());
-                _rings.Add(new FxRing { Pos = lineCenter, Life = 0.45f, MaxR = _cell * 3.5f, Col = BrightRandom() });
-                break;
-            case BurstArtifact.Confetti:
-                EmitAlong(rowLine, index, 3, 40f, 170f, 0.7f, 1.2f, 3f, 5.5f, 340f, _ => BrightRandom());
-                break;
-            case BurstArtifact.Supernova:
-                EmitAlong(rowLine, index, 2, 140f, 340f, 0.4f, 0.7f, 3f, 6f, 0f, _ => new Color(1f, 0.97f, 0.85f));
-                _rings.Add(new FxRing { Pos = lineCenter, Life = 0.55f, MaxR = _cell * BlockFitGame.Size * 0.6f, Col = new Color(1f, 0.98f, 0.9f) });
-                break;
-            case BurstArtifact.Shards:
-                EmitAlong(rowLine, index, 2, 160f, 380f, 0.35f, 0.6f, 4f, 8f, 220f, _ => Palette.ForPiece(RandomPieceColor()));
-                break;
-            case BurstArtifact.Rainbow:
-                EmitAlong(rowLine, index, 2, 80f, 240f, 0.5f, 0.8f, 3f, 5f, 60f, k => Color.FromHsv((float)k / BlockFitGame.Size, 0.85f, 1f));
-                break;
-            default: // Sparks (free default)
-                EmitAlong(rowLine, index, 2, 60f, 220f, 0.35f, 0.6f, 2.5f, 5f, 0f, _ => new Color(1f, 0.95f, 0.6f));
-                break;
+            if ((uint)r >= n || (uint)c >= n) return;
+            var t = _game.At(r, c);
+            if (t == PieceType.Empty) t = piece.Color;   // a cell the piece itself will fill
+            _shardColors[r * n + c] = t;
         }
+        foreach (var (dr, dc) in piece.Cells) _shardColors[(gr + dr) * n + (gc + dc)] = piece.Color;
+        foreach (int r in _pvRows) for (int c = 0; c < n; c++) Snapshot(r, c);
+        foreach (int c in _pvCols) for (int r = 0; r < n; r++) Snapshot(r, c);
     }
 
-    /// <summary>Emit <paramref name="count"/> particles from each cell along a line, coloured
-    /// by <paramref name="colorFn"/> (its arg is the along-line cell index, for gradients).</summary>
-    private void EmitAlong(bool rowLine, int index, int count,
-        float spdMin, float spdMax, float lifeMin, float lifeMax,
-        float sizeMin, float sizeMax, float grav, System.Func<int, Color> colorFn)
-    {
-        for (int k = 0; k < BlockFitGame.Size; k++)
-        {
-            var center = rowLine
-                ? _boardOrigin + new Vector2((k + 0.5f) * _cell, (index + 0.5f) * _cell)
-                : _boardOrigin + new Vector2((index + 0.5f) * _cell, (k + 0.5f) * _cell);
-            var col = colorFn(k);
-            for (int s = 0; s < count; s++)
-            {
-                float ang = _fxRng.RandfRange(0f, Mathf.Tau);
-                float spd = _fxRng.RandfRange(spdMin, spdMax);
-                _fx.Add(new FxSpark
-                {
-                    Pos = center,
-                    Vel = new Vector2(Mathf.Cos(ang), Mathf.Sin(ang)) * spd,
-                    Life = _fxRng.RandfRange(lifeMin, lifeMax),
-                    Size = _fxRng.RandfRange(sizeMin, sizeMax),
-                    Grav = grav,
-                    Col = col,
-                });
-            }
-        }
-    }
-
-    private Color BrightRandom() => PartyColors[_fxRng.RandiRange(0, PartyColors.Length - 1)];
-    private PieceType RandomPieceColor() => BlockShapes.Colors[_fxRng.RandiRange(0, BlockShapes.Colors.Length - 1)];
+    private Color PreClearColor(int r, int c)
+        => Palette.ForPiece(_shardColors.TryGetValue(r * BlockFitGame.Size + c, out var t) ? t : PieceType.Garbage);
 
     // ---- Render ----
 
@@ -461,7 +431,8 @@ public partial class BlockFitController : Node2D
         float boardPx = _cell * BlockFitGame.Size;
         var tex = TextureFactory.Cell(Mathf.Clamp((int)_cell, 8, 128));
         var glyph = Palette.EquippedGlyph;                      // the equipped skin's block stamp
-        var glyphInk = new Color(0.05f, 0.06f, 0.10f, 0.82f);   // dark mark that reads on bright neon
+        var mat = Palette.EquippedMaterial;                     // the equipped skin's finish
+        bool reduced = Motion.Reduced;
 
         // Board panel + empty grid cells.
         DrawRect(new Rect2(_boardOrigin - new Vector2(6, 6), new Vector2(boardPx + 12, boardPx + 12)),
@@ -475,11 +446,7 @@ public partial class BlockFitController : Node2D
                 if (t == PieceType.Empty)
                     DrawRect(cellRect, new Color(1, 1, 1, 0.045f), filled: false, width: 1f);
                 else
-                {
-                    DrawTextureRect(tex, cellRect, false, Palette.ForPiece(t));
-                    if (glyph != SkinGlyph.None && _cell >= 18f)
-                        GlyphArt.Draw(this, glyph, cellRect.GetCenter(), _cell * 0.62f, glyphInk);
-                }
+                    BlockRender.DrawCell(this, cellRect, _cell, t, 1f, mat, glyph, _shimmer, r + c, reduced: reduced);
             }
 
         // Tray pieces (skip the dragged one, and the merge target — the merge preview redraws it).
@@ -581,18 +548,8 @@ public partial class BlockFitController : Node2D
             else
                 DrawRect(new Rect2(_boardOrigin.X + (b.Index + 0.5f) * _cell - thick / 2f, _boardOrigin.Y, thick, boardPx), col, filled: true);
         }
-        foreach (var rg in _rings)
-        {
-            float rt = rg.Age / rg.Life;
-            float rad = rg.MaxR * Mathf.Sqrt(Mathf.Clamp(rt, 0f, 1f));   // fast expansion easing out
-            float ra = 1f - rt;
-            DrawArc(rg.Pos, rad, 0f, Mathf.Tau, 48, new Color(rg.Col.R, rg.Col.G, rg.Col.B, ra * 0.9f), Mathf.Max(2f, _cell * 0.12f));
-        }
-        foreach (var s in _fx)
-        {
-            float a = 1f - s.Age / s.Life;
-            DrawCircle(s.Pos, s.Size * a, new Color(s.Col.R, s.Col.G, s.Col.B, a));
-        }
+        // Particle bodies (paper/glass) + Supernova vignette; the glow half is on _fxAdd.
+        _burst.DrawNormal(this, _cell, new Rect2(Vector2.Zero, Bootstrap.Instance.SafeCanvasSize));
     }
 
     private Vector2 TrayPieceOrigin(BlockPiece p, int slot)
@@ -604,14 +561,13 @@ public partial class BlockFitController : Node2D
 
     private void DrawPiece(BlockPiece p, Vector2 origin, float cell, float alpha, Texture2D tex)
     {
-        var color = Palette.ForPiece(p.Color);
+        var mat = Palette.EquippedMaterial;
         var glyph = Palette.EquippedGlyph;
+        bool reduced = Motion.Reduced;
         foreach (var (dr, dc) in p.Cells)
         {
             var rect = new Rect2(origin + new Vector2(dc * cell, dr * cell) + new Vector2(1, 1), new Vector2(cell - 2, cell - 2));
-            DrawTextureRect(tex, rect, false, new Color(color.R, color.G, color.B, alpha));
-            if (glyph != SkinGlyph.None && cell >= 14f)
-                GlyphArt.Draw(this, glyph, rect.GetCenter(), cell * 0.62f, new Color(0.05f, 0.06f, 0.10f, 0.82f * alpha));
+            BlockRender.DrawCell(this, rect, cell, p.Color, alpha, mat, glyph, _shimmer, dr + dc, reduced: reduced);
         }
     }
 
@@ -661,7 +617,7 @@ public partial class BlockFitController : Node2D
         _dragIndex = -1; _touchId = int.MinValue;
         _rainTimer = 0f;
         _artifact = BurstArtifacts.FromId(Bootstrap.Instance.Save.EquippedArtifactId);
-        _bands.Clear(); _fx.Clear(); _rings.Clear();
+        _bands.Clear(); _burst.Clear(); _shardColors.Clear();
         ResetIdle();
         QueueRedraw();
     }
