@@ -11,7 +11,8 @@ namespace Blockfall.UI;
 /// the Second Chance booster pack, and remove-ads. Payment runs through
 /// <see cref="IPlatformServices.PurchaseItem"/>; on success THIS screen grants
 /// the item via SaveManager (platforms only handle money). Equipping applies
-/// instantly — palette + backdrop retint live behind the store.
+/// instantly — only the piece colors retint; the game-screen backdrop stays fixed
+/// (see Palette.ApplyTheme).
 /// </summary>
 public partial class StoreScreen : Control
 {
@@ -277,8 +278,7 @@ public partial class StoreScreen : Control
     {
         var save = Bootstrap.Instance.Save;
         save.EquipTheme(item.Id);
-        Palette.ApplyTheme(item.Theme);
-        Bootstrap.Instance.Bg.ApplyThemeColors(); // backdrop retints live behind the store
+        Palette.ApplyTheme(item.Theme); // retints blocks only — the backdrop stays fixed (see Palette.ApplyTheme)
         Bootstrap.Instance.Bg.Pulse(Palette.Accent, 0.30f); // equip flourish (Motion.Reduced-gated)
         Rebuild();
     }

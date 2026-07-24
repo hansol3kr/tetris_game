@@ -95,6 +95,8 @@ internal static class LocData
         ["ARR (REPEAT)"] = "ARR (반복)",
         ["DRAG CONTROLS (TOUCH)"] = "드래그 조작 (터치)",
         ["UNAVAILABLE ON THIS DEVICE"] = "이 기기에서 사용 불가",
+        ["ON"] = "켜짐",
+        ["OFF"] = "꺼짐",
         // Controls (keyboard remap)
         ["CONTROLS"] = "키 설정",
         ["CLICK A KEY, THEN PRESS THE NEW ONE"] = "키를 누른 뒤 새 키를 입력하세요",
@@ -111,7 +113,7 @@ internal static class LocData
         // Accessibility
         ["ACCESSIBILITY"] = "접근성",
         ["TEXT SIZE"] = "글자 크기",
-        ["BACKGROUND & BLOCK COLORS · APPLIES INSTANTLY"] = "배경 & 블록 색상 · 즉시 적용",
+        ["BLOCK COLORS · APPLIES INSTANTLY"] = "블록 색상 · 즉시 적용",
         ["MORE SKINS IN THE STORE"] = "상점에서 더 많은 스킨",
         ["ACTIVE"] = "사용 중",
 

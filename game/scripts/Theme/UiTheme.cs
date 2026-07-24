@@ -13,7 +13,8 @@ namespace Blockfall.Theme;
 ///   Button:  "PrimaryButton" (accent-filled), "GhostButton" (outline),
 ///            "ChipButton" (pill toggle), "CardButton" (glass card row)
 ///   Label:   "TitleLabel", "HeadlineLabel", "StatValueLabel",
-///            "SectionLabel", "DimLabel"
+///            "SectionLabel", "DimLabel", and the scale-aware settings set
+///            "SectionHeaderLabel"/"OptionLabel"/"OptionValue"/"OptionHint"
 ///   Panel/PanelContainer: "Card" (glass card surface)
 /// Typography rule: Orbitron only via the *Title/Headline/StatValue* variations;
 /// everything else is Rajdhani, uppercase.
@@ -179,6 +180,27 @@ public static class UiTheme
         t.SetTypeVariation("DimLabel", "Label");
         t.SetColor("font_color", "DimLabel", Palette.TextSecondary);
         t.SetFontSize("font_size", "DimLabel", Fs(16));
+
+        // Settings option labels — routed through the theme (Fs) so they honor the
+        // live TEXT SIZE accessibility slider; a per-node font_size override would
+        // pin them and opt out of SetScale's in-place propagation. See SettingsScreen.
+        t.SetTypeVariation("SectionHeaderLabel", "Label");
+        t.SetFont("font", "SectionHeaderLabel", Fonts.UiTracked);
+        t.SetFontSize("font_size", "SectionHeaderLabel", Fs(16));
+        t.SetColor("font_color", "SectionHeaderLabel", Palette.TextSecondary);
+
+        t.SetTypeVariation("OptionLabel", "Label");
+        t.SetFontSize("font_size", "OptionLabel", Fs(18));
+        t.SetColor("font_color", "OptionLabel", Palette.TextPrimary);
+
+        t.SetTypeVariation("OptionValue", "Label");
+        t.SetFont("font", "OptionValue", Fonts.UiBold);
+        t.SetFontSize("font_size", "OptionValue", Fs(18));
+        t.SetColor("font_color", "OptionValue", Palette.Accent);
+
+        t.SetTypeVariation("OptionHint", "Label");
+        t.SetFontSize("font_size", "OptionHint", Fs(14));
+        t.SetColor("font_color", "OptionHint", Palette.TextSecondary);
     }
 
     // ---- LineEdit --------------------------------------------------------------

@@ -45,7 +45,8 @@ public partial class Background : CanvasLayer
         ApplyMotionSetting();
     }
 
-    /// <summary>Re-read the backdrop gradient from the palette (equipping a store theme).</summary>
+    /// <summary>Re-read the (fixed) backdrop gradient from the palette. Called on startup and by
+    /// the autoplay harness; store/settings equips no longer retint the backdrop (see Palette.ApplyTheme).</summary>
     public void ApplyThemeColors()
     {
         _rect.Color = Palette.Background;

@@ -14,7 +14,9 @@ public static class Palette
 {
     // ---- Background -------------------------------------------------------
     // Deep navy-violet; the animated shader interpolates Background -> BgBottom.
-    // Both retint with the equipped cosmetic theme (see ApplyTheme).
+    // FIXED: equipping a cosmetic theme no longer retints these — a block-skin
+    // change must never recolor the game screen, so the backdrop stays constant
+    // (piece contrast reads identically under every skin). See ApplyTheme.
     public static Color Background { get; private set; } = DefaultBgTop;
     public static Color BgBottom { get; private set; } = DefaultBgBottom;
     private static readonly Color DefaultBgTop = new(0.039f, 0.043f, 0.078f);    // #0A0B14
@@ -96,17 +98,19 @@ public static class Palette
         new Color(1.00f, 0.64f, 0.36f), DefaultBgTop, DefaultBgBottom);
 
     /// <summary>
-    /// Equip a cosmetic theme (null = back to the default). Piece colors and the
-    /// backdrop gradient retint; views read ForPiece per draw so boards update on
-    /// the next frame — only the animated background needs an explicit refresh
-    /// (<c>Bootstrap.Instance.Bg.ApplyThemeColors()</c>).
+    /// Equip a cosmetic theme (null = back to the default). Only the piece colors,
+    /// glyph, material and edge tint retint — the screen background is deliberately
+    /// LEFT UNCHANGED so switching block skins never shifts the play-field backdrop
+    /// (piece contrast/legibility stays constant). Views read ForPiece per draw, so
+    /// boards update on the next frame with no explicit backdrop refresh.
     /// </summary>
     public static void ApplyTheme(BlockTheme? t)
     {
         t ??= DefaultTheme;
         I = t.I; O = t.O; T = t.T; S = t.S; Z = t.Z; J = t.J; L = t.L;
-        Background = t.BgTop;
-        BgBottom = t.BgBottom;
+        // Background intentionally NOT retinted — a block-skin change must not recolor
+        // the game screen. BlockTheme.BgTop/BgBottom stay on the record (data compat)
+        // but no longer drive the live backdrop.
         EquippedGlyph = t.Glyph;
         EquippedMaterial = t.Material;
         EquippedEdgeTint = t.EdgeTint;

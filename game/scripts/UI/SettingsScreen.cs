@@ -13,6 +13,11 @@ namespace Blockfall.UI;
 /// (DAS/ARR). Audio, palette, glow, and motion apply live; handling knobs take
 /// effect on the next run. Changes are held in the shared settings object and
 /// flushed to disk once when leaving via <see cref="BackRequested"/>.
+///
+/// Visual language (legibility pass): every group leads with an accent tab-marker
+/// header + hairline-ruled rows at a fixed touch height, and every on/off option is a
+/// pill switch (ON/OFF, accent-lit) instead of the tiny stock checkbox — state reads
+/// at a glance on both desktop and touch.
 /// </summary>
 public partial class SettingsScreen : Control
 {
@@ -22,6 +27,10 @@ public partial class SettingsScreen : Control
     private GameSettings _s = null!;
     private VBoxContainer _skinRows = null!;
     private VBoxContainer _controlRows = null!;
+
+    // Row rhythm tokens — one place to retune the whole screen's density.
+    private const int RowHeight = 52;    // min touch height for every option row
+    private static readonly Color Hairline = new(1f, 1f, 1f, 0.05f); // between-row divider
 
     // Key-remap "listening" state: while an action is armed, the next physical key
     // pressed (via _UnhandledKeyInput) binds to it. Null = not listening.
@@ -49,16 +58,16 @@ public partial class SettingsScreen : Control
             SizeFlagsVertical = SizeFlags.ExpandFill,
         };
         scroll.AddChild(outer);
-        outer.AddChild(new Control { SizeFlagsVertical = SizeFlags.ExpandFill });
+        outer.AddChild(new Control { CustomMinimumSize = new Vector2(0, 12) });
 
         var col = new VBoxContainer
         {
             SizeFlagsHorizontal = SizeFlags.ShrinkCenter,
             CustomMinimumSize = new Vector2(560, 0),
         };
-        col.AddThemeConstantOverride("separation", 14);
+        col.AddThemeConstantOverride("separation", 16);
         outer.AddChild(col);
-        outer.AddChild(new Control { SizeFlagsVertical = SizeFlags.ExpandFill });
+        outer.AddChild(new Control { CustomMinimumSize = new Vector2(0, 24) });
 
         var titleRow = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ShrinkCenter };
         titleRow.AddThemeConstantOverride("separation", 12);
@@ -71,23 +80,23 @@ public partial class SettingsScreen : Control
         // ---- LANGUAGE (first, so a new player can switch before anything else) --
         BuildLanguageSection(col);
 
-        // ---- SKIN (background + block colors) --------------------------------
+        // ---- SKIN (block colors only — the game screen background never changes) --
         BuildSkinSection(col);
 
         // ---- AUDIO -----------------------------------------------------------
         var audio = SectionCard(col, "AUDIO");
-        audio.AddChild(Slider("SFX VOLUME", 0, 1, 0.05, _s.SfxVolume, v => { _s.SfxVolume = (float)v; ApplyAudio(); }, Pct));
-        audio.AddChild(Slider("MUSIC VOLUME", 0, 1, 0.05, _s.MusicVolume, v => { _s.MusicVolume = (float)v; ApplyAudio(); }, Pct));
-        audio.AddChild(Check("MUTE", _s.Muted, on => { _s.Muted = on; ApplyAudio(); }));
+        AddRow(audio, Slider("SFX VOLUME", 0, 1, 0.05, _s.SfxVolume, v => { _s.SfxVolume = (float)v; ApplyAudio(); }, Pct));
+        AddRow(audio, Slider("MUSIC VOLUME", 0, 1, 0.05, _s.MusicVolume, v => { _s.MusicVolume = (float)v; ApplyAudio(); }, Pct));
+        AddRow(audio, Check("MUTE", _s.Muted, on => { _s.Muted = on; ApplyAudio(); }));
 
         // ---- VISUAL -----------------------------------------------------------
         var visual = SectionCard(col, "VISUAL");
-        visual.AddChild(Check("GHOST PIECE", _s.GhostEnabled, on => _s.GhostEnabled = on));
-        visual.AddChild(Check("COLORBLIND PALETTE", _s.ColorblindMode, on => { _s.ColorblindMode = on; Palette.ColorblindMode = on; }));
-        visual.AddChild(Check("FINESSE METER", _s.ShowFinesse, on => _s.ShowFinesse = on));
+        AddRow(visual, Check("GHOST PIECE", _s.GhostEnabled, on => _s.GhostEnabled = on));
+        AddRow(visual, Check("COLORBLIND PALETTE", _s.ColorblindMode, on => { _s.ColorblindMode = on; Palette.ColorblindMode = on; }));
+        AddRow(visual, Check("FINESSE METER", _s.ShowFinesse, on => _s.ShowFinesse = on));
         if (Bootstrap.GlowSupported)
         {
-            visual.AddChild(Check("NEON GLOW (BLOOM)", _s.GlowEnabled, on =>
+            AddRow(visual, Check("NEON GLOW (BLOOM)", _s.GlowEnabled, on =>
             {
                 _s.GlowEnabled = on;
                 Bootstrap.Instance.ApplyGlowSetting(); // live: HDR 2D + bloom together
@@ -97,33 +106,33 @@ public partial class SettingsScreen : Control
         {
             // HDR 2D bloom blanks the canvas on this platform's driver — the neon
             // look still comes through the hand-drawn glow underlays. See Bootstrap.
-            visual.AddChild(DisabledRow("NEON GLOW (BLOOM)", "UNAVAILABLE ON THIS DEVICE"));
+            AddRow(visual, DisabledRow("NEON GLOW (BLOOM)", "UNAVAILABLE ON THIS DEVICE"));
         }
-        visual.AddChild(Check("REDUCED MOTION", _s.ReducedMotion, on =>
+        AddRow(visual, Check("REDUCED MOTION", _s.ReducedMotion, on =>
         {
             _s.ReducedMotion = on;
             Motion.Reduced = on;
             Bootstrap.Instance.Bg.ApplyMotionSetting(); // freeze/unfreeze the backdrop
         }));
-        visual.AddChild(Slider("JUICE / SHAKE", 0, 1, 0.1, _s.JuiceIntensity, v => _s.JuiceIntensity = (float)v, Pct));
-        visual.AddChild(CycleRow(Loc.T("CLEAR EFFECT"), JuiceLayer.ClearFxNames, _s.ClearFxStyle, i => _s.ClearFxStyle = i));
+        AddRow(visual, Slider("JUICE / SHAKE", 0, 1, 0.1, _s.JuiceIntensity, v => _s.JuiceIntensity = (float)v, Pct));
+        AddRow(visual, CycleRow(Loc.T("CLEAR EFFECT"), JuiceLayer.ClearFxNames, _s.ClearFxStyle, i => _s.ClearFxStyle = i));
         // Desktop-only: mobile is always fullscreen, so the toggle would be a no-op there.
         if (!OS.HasFeature("mobile"))
-            visual.AddChild(Check("FULLSCREEN", _s.Fullscreen, on => { _s.Fullscreen = on; Bootstrap.Instance.ApplyFullscreen(); }));
+            AddRow(visual, Check("FULLSCREEN", _s.Fullscreen, on => { _s.Fullscreen = on; Bootstrap.Instance.ApplyFullscreen(); }));
 
         // ---- HANDLING ----------------------------------------------------------
         var handling = SectionCard(col, "HANDLING");
-        handling.AddChild(Slider("DAS (DELAY)", 0.0, 0.30, 0.005, _s.DasSeconds, v => _s.DasSeconds = v, Ms));
-        handling.AddChild(Slider("ARR (REPEAT)", 0.0, 0.10, 0.005, _s.ArrSeconds, v => _s.ArrSeconds = v, Ms));
+        AddRow(handling, Slider("DAS (DELAY)", 0.0, 0.30, 0.005, _s.DasSeconds, v => _s.DasSeconds = v, Ms));
+        AddRow(handling, Slider("ARR (REPEAT)", 0.0, 0.10, 0.005, _s.ArrSeconds, v => _s.ArrSeconds = v, Ms));
         // Touch scheme: drag the piece into place vs. the classic on-screen d-pad.
-        handling.AddChild(Check("DRAG CONTROLS (TOUCH)", _s.GestureControls, on => _s.GestureControls = on));
+        AddRow(handling, Check("DRAG CONTROLS (TOUCH)", _s.GestureControls, on => _s.GestureControls = on));
 
         // ---- CONTROLS (keyboard remap) ----------------------------------------
         BuildControlsSection(col);
 
         // ---- ACCESSIBILITY -----------------------------------------------------
         var access = SectionCard(col, "ACCESSIBILITY");
-        access.AddChild(Slider("TEXT SIZE", 0.8, 1.6, 0.1, _s.TextScale,
+        AddRow(access, Slider("TEXT SIZE", 0.8, 1.6, 0.1, _s.TextScale,
             v => { _s.TextScale = (float)v; UiTheme.SetScale((float)v); }, Pct));
 
         // ---- HELP --------------------------------------------------------------
@@ -208,12 +217,7 @@ public partial class SettingsScreen : Control
     {
         var card = SectionCard(parent, "CONTROLS");
 
-        var hint = new Label
-        {
-            Text = Loc.T("CLICK A KEY, THEN PRESS THE NEW ONE"),
-            ThemeTypeVariation = "DimLabel",
-        };
-        hint.AddThemeFontSizeOverride("font_size", 13);
+        var hint = Hint("CLICK A KEY, THEN PRESS THE NEW ONE");
         card.AddChild(hint);
 
         _controlRows = new VBoxContainer();
@@ -247,8 +251,7 @@ public partial class SettingsScreen : Control
 
     private Control KeyRow(string action, string label)
     {
-        var row = new HBoxContainer();
-        row.AddThemeConstantOverride("separation", 16);
+        var row = Row();
         row.AddChild(Caption(label));
         row.AddChild(new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill });
 
@@ -311,21 +314,16 @@ public partial class SettingsScreen : Control
 
     /// <summary>
     /// A gallery of the owned skins (the default + all free ones; any premium the
-    /// player bought too). Picking one retints blocks + backdrop instantly and
-    /// persists via <see cref="SaveManager.EquipTheme"/>. Premium skins live in the
-    /// Store; this is the free, always-available appearance control.
+    /// player bought too). Picking one retints the blocks instantly and persists via
+    /// <see cref="SaveManager.EquipTheme"/>. The game screen background is NOT part of
+    /// a skin — it stays fixed so piece contrast reads the same under every skin.
+    /// Premium skins live in the Store; this is the free, always-available control.
     /// </summary>
     private void BuildSkinSection(Container parent)
     {
         var card = SectionCard(parent, "SKIN");
 
-        var hint = new Label
-        {
-            Text = Loc.T("BACKGROUND & BLOCK COLORS · APPLIES INSTANTLY"),
-            ThemeTypeVariation = "DimLabel",
-        };
-        hint.AddThemeFontSizeOverride("font_size", 13);
-        card.AddChild(hint);
+        card.AddChild(Hint("BLOCK COLORS · APPLIES INSTANTLY"));
 
         _skinRows = new VBoxContainer();
         _skinRows.AddThemeConstantOverride("separation", 8);
@@ -397,34 +395,74 @@ public partial class SettingsScreen : Control
         var save = Bootstrap.Instance.Save;
         if (save.EquippedThemeId == item.Id) return;
         save.EquipTheme(item.Id);
-        Palette.ApplyTheme(item.Theme);
-        Bootstrap.Instance.Bg.ApplyThemeColors(); // backdrop retints live
+        Palette.ApplyTheme(item.Theme);                     // retints blocks only — backdrop stays fixed
         Bootstrap.Instance.Bg.Pulse(Palette.Accent, 0.28f); // equip flourish (Motion.Reduced-gated)
         RebuildSkins();
     }
 
     // ---- Section / row builders ------------------------------------------------
 
-    /// <summary>A glass card with a tracked section header; returns the rows container.</summary>
+    /// <summary>
+    /// A titled group: an accent tab-marker header sitting just above its glass card.
+    /// The header is brighter and tracked (vs. the stock dim SectionLabel) so a player
+    /// scanning a long options list finds the group they want fast. Returns the rows box.
+    /// </summary>
     private static VBoxContainer SectionCard(Container parent, string caption)
     {
-        var header = new Label { Text = Loc.T(caption), ThemeTypeVariation = "SectionLabel" };
-        parent.AddChild(header);
+        var group = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        group.AddThemeConstantOverride("separation", 8);
+        parent.AddChild(group);
+
+        var header = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        header.AddThemeConstantOverride("separation", 10);
+        header.AddChild(new ColorRect
+        {
+            Color = Palette.Accent,
+            CustomMinimumSize = new Vector2(3, 18),
+            SizeFlagsVertical = SizeFlags.ShrinkCenter,
+        });
+        var label = new Label
+        {
+            Text = Loc.T(caption),
+            ThemeTypeVariation = "SectionHeaderLabel", // scale-aware — honors TEXT SIZE
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        header.AddChild(label);
+        group.AddChild(header);
 
         var card = new PanelContainer { ThemeTypeVariation = "Card" };
         var box = new VBoxContainer();
-        box.AddThemeConstantOverride("separation", 10);
+        box.AddThemeConstantOverride("separation", 6);
         card.AddChild(box);
-        parent.AddChild(card);
+        group.AddChild(card);
         return box;
     }
+
+    /// <summary>Add an option row to a card, seating a hairline divider before every row
+    /// but the first so the list reads as clean, scannable lines.</summary>
+    private static void AddRow(VBoxContainer card, Control row)
+    {
+        if (card.GetChildCount() > 0)
+            card.AddChild(new ColorRect { Color = Hairline, CustomMinimumSize = new Vector2(0, 1) });
+        card.AddChild(row);
+    }
+
+    /// <summary>A fixed-height row so every option lines up and stays a comfortable touch target.</summary>
+    private static HBoxContainer Row()
+    {
+        var row = new HBoxContainer { CustomMinimumSize = new Vector2(0, RowHeight) };
+        row.AddThemeConstantOverride("separation", 16);
+        return row;
+    }
+
+    /// <summary>A small secondary-contrast helper line under a section header (scale-aware).</summary>
+    private static Label Hint(string text)
+        => new() { Text = Loc.T(text), ThemeTypeVariation = "OptionHint" };
 
     private Control Slider(string caption, double min, double max, double step, double value,
                            Action<double> onChanged, Func<double, string> fmt)
     {
-        var row = new HBoxContainer();
-        row.AddThemeConstantOverride("separation", 16);
-
+        var row = Row();
         row.AddChild(Caption(caption));
 
         var slider = new HSlider
@@ -440,11 +478,12 @@ public partial class SettingsScreen : Control
         var valLabel = new Label
         {
             Text = fmt(value),
-            CustomMinimumSize = new Vector2(76, 0),
+            ThemeTypeVariation = "OptionValue", // scale-aware bold accent readout
+            CustomMinimumSize = new Vector2(80, 0),
             HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center,
+            SizeFlagsVertical = SizeFlags.ShrinkCenter,
         };
-        valLabel.AddThemeColorOverride("font_color", Palette.Accent);
-        valLabel.AddThemeFontSizeOverride("font_size", 17);
         slider.ValueChanged += v => { valLabel.Text = fmt(v); onChanged(v); };
 
         row.AddChild(slider);
@@ -455,12 +494,16 @@ public partial class SettingsScreen : Control
     /// <summary>A caption + a button that cycles through <paramref name="names"/> on tap.</summary>
     private Control CycleRow(string caption, string[] names, int current, Action<int> onChanged)
     {
-        var row = new HBoxContainer();
-        row.AddThemeConstantOverride("separation", 16);
+        var row = Row();
         row.AddChild(Caption(caption));
         row.AddChild(new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill });
         int idx = Mathf.Clamp(current, 0, names.Length - 1);
-        var btn = new Button { Text = names[idx], CustomMinimumSize = new Vector2(150, 0) };
+        var btn = new Button
+        {
+            Text = names[idx],
+            CustomMinimumSize = new Vector2(150, 40),
+            SizeFlagsVertical = SizeFlags.ShrinkCenter,
+        };
         Motion.BindButtonFeel(btn);
         btn.Pressed += () =>
         {
@@ -472,41 +515,66 @@ public partial class SettingsScreen : Control
         return row;
     }
 
+    /// <summary>An on/off option row: a caption plus a pill switch (ON/OFF, accent-lit when on).</summary>
     private Control Check(string caption, bool value, Action<bool> onChanged)
     {
-        var row = new HBoxContainer();
-        row.AddThemeConstantOverride("separation", 16);
+        var row = Row();
         row.AddChild(Caption(caption));
         row.AddChild(new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill });
-        var box = new CheckBox { ButtonPressed = value };
-        box.Toggled += on => onChanged(on);
-        row.AddChild(box);
+        row.AddChild(Toggle(value, onChanged));
         return row;
+    }
+
+    /// <summary>
+    /// A pill switch built on the ChipButton variation (toggled-on = the accent-lit
+    /// pressed state). Replaces the tiny stock CheckBox: the ON/OFF label + accent fill
+    /// make the state unmistakable at a glance, and the 82×40 pill is a proper touch target.
+    /// </summary>
+    private Button Toggle(bool value, Action<bool> onChanged)
+    {
+        var t = new Button
+        {
+            ToggleMode = true,
+            ButtonPressed = value,
+            ThemeTypeVariation = "ChipButton",
+            Text = value ? Loc.T("ON") : Loc.T("OFF"),
+            CustomMinimumSize = new Vector2(82, 40),
+            SizeFlagsVertical = SizeFlags.ShrinkCenter,
+        };
+        Motion.BindButtonFeel(t);
+        t.Toggled += on => { t.Text = on ? Loc.T("ON") : Loc.T("OFF"); onChanged(on); };
+        return t;
     }
 
     /// <summary>A dimmed, non-interactive row: a caption plus a status note (e.g. unsupported toggle).</summary>
     private Control DisabledRow(string caption, string note)
     {
-        var row = new HBoxContainer();
-        row.AddThemeConstantOverride("separation", 16);
+        var row = Row();
         var c = Caption(caption);
         c.AddThemeColorOverride("font_color", Palette.TextTertiary);
         row.AddChild(c);
         row.AddChild(new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill });
-        var n = new Label { Text = Loc.T(note), SizeFlagsVertical = SizeFlags.ShrinkCenter };
-        n.AddThemeFontSizeOverride("font_size", 14);
+        var n = new Label
+        {
+            Text = Loc.T(note),
+            ThemeTypeVariation = "OptionHint", // scale-aware; recoloured dimmer below
+            VerticalAlignment = VerticalAlignment.Center,
+            SizeFlagsVertical = SizeFlags.ShrinkCenter,
+        };
         n.AddThemeColorOverride("font_color", Palette.TextTertiary);
         row.AddChild(n);
         return row;
     }
 
     private static Label Caption(string text)
-    {
-        var l = new Label { Text = Loc.T(text), CustomMinimumSize = new Vector2(210, 0) };
-        l.AddThemeFontSizeOverride("font_size", 18);
-        l.AddThemeColorOverride("font_color", Palette.TextPrimary);
-        return l;
-    }
+        => new()
+        {
+            Text = Loc.T(text),
+            ThemeTypeVariation = "OptionLabel", // scale-aware — every option row honors TEXT SIZE
+            CustomMinimumSize = new Vector2(210, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            SizeFlagsVertical = SizeFlags.ShrinkCenter,
+        };
 
     private static string Pct(double v) => $"{Mathf.RoundToInt((float)v * 100)}%";
     private static string Ms(double v) => $"{Mathf.RoundToInt((float)v * 1000)} ms";
