@@ -26,9 +26,8 @@ public class BlockFitGameTests
     }
 
     [Fact]
-    public void TryPlace_CommitsCells_AndScores()
+    public void TryPlace_CommitsCells_AndScores_AndRefillsImmediately()
     {
-        // Empty board; 3 pieces so placing slot 0 doesn't empty the tray (no refill).
         var single = new BlockPiece(new[] { (0, 0) }, PieceType.I);
         var other = new BlockPiece(new[] { (0, 0) }, PieceType.O);
         var g = new BlockFitGame(EmptyGrid(), new BlockPiece?[] { single, other, other });
@@ -36,9 +35,26 @@ public class BlockFitGameTests
         Assert.True(g.TryPlace(0, 3, 4));
         Assert.Equal(PieceType.I, g.At(3, 4));
         Assert.True(g.Score >= 1);
-        Assert.Null(g.Tray[0]);            // slot 0 emptied; slots 1&2 remain → no refill
+        // Continuous stream: the emptied slot is dealt a fresh piece right away, so the tray
+        // stays full (no waiting to place all three).
+        Assert.NotNull(g.Tray[0]);
         Assert.NotNull(g.Tray[1]);
-        Assert.False(g.TryPlace(0, 0, 0)); // slot 0 is empty now
+        Assert.NotNull(g.Tray[2]);
+    }
+
+    [Fact]
+    public void TryPlace_RefillsOnlyTheEmptiedSlot_LeavingOthersUntouched()
+    {
+        var a = new BlockPiece(new[] { (0, 0) }, PieceType.I);
+        var b = new BlockPiece(new[] { (0, 0) }, PieceType.O);
+        var c = new BlockPiece(new[] { (0, 0) }, PieceType.T);
+        var g = new BlockFitGame(EmptyGrid(), new BlockPiece?[] { a, b, c });
+
+        Assert.True(g.TryPlace(0, 5, 5));
+        // Slots 1 and 2 keep their exact pieces; only slot 0 was re-dealt.
+        Assert.Same(b, g.Tray[1]);
+        Assert.Same(c, g.Tray[2]);
+        Assert.NotNull(g.Tray[0]);
     }
 
     [Fact]
@@ -293,5 +309,85 @@ public class BlockFitGameTests
             Assert.Equal(a.Tray[i]!.Color, b.Tray[i]!.Color);
             Assert.Equal(a.Tray[i]!.Cells.Count, b.Tray[i]!.Cells.Count);
         }
+    }
+
+    [Fact]
+    public void Hold_StashesPiece_WhenEmpty_AndRefillsTheSlot()
+    {
+        var a = new BlockPiece(new[] { (0, 0) }, PieceType.I);
+        var b = new BlockPiece(new[] { (0, 0) }, PieceType.O);
+        var c = new BlockPiece(new[] { (0, 0) }, PieceType.T);
+        var g = new BlockFitGame(EmptyGrid(), new BlockPiece?[] { a, b, c });
+
+        Assert.Null(g.Held);
+        Assert.True(g.TryHold(0));
+        Assert.Same(a, g.Held);          // the piece parked in hold
+        Assert.NotNull(g.Tray[0]);       // its tray slot refilled immediately (tray stays full)
+        Assert.Same(b, g.Tray[1]);
+        Assert.Same(c, g.Tray[2]);
+    }
+
+    [Fact]
+    public void Hold_SwapsWithHeld_WhenAlreadyOccupied()
+    {
+        var first = new BlockPiece(new[] { (0, 0) }, PieceType.I);
+        var second = new BlockPiece(new[] { (0, 0), (0, 1) }, PieceType.O);
+        var filler = new BlockPiece(new[] { (0, 0) }, PieceType.T);
+        var g = new BlockFitGame(EmptyGrid(), new BlockPiece?[] { first, second, filler });
+
+        Assert.True(g.TryHold(0));       // Held = first; slot 0 refills
+        Assert.Same(first, g.Held);
+        Assert.True(g.TryHold(1));        // hold occupied → swap slot 1's piece with the held one
+        Assert.Same(second, g.Held);     // slot 1's piece is now held
+        Assert.Same(first, g.Tray[1]);   // the previously held piece returned to slot 1 (swap, no refill)
+    }
+
+    [Fact]
+    public void PlaceHeld_CommitsCells_ClearsHold_AndScores()
+    {
+        var single = new BlockPiece(new[] { (0, 0) }, PieceType.I);
+        var g = new BlockFitGame(EmptyGrid(), new BlockPiece?[] { single, single, single });
+        Assert.True(g.TryHold(0));       // stash a single
+        long before = g.Score;
+
+        Assert.True(g.TryPlaceHeld(6, 6));
+        Assert.Equal(PieceType.I, g.At(6, 6));
+        Assert.Null(g.Held);             // hold emptied by the placement
+        Assert.True(g.Score > before);
+        Assert.False(g.TryPlaceHeld(0, 0)); // nothing held now
+    }
+
+    [Fact]
+    public void PlaceHeld_CanClearALine()
+    {
+        // Row 0 filled except its last column; the held single completes it.
+        var grid = EmptyGrid();
+        for (int c = 0; c < N - 1; c++) grid[Idx(0, c)] = PieceType.O;
+        var single = new BlockPiece(new[] { (0, 0) }, PieceType.T);
+        var g = new BlockFitGame(grid, new BlockPiece?[] { single, single, single });
+        Assert.True(g.TryHold(0));
+
+        Assert.True(g.TryPlaceHeld(0, N - 1));
+        for (int c = 0; c < N; c++) Assert.Equal(PieceType.Empty, g.At(0, c));
+        Assert.Equal(1, g.LastClearedRows);
+    }
+
+    [Fact]
+    public void HeldPiece_KeepsRunAlive_WhenTrayCannotFit()
+    {
+        // Board full except one lone 1×1 pocket at (4,4): a 2×1 domino can't fit it, but a stashed
+        // single can — so game-over must NOT fire while the held piece still has a home (the
+        // game-over check counts the hold slot, not just the tray).
+        var grid = EmptyGrid();
+        for (int i = 0; i < grid.Length; i++) grid[i] = PieceType.Z;
+        grid[Idx(4, 4)] = PieceType.Empty;
+        var domino = new BlockPiece(new[] { (0, 0), (0, 1) }, PieceType.I);
+        var single = new BlockPiece(new[] { (0, 0) }, PieceType.O);
+        var g = new BlockFitGame(grid, new BlockPiece?[] { single, domino, domino });
+
+        Assert.True(g.TryHold(0));         // Held = single; Deal() re-checks game-over (held fits → alive)
+        Assert.False(g.GameOver);
+        Assert.True(g.TryPlaceHeld(4, 4)); // the held single drops into the lone pocket
+        Assert.Null(g.Held);
     }
 }

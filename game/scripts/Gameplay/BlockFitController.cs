@@ -10,9 +10,12 @@ namespace Blockfall.Gameplay;
 /// <summary>
 /// Free-placement block puzzle mode (Block Blast style): a 10×10 grid and a tray
 /// of 3 fixed-orientation neon pieces you drag anywhere they fit (no gravity, no
-/// rotation). Fill a full row/column to clear it. The dragged piece floats ABOVE
-/// the finger so the fingertip never hides it — the key mobile control detail.
-/// Engine is the tested <see cref="BlockFitGame"/>; this node is render + touch.
+/// rotation). Fill a full row/column to clear it. The tray is a continuous stream —
+/// placing a piece refills its slot instantly. A reserve HOLD slot (left of the tray)
+/// parks an awkward piece for later (drag a tray piece onto it; drag it back out to place).
+/// The dragged piece floats ABOVE the finger, and while dragging a top-of-screen MAGNIFIER
+/// (loupe) shows the landing area zoomed so the fingertip never hides where it lands — the
+/// key mobile control details. Engine is the tested <see cref="BlockFitGame"/>; render + touch here.
 /// </summary>
 public partial class BlockFitController : Node2D
 {
@@ -29,16 +32,19 @@ public partial class BlockFitController : Node2D
     private Control _uiHost = null!;
     private Button _back = null!;
     private Label _score = null!, _best = null!, _combo = null!;
+    private Label _holdLabel = null!;
     private Control _overlay = null!;
     private Label _overScore = null!;
 
     // Geometry (recomputed in Layout).
-    private float _cell, _trayCell;
+    private float _cell, _trayCell, _holdCell;
     private Vector2 _boardOrigin;
     private readonly Rect2[] _traySlot = new Rect2[3];
+    private Rect2 _holdSlot;               // the reserve (hold) slot, left of the tray
 
-    // Drag state.
-    private int _dragIndex = -1;          // tray slot being dragged, or -1
+    // Drag state. _dragIndex is a tray slot 0..2, HoldSlot (dragging the parked piece), or -1.
+    private const int HoldSlot = 3;
+    private int _dragIndex = -1;
     private Vector2 _finger;
     private int _touchId = int.MinValue;
     private float _comboFlash;
@@ -116,6 +122,13 @@ public partial class BlockFitController : Node2D
         _combo.AddThemeColorOverride("font_color", Palette.AccentGold);
         _uiHost.AddChild(_combo);
 
+        // "HOLD" caption over the reserve slot (positioned in Layout). Drawn on _uiHost so it
+        // sits above the slot panel painted in _Draw.
+        _holdLabel = new Label { Text = Loc.T("HOLD"), HorizontalAlignment = HorizontalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore };
+        _holdLabel.AddThemeFontSizeOverride("font_size", 15);
+        _holdLabel.AddThemeColorOverride("font_color", Palette.TextSecondary);
+        _uiHost.AddChild(_holdLabel);
+
         // Back button (top-left corner). Sized/positioned in Layout so it lines up with the
         // score in the header band.
         _back = new Button { Text = "‹", CustomMinimumSize = new Vector2(52, 52), MouseFilter = Control.MouseFilterEnum.Stop };
@@ -173,11 +186,18 @@ public partial class BlockFitController : Node2D
 
         float trayTop = _boardOrigin.Y + boardPx + safe.Y * 0.03f;
         float trayH = Mathf.Max(48f, safe.Y - trayTop - safe.Y * 0.03f);
+        // Reserve a compact column on the left for the HOLD slot; the 3 tray slots split the rest.
+        float holdW = safe.X * 0.22f;
+        float slotW = (safe.X - holdW) / 3f;
+        _holdSlot = new Rect2(0f, trayTop, holdW, trayH);
         // A tray piece is at most 5 cells wide / 3 tall; size the mini-cell to fit a slot.
-        float slotW = safe.X / 3f;
         _trayCell = Mathf.Floor(Mathf.Min(_cell * 0.55f, Mathf.Min(slotW * 0.9f / 5f, trayH / 3.4f)));
         for (int i = 0; i < 3; i++)
-            _traySlot[i] = new Rect2(i * slotW, trayTop, slotW, trayH);
+            _traySlot[i] = new Rect2(holdW + i * slotW, trayTop, slotW, trayH);
+        // The held piece can be up to 5×5; leave ~22px at the slot top for the "HOLD" caption.
+        _holdCell = Mathf.Floor(Mathf.Max(6f, Mathf.Min(_trayCell, Mathf.Min((holdW - 10f) / 5f, (trayH - 24f) / 5f))));
+        _holdLabel.Position = new Vector2(_holdSlot.Position.X, _holdSlot.Position.Y + 2f);
+        _holdLabel.Size = new Vector2(_holdSlot.Size.X, 20f);
 
         // Header row: back button, score (left) and best (right) all vertically centred in
         // the header band so they line up (the score used to sit above a smaller button).
@@ -265,6 +285,13 @@ public partial class BlockFitController : Node2D
     {
         if (_game.GameOver || _dragIndex != -1) return;
         ResetIdle();
+        // Reserve slot: grab the parked piece to place it back on the board.
+        if (_game.Held is not null && _holdSlot.HasPoint(pos))
+        {
+            _dragIndex = HoldSlot; _touchId = id; _finger = pos;
+            QueueRedraw();
+            return;
+        }
         for (int i = 0; i < 3; i++)
             if (_game.Tray[i] is not null && _traySlot[i].HasPoint(pos))
             {
@@ -274,6 +301,14 @@ public partial class BlockFitController : Node2D
             }
     }
 
+    /// <summary>The piece currently being dragged (a tray piece, the held piece, or null).</summary>
+    private BlockPiece? DraggedPiece() => _dragIndex switch
+    {
+        HoldSlot => _game.Held,
+        >= 0 and < 3 => _game.Tray[_dragIndex],
+        _ => null,
+    };
+
     private void Release(int id, Vector2 pos)
     {
         if (_dragIndex == -1 || id != _touchId) return;
@@ -281,6 +316,22 @@ public partial class BlockFitController : Node2D
         _dragIndex = -1; _touchId = int.MinValue;
         _finger = pos;
         ResetIdle();
+
+        // Dragging the parked piece: place it on the board (or drop it back on hold to cancel).
+        if (idx == HoldSlot) { ReleaseHeld(pos); QueueRedraw(); return; }
+
+        // Stash intent: released over the reserve slot → park this tray piece in hold (swaps if
+        // the slot is already occupied). Checked before merge/placement so it always wins here.
+        if (_holdSlot.HasPoint(pos) && _game.Tray[idx] is not null)
+        {
+            if (_game.TryHold(idx))
+            {
+                Bootstrap.Instance.Audio.PlaySfx("hold");
+                if (_game.GameOver) ShowGameOver();
+            }
+            QueueRedraw();
+            return;
+        }
 
         // Merge intent: released over a different, occupied tray slot → fuse the two pieces
         // into one larger composite (checked before board placement so it always wins here).
@@ -300,33 +351,47 @@ public partial class BlockFitController : Node2D
 
         var piece = _game.Tray[idx];
         if (piece is not null && TargetCell(piece, pos, out int gr, out int gc) && _game.CanPlace(piece, gr, gc))
-        {
-            // Capture the exact lines this drop completes BEFORE placing — TryPlace
-            // then clears them, so the celebration needs the indices up front.
-            _game.LinesClearedBy(piece, gr, gc, _pvRows, _pvCols);
-            CaptureShardColors(piece, gr, gc);   // snapshot popped hues before TryPlace clears them
-            _game.TryPlace(idx, gr, gc);
-            Bootstrap.Instance.Audio.PlaySfx("lock");
-            if (_game.LastClearedRows + _game.LastClearedCols > 0)
-            {
-                Bootstrap.Instance.Audio.PlaySfx(_game.LastClearedRows + _game.LastClearedCols >= 2 ? "combo" : "line_clear");
-                int lines = _game.LastClearedRows + _game.LastClearedCols;
-                _combo.Text = lines >= 2 ? Loc.T("COMBO ×{0}", lines) : Loc.T("CLEAR");
-                _comboFlash = 0.9f;
-                SpawnClearFx();
-            }
-            if (_game.Score > CurrentBest())
-            {
-                SubmitBest(_game.Score);
-                _best.Text = Loc.T("BEST {0}", _game.Score);
-            }
-            if (_game.GameOver) ShowGameOver();
-        }
+            CommitPlacement(piece, gr, gc, fromHold: false, trayIdx: idx);
         else
-        {
             Bootstrap.Instance.Audio.PlaySfx("move"); // snap-back cue
-        }
         QueueRedraw();
+    }
+
+    /// <summary>Release path for the parked (held) piece: place it on the board, or cancel (snap
+    /// back into hold) if it was dropped over the reserve slot again.</summary>
+    private void ReleaseHeld(Vector2 pos)
+    {
+        if (_holdSlot.HasPoint(pos)) { Bootstrap.Instance.Audio.PlaySfx("move"); return; }
+        var piece = _game.Held;
+        if (piece is not null && TargetCell(piece, pos, out int gr, out int gc) && _game.CanPlace(piece, gr, gc))
+            CommitPlacement(piece, gr, gc, fromHold: true, trayIdx: -1);
+        else
+            Bootstrap.Instance.Audio.PlaySfx("move");
+    }
+
+    /// <summary>Commit a legal drop (from a tray slot or the hold slot): snapshot the lines it
+    /// completes, place it, and fire the audio + line-clear celebration + best-score update. The
+    /// preview snapshot must happen BEFORE the place call, which clears those lines.</summary>
+    private void CommitPlacement(BlockPiece piece, int gr, int gc, bool fromHold, int trayIdx)
+    {
+        _game.LinesClearedBy(piece, gr, gc, _pvRows, _pvCols);
+        CaptureShardColors(piece, gr, gc);   // snapshot popped hues before the placement clears them
+        if (fromHold) _game.TryPlaceHeld(gr, gc); else _game.TryPlace(trayIdx, gr, gc);
+        Bootstrap.Instance.Audio.PlaySfx("lock");
+        if (_game.LastClearedRows + _game.LastClearedCols > 0)
+        {
+            Bootstrap.Instance.Audio.PlaySfx(_game.LastClearedRows + _game.LastClearedCols >= 2 ? "combo" : "line_clear");
+            int lines = _game.LastClearedRows + _game.LastClearedCols;
+            _combo.Text = lines >= 2 ? Loc.T("COMBO ×{0}", lines) : Loc.T("CLEAR");
+            _comboFlash = 0.9f;
+            SpawnClearFx();
+        }
+        if (_game.Score > CurrentBest())
+        {
+            SubmitBest(_game.Score);
+            _best.Text = Loc.T("BEST {0}", _game.Score);
+        }
+        if (_game.GameOver) ShowGameOver();
     }
 
     /// <summary>Grid origin the dragged piece snaps to — computed so the piece floats
@@ -449,8 +514,18 @@ public partial class BlockFitController : Node2D
                     BlockRender.DrawCell(this, cellRect, _cell, t, 1f, mat, glyph, _shimmer, r + c, reduced: reduced);
             }
 
+        // Reserve (HOLD) slot: panel + parked piece. Highlights green when a tray piece is being
+        // dragged over it (stash target). Only a tray drag (not the held piece itself) can stash.
+        bool stashHover = _dragIndex is >= 0 and < 3 && _holdSlot.HasPoint(_finger);
+        DrawRect(_holdSlot.Grow(-3f), new Color(0.06f, 0.07f, 0.13f, 0.80f), filled: true);
+        DrawRect(_holdSlot.Grow(-3f), stashHover ? new Color(0.35f, 1f, 0.6f, 0.95f) : new Color(1, 1, 1, 0.12f),
+                 filled: false, width: stashHover ? 3f : 1.5f);
+        if (_game.Held is { } heldPiece && _dragIndex != HoldSlot)
+            DrawPiece(heldPiece, HoldPieceOrigin(heldPiece), _holdCell, 1f, TextureFactory.Cell(Mathf.Clamp((int)_holdCell, 8, 128)));
+
         // Tray pieces (skip the dragged one, and the merge target — the merge preview redraws it).
-        int mergeHover = _dragIndex == -1 ? -1 : MergeTargetSlot(_finger, _dragIndex);
+        // Merge only applies to tray drags, so the merge target is -1 while dragging the held piece.
+        int mergeHover = _dragIndex is >= 0 and < 3 ? MergeTargetSlot(_finger, _dragIndex) : -1;
         var trayTex = TextureFactory.Cell(Mathf.Clamp((int)_trayCell, 8, 128));
         for (int i = 0; i < 3; i++)
         {
@@ -495,17 +570,21 @@ public partial class BlockFitController : Node2D
             }
         }
 
-        // Dragged piece: snapped ghost on the board (valid = bright, invalid = red).
-        if (mergeHover < 0 && _dragIndex != -1 && _game.Tray[_dragIndex] is { } dp && TargetCell(dp, _finger, out int gr, out int gc))
+        // Dragged piece (a tray piece OR the held piece). While aiming at the board it shows a
+        // snapped ghost + clear preview + a top-of-screen magnifier; while over the hold/merge
+        // slots those slot previews take over and the board aim is suppressed.
+        var dragged = DraggedPiece();
+        if (_dragIndex != -1 && dragged is { } dp)
         {
+            bool aimingBoard = mergeHover < 0 && !stashHover;
+            TargetCell(dp, _finger, out int gr, out int gc);   // always returns a clamped target
             bool ok = _game.CanPlace(dp, gr, gc);
             var origin = _boardOrigin + new Vector2(gc * _cell, gr * _cell);
 
-            // Clear preview: if dropping here completes any line, flood that whole
-            // row/column bright green so the payoff is unmistakable before releasing
-            // (Block Blast "these lines pop" cue). Drawn under the ghost outline.
-            if (ok)
+            if (aimingBoard && ok)
             {
+                // Clear preview: if dropping here completes any line, flood that whole
+                // row/column bright green so the payoff is unmistakable before releasing.
                 _game.LinesClearedBy(dp, gr, gc, _pvRows, _pvCols);
                 var glow = new Color(0.15f, 1f, 0.45f, 0.32f);
                 var edge = new Color(0.3f, 1f, 0.55f, 0.9f);
@@ -523,17 +602,25 @@ public partial class BlockFitController : Node2D
                 }
             }
 
-            // Ghost footprint.
-            foreach (var (drr, dcc) in dp.Cells)
+            if (aimingBoard)
             {
-                var gcell = new Rect2(origin + new Vector2(dcc * _cell, drr * _cell) + new Vector2(2, 2), new Vector2(_cell - 4, _cell - 4));
-                var col = ok ? Palette.ForPiece(dp.Color) : Palette.AccentRed;
-                DrawRect(gcell, new Color(col.R, col.G, col.B, 0.9f), filled: false, width: 2.5f);
+                // Ghost footprint on the board.
+                foreach (var (drr, dcc) in dp.Cells)
+                {
+                    var gcell = new Rect2(origin + new Vector2(dcc * _cell, drr * _cell) + new Vector2(2, 2), new Vector2(_cell - 4, _cell - 4));
+                    var col = ok ? Palette.ForPiece(dp.Color) : Palette.AccentRed;
+                    DrawRect(gcell, new Color(col.R, col.G, col.B, 0.9f), filled: false, width: 2.5f);
+                }
             }
-            // The floating piece itself, drawn above the finger.
+
+            // The floating piece itself, drawn above the finger (always while dragging).
             var lift = _cell * 0.6f;
             var floatOrigin = new Vector2(_finger.X - dp.Width * _cell / 2f, _finger.Y - lift - dp.Height * _cell);
-            DrawPiece(dp, floatOrigin, _cell, ok ? 1f : 0.6f, tex);
+            DrawPiece(dp, floatOrigin, _cell, aimingBoard && !ok ? 0.6f : 1f, tex);
+
+            // Magnifier loupe: a zoomed inset of the landing area, pinned to the top of the screen
+            // (clear of the hand) so the fingertip never hides where the piece lands.
+            if (aimingBoard) DrawLoupe(dp, gr, gc, ok);
         }
 
         // Line-clear celebration (top layer): bright bands over cleared lines + sparks.
@@ -557,6 +644,81 @@ public partial class BlockFitController : Node2D
         var s = _traySlot[slot];
         float pw = p.Width * _trayCell, ph = p.Height * _trayCell;
         return s.Position + new Vector2((s.Size.X - pw) / 2f, (s.Size.Y - ph) / 2f);
+    }
+
+    /// <summary>Centre the held piece in the reserve slot, below the "HOLD" caption band.</summary>
+    private Vector2 HoldPieceOrigin(BlockPiece p)
+    {
+        const float labelH = 22f;
+        float pw = p.Width * _holdCell, ph = p.Height * _holdCell;
+        return _holdSlot.Position + new Vector2(
+            (_holdSlot.Size.X - pw) / 2f,
+            labelH + (_holdSlot.Size.Y - labelH - ph) / 2f);
+    }
+
+    /// <summary>
+    /// Draw the drag-time magnifier: a zoomed inset of the board around the landing origin
+    /// (gr,gc), pinned to the top of the screen so the player's hand never covers it. Shows the
+    /// piece footprint (bright when it fits, red when it doesn't) over the surrounding cells at
+    /// up to ~2.2× zoom. Skipped for pieces too wide to magnify meaningfully — the board ghost
+    /// already covers those. Reads the equipped skin so the loupe matches the board exactly.
+    /// </summary>
+    private void DrawLoupe(BlockPiece dp, int gr, int gc, bool ok)
+    {
+        var safe = Bootstrap.Instance.SafeCanvasSize;
+        const int margin = 1;
+        int cols = dp.Width + margin * 2;
+        int rows = dp.Height + margin * 2;
+
+        float lc = Mathf.Floor(Mathf.Min(safe.X * 0.90f / cols, _cell * 2.2f));
+        if (lc < _cell * 1.15f) return;   // too little room to meaningfully magnify
+
+        float w = cols * lc, h = rows * lc;
+        int r0 = gr - margin, c0 = gc - margin;
+        var origin = new Vector2((safe.X - w) / 2f, _boardOrigin.Y + 6f);
+
+        // Backing panel + accent border.
+        var pad = new Vector2(9, 9);
+        var panel = new Rect2(origin - pad, new Vector2(w, h) + pad * 2f);
+        DrawRect(panel, new Color(0.04f, 0.05f, 0.10f, 0.93f), filled: true);
+        DrawRect(panel, new Color(0.40f, 0.72f, 1f, 0.55f), filled: false, width: 2f);
+
+        var glyph = Palette.EquippedGlyph;
+        var mat = Palette.EquippedMaterial;
+        bool reduced = Motion.Reduced;
+
+        // Zoomed board cells in the neighbourhood.
+        for (int rr = 0; rr < rows; rr++)
+            for (int cc = 0; cc < cols; cc++)
+            {
+                int br = r0 + rr, bc = c0 + cc;
+                var rect = new Rect2(origin + new Vector2(cc * lc, rr * lc) + new Vector2(1, 1), new Vector2(lc - 2, lc - 2));
+                if ((uint)br >= BlockFitGame.Size || (uint)bc >= BlockFitGame.Size)
+                {
+                    DrawRect(rect, new Color(1, 1, 1, 0.03f), filled: true);   // off-board margin
+                    continue;
+                }
+                var t = _game.At(br, bc);
+                if (t == PieceType.Empty)
+                    DrawRect(rect, new Color(1, 1, 1, 0.07f), filled: false, width: 1f);
+                else
+                    BlockRender.DrawCell(this, rect, lc, t, 1f, mat, glyph, _shimmer, br + bc, reduced: reduced);
+            }
+
+        // The piece footprint at the landing spot: solid gem when it fits, red outline when not.
+        var red = Palette.AccentRed;
+        foreach (var (drr, dcc) in dp.Cells)
+        {
+            int lr = (gr + drr) - r0, lcc = (gc + dcc) - c0;
+            var rect = new Rect2(origin + new Vector2(lcc * lc, lr * lc) + new Vector2(1, 1), new Vector2(lc - 2, lc - 2));
+            if (ok)
+                BlockRender.DrawCell(this, rect, lc, dp.Color, 0.97f, mat, glyph, _shimmer, lr + lcc, reduced: reduced);
+            else
+            {
+                DrawRect(rect, new Color(red.R, red.G, red.B, 0.35f), filled: true);
+                DrawRect(rect, red, filled: false, width: 2f);
+            }
+        }
     }
 
     private void DrawPiece(BlockPiece p, Vector2 origin, float cell, float alpha, Texture2D tex)

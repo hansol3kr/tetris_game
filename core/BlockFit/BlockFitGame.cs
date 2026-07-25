@@ -68,6 +68,13 @@ public sealed class BlockFitGame
     private readonly Random _rng;
 
     public BlockPiece?[] Tray { get; } = new BlockPiece?[3];
+
+    /// <summary>The parked (held) piece, or null. The player stashes a tray piece here to defer
+    /// an awkward shape and retrieve it later — a single reserve slot, Tetris-hold style. Placing
+    /// the held piece on the board empties the slot; it never auto-refills. Held is always null in
+    /// versus (the live duel exposes no hold UI), so game-over logic there is unchanged.</summary>
+    public BlockPiece? Held { get; private set; }
+
     public long Score { get; private set; }
     public int Streak { get; private set; }          // consecutive placements that cleared ≥1 line
     public bool GameOver { get; private set; }
@@ -166,8 +173,9 @@ public sealed class BlockFitGame
     /// <summary>
     /// Place tray[<paramref name="trayIndex"/>] at (row,col). Returns false if the
     /// slot is empty or it doesn't fit. On success it commits the cells, clears any
-    /// full lines, scores, refills the tray when all three are placed, and flips
-    /// GameOver when no remaining piece can be placed.
+    /// full lines, scores, and IMMEDIATELY refills the emptied slot with a fresh piece
+    /// (the tray is a continuous stream — you never wait to place all three), then flips
+    /// GameOver when nothing in the tray (or hold) can be placed.
     /// </summary>
     public bool TryPlace(int trayIndex, int row, int col)
     {
@@ -181,11 +189,54 @@ public sealed class BlockFitGame
         Score += p.Cells.Count;          // 1 point per cell placed
 
         ClearFullLines();
+        Deal();                          // refill the just-emptied slot(s); flags GameOver if stuck
+        return true;
+    }
 
-        bool empty = true;
-        foreach (var t in Tray) if (t is not null) { empty = false; break; }
-        if (empty) Deal();               // fresh set of 3 (Deal flags GameOver if none fit)
-        else if (!AnyMovePossible()) GameOver = true;
+    /// <summary>
+    /// Stash tray[<paramref name="trayIndex"/>] into the hold slot (defer an awkward piece).
+    /// If hold is empty the piece parks there and its tray slot immediately refills (the reserve
+    /// costs nothing but the deferral); if hold is occupied the two swap so the parked piece
+    /// returns to the tray. Returns false only when the source slot is empty/invalid. Flips
+    /// GameOver only if, after the swap, neither the tray nor the held piece can be placed.
+    /// </summary>
+    public bool TryHold(int trayIndex)
+    {
+        if (trayIndex < 0 || trayIndex >= Tray.Length) return false;
+        var p = Tray[trayIndex];
+        if (p is null) return false;
+
+        if (Held is null)
+        {
+            Held = p;
+            Tray[trayIndex] = null;
+            Deal();                      // the freed slot refills so the tray stays full
+        }
+        else
+        {
+            (Held, Tray[trayIndex]) = (p, Held);   // swap hold ↔ tray (no refill — count unchanged)
+            if (!AnyMoveAvailable()) GameOver = true;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Place the held piece on the board at (row,col). Returns false if nothing is held or it does
+    /// not fit. Commits the cells, clears any full lines, scores, empties the hold slot (no refill —
+    /// hold only fills when the player stashes), and flips GameOver when nothing can be placed next.
+    /// </summary>
+    public bool TryPlaceHeld(int row, int col)
+    {
+        var p = Held;
+        if (p is null || !CanPlace(p, row, col)) return false;
+
+        foreach (var (dr, dc) in p.Cells)
+            SetCell(row + dr, col + dc, p.Color);
+        Held = null;
+        Score += p.Cells.Count;
+
+        ClearFullLines();
+        if (!AnyMoveAvailable()) GameOver = true;
         return true;
     }
 
@@ -206,7 +257,7 @@ public sealed class BlockFitGame
 
         Tray[dstIndex] = new BlockPiece(merged, dst!.Color);
         Tray[srcIndex] = null;
-        if (!AnyMovePossible()) GameOver = true;
+        if (!AnyMoveAvailable()) GameOver = true;
         return true;
     }
 
@@ -307,6 +358,20 @@ public sealed class BlockFitGame
         return false;
     }
 
+    /// <summary>Like <see cref="AnyMovePossible"/> but also counts the held piece — the player can
+    /// always drag it straight to the board, so a stashed piece that fits keeps the run alive. This
+    /// (not the tray-only check) governs game-over. In versus Held is null, so it reduces to the
+    /// tray-only check and behaviour there is unchanged.</summary>
+    private bool AnyMoveAvailable()
+    {
+        if (AnyMovePossible()) return true;
+        if (Held is not null)
+            for (int r = 0; r < Size; r++)
+                for (int c = 0; c < Size; c++)
+                    if (CanPlace(Held, r, c)) return true;
+        return false;
+    }
+
     /// <summary>
     /// Suggest a placement to surface when the player stalls (the 5-second hint). Prefers a
     /// placement that clears at least one line; otherwise returns the first valid fit found
@@ -368,21 +433,29 @@ public sealed class BlockFitGame
         if (hasPiece && !AnyMovePossible()) GameOver = true;
     }
 
+    /// <summary>
+    /// Refill EVERY empty tray slot with a fresh weighted piece (so the tray is a continuous
+    /// stream — an emptied slot fills the instant its piece is placed, no waiting for all three).
+    /// Occupied slots and the hold slot are untouched. Called at construction (all three empty)
+    /// and after each placement. Flips GameOver when nothing (tray or hold) can be placed.
+    /// </summary>
     private void Deal()
     {
         double d = Difficulty;
-        for (int i = 0; i < Tray.Length; i++) Tray[i] = WeightedRandomPiece(d);
+        int lastFilled = -1;
+        for (int i = 0; i < Tray.Length; i++)
+            if (Tray[i] is null) { Tray[i] = WeightedRandomPiece(d); lastFilled = i; }
 
-        // Max solvability early: while the game is still forgiving, never hand a fully dead
-        // set if the board still has an empty cell — swap one slot for a piece that fits.
+        // Max solvability early: while the game is still forgiving, never leave a dead tray while
+        // the board still has an empty cell — swap the last freshly dealt slot for a fitting piece.
         // Past the threshold this net is gone, so a crowded board can finally end the run.
-        if (d < SafetyNetBelow && HasEmptyCell() && !AnyMovePossible())
+        if (lastFilled >= 0 && d < SafetyNetBelow && HasEmptyCell() && !AnyMoveAvailable())
         {
             var fit = FittingPiece();
-            if (fit is not null) Tray[0] = fit;
+            if (fit is not null) Tray[lastFilled] = fit;
         }
 
-        if (!AnyMovePossible()) GameOver = true;
+        if (!AnyMoveAvailable()) GameOver = true;
     }
 
     /// <summary>Pick a shape weighted by difficulty: easy favours small pieces (easy to
