@@ -316,9 +316,11 @@ public static class TextureFactory
         return ((h ^ (h >> 16)) & 0xFFFF) / 65535f;
     }
 
-    /// <summary>Metallic brushed sheen: a bright central specular column + fine vertical
-    /// grain + a top metal rim. White overlay; the dark streaks come free from the
-    /// darkened body showing through, so this holds no color (single modulate).</summary>
+    /// <summary>Chromatic brushed metal: a bright central specular column + fine vertical
+    /// grain + a top rim, with a faint teal→violet anodized tint and an R/B split at the
+    /// column edges (ported from the Figma "Chromatic metal" shader's gradient + RGB-split
+    /// idea). Baked WITH colour; BlockRender draws it white-modulated so the chroma survives
+    /// on top of the darkened body — the anodized-chrome read.</summary>
     public static ImageTexture CellBrushed(int px)
     {
         px = Math.Clamp(px, 8, 128);
@@ -332,29 +334,49 @@ public static class TextureFactory
             float mask = Feather(RoundedBoxSdf(p, half, radius), 1.2f);
             if (mask <= 0f) return new Color(0, 0, 0, 0);
             float xn = (x + 0.5f) / px - 0.5f;
-            float band = Mathf.Clamp(1f - Mathf.Abs(xn) / 0.18f, 0f, 1f); band *= band * 0.55f;
-            float grain = (0.5f + 0.5f * Mathf.Sin((x + 0.5f) * Mathf.Pi * freq / px) - 0.5f) * 0.12f;
+            float Band(float o) { float b = Mathf.Clamp(1f - Mathf.Abs(xn - o) / 0.18f, 0f, 1f); return b * b; }
+            float band = Band(0f) * 0.55f;
+            float grain = (Mathf.Sin((x + 0.5f) * Mathf.Pi * freq / px)) * 0.06f;
             float top = Mathf.Clamp(1f - (y + 0.5f) / (px * 0.14f), 0f, 1f) * 0.25f;
-            float a = Mathf.Clamp(band + grain + top, 0f, 1f) * mask;
-            return new Color(1, 1, 1, a);
+            float baseA = Mathf.Clamp(band + grain + top, 0f, 1f);
+            // RGB split: red leans left of the column, blue right → chromatic edge.
+            float split = 0.06f;
+            float r = baseA + Band(-split) * 0.14f;
+            float b = baseA + Band(split) * 0.14f;
+            float g = baseA;
+            // Faint anodized tint gradient (teal→violet) across the sheen.
+            var tint = Color.FromHsv(0.52f + 0.16f * xn + 0.06f * ((y + 0.5f) / px), 0.30f, 1f);
+            float chroma = band * 0.5f;
+            float R = Mathf.Lerp(r, tint.R, chroma * tint.R);
+            float G = Mathf.Lerp(g, tint.G, chroma * tint.G);
+            float B = Mathf.Lerp(b, tint.B, chroma);
+            float a = Mathf.Clamp(Mathf.Max(R, Mathf.Max(G, B)), 0f, 1f) * mask;
+            return new Color(R, G, B, a);
         });
     }
 
-    /// <summary>Holographic spectrum strip, baked tall (px × 2·px) so a scrolling
-    /// px-high window (via DrawTextureRectRegion) makes hue travel across the block —
-    /// iridescent shimmer. Sampled inset, so the tinted body still frames it.</summary>
+    /// <summary>Holographic "oil-slick" iridescence strip, baked tall (px × 2·px) so a
+    /// scrolling px-high window (DrawTextureRectRegion) makes the sheen travel across the
+    /// block. Ported from the Figma "Mesh gradient" / "Gradient map" technique: instead of
+    /// a flat hue ramp, the hue sweeps on two harmonics with a diagonal skew, saturation
+    /// breathes, and the alpha rides soft luminance bands — the shifting soap-film read.</summary>
     public static ImageTexture HoloStrip(int px)
     {
         px = Math.Clamp(px, 8, 128);
         string key = $"holostrip:{px}";
         return Bake(key, px, px * 2, (x, y) =>
         {
-            float d = (float)y / px;
-            float hue = d + 0.15f * ((float)x / px);
+            float d = (float)y / px;               // 0..2 along the strip
+            float xn = (float)x / px;              // 0..1 across
+            // Two-harmonic hue sweep + diagonal skew → the colours bleed like an oil film.
+            float hue = d * 0.5f + 0.12f * Mathf.Sin(d * Mathf.Tau * 1.5f) + 0.15f * xn;
             hue -= Mathf.Floor(hue);
-            var col = Color.FromHsv(hue, 0.60f, 1.0f);
-            float a = 0.75f + 0.25f * Mathf.Sin(d * Mathf.Tau * 3f);
-            return new Color(col.R, col.G, col.B, a);
+            float sat = Mathf.Clamp(0.42f + 0.26f * Mathf.Sin(d * Mathf.Tau + xn * 3f), 0f, 0.78f);
+            var col = Color.FromHsv(hue, sat, 1.0f);
+            // Soft moving luminance bands (two frequencies) — the wet shimmer.
+            float a = 0.66f + 0.20f * Mathf.Sin(d * Mathf.Tau * 2.5f + xn * 2f)
+                            + 0.12f * Mathf.Sin(d * Mathf.Tau * 5f);
+            return new Color(col.R, col.G, col.B, Mathf.Clamp(a, 0f, 1f));
         });
     }
 
