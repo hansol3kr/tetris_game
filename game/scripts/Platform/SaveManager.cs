@@ -62,6 +62,17 @@ public sealed class GameSettings
 
     /// <summary>Desktop window mode. Ignored on mobile (always fullscreen there).</summary>
     public bool Fullscreen { get; set; }
+
+    /// <summary>
+    /// The player's handling knobs packaged as a core <see cref="GameConfig"/> overlay,
+    /// to be fed to <see cref="GameConfig.WithHandlingFrom"/>. Every play surface — solo,
+    /// Descent, CPU versus, online versus — must build its handling from THIS one place:
+    /// the versus controllers used to construct their input from the raw mode config, so a
+    /// player's DAS/ARR were silently ignored in duels (including ranked ones). All other
+    /// fields stay at core defaults on purpose, so no rule can ride along with a preference.
+    /// </summary>
+    public GameConfig HandlingConfig()
+        => GameConfig.Default.With(das: DasSeconds, arr: ArrSeconds, ghost: GhostEnabled);
 }
 
 /// <summary>Serializable save payload (best scores + settings + store state).</summary>
@@ -130,6 +141,19 @@ public partial class SaveManager : Node
     {
         get => _data.Best.TryGetValue("__blockfit_descent", out var v) ? v : 0;
         set { _data.Best["__blockfit_descent"] = value; _dirty = true; Flush(); }
+    }
+
+    /// <summary>
+    /// Has the player seen the one-time Block Fit "how this works" card? Stored in the same
+    /// Best table under a reserved key (the __blockfit trick above), so no schema change.
+    /// Deliberately NOT <see cref="GameSettings.TutorialDone"/>: that flag belongs to the
+    /// falling-block HOW TO PLAY tutorial, and sharing it would hide the Block Fit card from
+    /// exactly the players who already ran the tutorial for the other game.
+    /// </summary>
+    public bool BlockFitIntroSeen
+    {
+        get => _data.Best.TryGetValue("__blockfit_intro", out var v) && v > 0;
+        set { _data.Best["__blockfit_intro"] = value ? 1 : 0; _dirty = true; Flush(); }
     }
 
     /// <summary>

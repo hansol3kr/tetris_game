@@ -28,12 +28,19 @@ public sealed class VersusMatch
     /// <summary>Fires once when the match resolves, with the winning side.</summary>
     public event Action<VersusSide>? MatchEnded;
 
-    public VersusMatch(BotDifficulty difficulty, ulong seed)
+    /// <param name="playerHandling">
+    /// Optional player handling overlay (DAS/ARR/ghost) applied to the PLAYER side only —
+    /// the duel must feel like the settings screen promised. Only handling knobs are taken
+    /// (<see cref="GameConfig.WithHandlingFrom"/>), so the two sides always race the same
+    /// rules; the bot keeps the mode's config so its behaviour is unaffected by preferences.
+    /// </param>
+    public VersusMatch(BotDifficulty difficulty, ulong seed, GameConfig? playerHandling = null)
     {
         var mode = GameMode.Versus;
+        var playerMode = playerHandling is null ? mode : mode.WithConfig(mode.Config.WithHandlingFrom(playerHandling));
 
         // Identical piece seed for both players → same sequence → fair duel.
-        PlayerGame = new Game(mode,
+        PlayerGame = new Game(playerMode,
             new SevenBagGenerator(new XorShiftRandom(seed)),
             new XorShiftRandom(seed ^ 0x1111_2222_3333_4444UL));
         BotGame = new Game(mode,

@@ -73,18 +73,16 @@ public partial class GameController : Node2D
     {
         // Apply player handling settings (DAS/ARR/ghost) on top of the mode's config.
         var settings = Bootstrap.Instance.Save.Settings;
+        var handling = settings.HandlingConfig();
         if (_descent is not null)
         {
             // Stage rules = stratum preset + handling overlay + drafted charms,
             // composed in core (charms last, so a charm's seal can't be undone).
-            var handling = GameConfig.Default
-                .With(das: settings.DasSeconds, arr: settings.ArrSeconds, ghost: settings.GhostEnabled);
             _game = _descent.Run.CreateStageGame(handling);
         }
         else
         {
-            var cfg = GameMode.ById(_modeId).Config
-                .With(das: settings.DasSeconds, arr: settings.ArrSeconds, ghost: settings.GhostEnabled);
+            var cfg = GameMode.ById(_modeId).Config.WithHandlingFrom(handling);
             if (_modifiers.Length > 0) cfg = ModifierSet.Apply(cfg, _modifiers);
             _game = Game.Create(_modeId, _seed, cfg);
         }

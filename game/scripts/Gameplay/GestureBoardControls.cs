@@ -1,5 +1,6 @@
 using Godot;
 using System;
+using Blockfall.Core.Localization;
 using Blockfall.Theme;
 
 namespace Blockfall.Gameplay;
@@ -16,7 +17,9 @@ namespace Blockfall.Gameplay;
 ///  • slow drag downward → soft drop; fast flick downward → hard drop
 ///  • fast flick upward → hold
 /// A tiny translucent cluster keeps the less-frequent actions one tap away
-/// (rotate-CCW, hold) plus a pause button, since gestures alone hide them.
+/// (rotate-CCW, hold) plus a pause button, since gestures alone hide them. The
+/// cluster is laid out from the LIVE board rect into the thumb band reserved under
+/// the playfield — never on top of it.
 ///
 /// Handles real touch (screen touch/drag) AND mouse (so the desktop F9 mobile
 /// preview is fully playable). It never blocks input — it reads via
@@ -51,6 +54,17 @@ public partial class GestureBoardControls : Control
     private bool _soft;      // is this drag currently holding soft drop?
 
     private Label? _hint;
+
+    // Aux cluster. 84px = 44pt on the 720×1280 design canvas (1 design px ≈ 0.52pt on an
+    // iPhone SE3) — the platform minimum touch target, which 76/60px buttons missed.
+    private const float TouchTarget = 84f;
+    private const float AuxGap = 10f;     // between two buttons
+    private const float AuxMargin = 8f;   // from the canvas edge
+    private Button _ccwBtn = null!, _holdBtn = null!, _pauseBtn = null!;
+    // Placement is derived from the live board rect, so remember what it was computed for
+    // and redo it only when the board or the canvas actually moves (Hud.WantStrip pattern).
+    private Rect2 _placedForBoard;
+    private Vector2 _placedForCanvas;
 
     public GestureBoardControls(BoardView view, IGestureSink sink)
     {
@@ -188,15 +202,68 @@ public partial class GestureBoardControls : Control
     private void BuildAuxCluster()
     {
         // Gated on CanPlay so a tap over the pause/revive overlay can't queue an action.
-        var ccw = MakeGlassButton("↺", 76, () => { if (CanPlay) _sink.RotateCcw(); });
-        var hold = MakeGlassButton("HOLD", 88, () => { if (CanPlay) _sink.Hold(); });
-        var pause = MakeGlassButton("II", 60, () => { if (CanPlay) PauseRequested?.Invoke(); });
+        _ccwBtn = MakeGlassButton("↺", (int)TouchTarget, () => { if (CanPlay) _sink.RotateCcw(); });
+        _holdBtn = MakeGlassButton("HOLD", (int)TouchTarget, () => { if (CanPlay) _sink.Hold(); });
+        _pauseBtn = MakeGlassButton("II", (int)TouchTarget, () => { if (CanPlay) PauseRequested?.Invoke(); });
+        AddChild(_ccwBtn);
+        AddChild(_holdBtn);
+        AddChild(_pauseBtn);
+        LayoutAux();
+    }
 
-        Place(ccw, LayoutPreset.BottomRight, new Vector2(-210, -116));
-        Place(hold, LayoutPreset.BottomRight, new Vector2(-112, -116));
-        // Pause lives bottom-LEFT: the top-right corner is taken by the NEXT card
-        // (they overlapped and the button clipped the screen edge).
-        Place(pause, LayoutPreset.BottomLeft, new Vector2(24, -116));
+    // Re-place only when the board or the canvas actually moved (a resize, or the very
+    // first frame where the board has been laid out but this node had not been yet).
+    public override void _Process(double delta)
+    {
+        if (_view.CellsRect() != _placedForBoard || Size != _placedForCanvas) LayoutAux();
+    }
+
+    /// <summary>
+    /// Position the aux cluster so it never covers a playfield cell. The mobile board
+    /// layout reserves <see cref="BoardView.MobileThumbBandPx"/> under the playfield, so the
+    /// buttons form a row down there: pause far-left (rare, weak-hand side), rotate-CCW and
+    /// HOLD under the right thumb. Anchors alone can't express this — the band moves with
+    /// the board — and the previous fixed BottomRight offsets put the cluster's top edge
+    /// ABOVE the board's bottom edge on every phone aspect, hiding the bottom row.
+    /// </summary>
+    private void LayoutAux()
+    {
+        var canvas = Size;
+        var board = _view.CellsRect();
+        _placedForCanvas = canvas;
+        _placedForBoard = board;
+        if (canvas.X <= 0f || canvas.Y <= 0f || board.Size.X <= 0f) return;
+
+        float top = canvas.Y - AuxMargin - TouchTarget;     // the row's top edge
+        float rightX = canvas.X - AuxMargin - TouchTarget;
+
+        if (top >= board.End.Y)
+        {
+            PlaceAt(_pauseBtn, new Vector2(AuxMargin, top));
+            PlaceAt(_holdBtn, new Vector2(rightX, top));
+            PlaceAt(_ccwBtn, new Vector2(rightX - TouchTarget - AuxGap, top));
+        }
+        else
+        {
+            // No band under the board (a canvas the phone layout never produces — e.g. a
+            // squat resized desktop window): stack beside the board instead, which hides
+            // nothing either as long as the side gutters are wide enough.
+            PlaceAt(_holdBtn, new Vector2(rightX, top));
+            PlaceAt(_ccwBtn, new Vector2(rightX, top - TouchTarget - AuxGap));
+            PlaceAt(_pauseBtn, new Vector2(AuxMargin, top));
+        }
+        LayoutHint(canvas, top);
+    }
+
+    private static void PlaceAt(Control c, Vector2 pos)
+    {
+        c.SetAnchorsAndOffsetsPreset(LayoutPreset.TopLeft); // offsets too — anchors alone collapse to 0×0
+        // A Control never shrinks below its own minimum size, so bottom-align against the
+        // real size rather than the nominal one (a taller button would run off-canvas).
+        var min = c.GetCombinedMinimumSize();
+        var size = new Vector2(Mathf.Max(TouchTarget, min.X), Mathf.Max(TouchTarget, min.Y));
+        c.Size = size;
+        c.Position = new Vector2(pos.X, pos.Y + TouchTarget - size.Y);
     }
 
     private Button MakeGlassButton(string glyph, int size, Action onDown)
@@ -225,33 +292,45 @@ public partial class GestureBoardControls : Control
 
     private static StyleBoxTexture CircleStyle(Texture2D tex) => new() { Texture = tex };
 
-    private void Place(Control c, LayoutPreset preset, Vector2 offset)
-    {
-        c.SetAnchorsPreset(preset);
-        c.Position = offset;
-        AddChild(c);
-    }
-
     // ---- First-run hint ----------------------------------------------------
 
     private void BuildHint()
     {
         _hint = new Label
         {
-            Text = "DRAG TO LINE UP   ·   LIFT TO DROP   ·   TAP TO ROTATE",
+            Text = Loc.T("DRAG TO LINE UP   ·   LIFT TO DROP   ·   TAP TO ROTATE"),
             HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
             MouseFilter = MouseFilterEnum.Ignore,
         };
         _hint.AddThemeFontSizeOverride("font_size", 16);
         _hint.AddThemeColorOverride("font_color", new Color(Palette.TextPrimary.R, Palette.TextPrimary.G, Palette.TextPrimary.B, 0.85f));
-        _hint.SetAnchorsPreset(LayoutPreset.CenterBottom);
-        _hint.Position = new Vector2(-320, -96);
-        _hint.CustomMinimumSize = new Vector2(640, 0);
         AddChild(_hint);
+        LayoutHint(Size, Size.Y - AuxMargin - TouchTarget);
 
         // Auto-dismiss even if the player never touches (fades on first gesture too). The
         // SceneTreeTimer outlives this node, so guard against firing after we're freed.
         GetTree().CreateTimer(3.5).Timeout += () => { if (IsInstanceValid(this)) FadeHint(); };
+    }
+
+    /// <summary>Park the control hint in the gap BETWEEN the aux buttons in the thumb band,
+    /// so the one thing that explains the controls never sits on the playfield (nor under
+    /// the hand that is about to reach for HOLD).</summary>
+    private void LayoutHint(Vector2 canvas, float rowTop)
+    {
+        if (_hint is null || !IsInstanceValid(_hint) || canvas.X <= 0f) return;
+        float left = AuxMargin + TouchTarget + AuxGap;                       // right of pause
+        float right = canvas.X - AuxMargin - TouchTarget * 2f - AuxGap * 2f; // left of rotate
+        float w = Mathf.Max(180f, right - left);
+        _hint.SetAnchorsAndOffsetsPreset(LayoutPreset.TopLeft);
+        // Wrap inside that gap rather than spilling over the buttons — Korean runs much
+        // wider than the English source here. The width is explicit, so the wrapped height
+        // is measurable (a zero-width autowrap label reports a nonsense minimum).
+        _hint.CustomMinimumSize = new Vector2(w, 0);
+        float h = Mathf.Max(TouchTarget, _hint.GetCombinedMinimumSize().Y);
+        _hint.Size = new Vector2(w, h);
+        _hint.Position = new Vector2(left, Mathf.Min(rowTop, canvas.Y - h - AuxMargin));
     }
 
     private void FadeHint()

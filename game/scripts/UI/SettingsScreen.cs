@@ -29,7 +29,11 @@ public partial class SettingsScreen : Control
     private VBoxContainer _controlRows = null!;
 
     // Row rhythm tokens — one place to retune the whole screen's density.
-    private const int RowHeight = 52;    // min touch height for every option row
+    // 84px = 44pt on the 720×1280 design canvas (1 design px ≈ 0.52pt on an iPhone SE3):
+    // the platform minimum touch target. The old 52px row was 27pt — every control in it
+    // was a near-miss on a phone.
+    private const int TouchTarget = 84;
+    private const int RowHeight = TouchTarget;   // min touch height for every option row
     private static readonly Color Hairline = new(1f, 1f, 1f, 0.05f); // between-row divider
 
     // Key-remap "listening" state: while an action is armed, the next physical key
@@ -498,10 +502,12 @@ public partial class SettingsScreen : Control
         row.AddChild(Caption(caption));
         row.AddChild(new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill });
         int idx = Mathf.Clamp(current, 0, names.Length - 1);
+        // Full 44pt tall: this segment picker cycles on every tap, so a mis-tap on a 40px
+        // strip meant scrolling past the value you wanted.
         var btn = new Button
         {
             Text = names[idx],
-            CustomMinimumSize = new Vector2(150, 40),
+            CustomMinimumSize = new Vector2(168, TouchTarget),
             SizeFlagsVertical = SizeFlags.ShrinkCenter,
         };
         Motion.BindButtonFeel(btn);
@@ -526,9 +532,15 @@ public partial class SettingsScreen : Control
     }
 
     /// <summary>
-    /// A pill switch built on the ChipButton variation (toggled-on = the accent-lit
-    /// pressed state). Replaces the tiny stock CheckBox: the ON/OFF label + accent fill
-    /// make the state unmistakable at a glance, and the 82×40 pill is a proper touch target.
+    /// A pill switch built on the ChipButton look (toggled-on = the accent-lit pressed
+    /// state). Replaces the tiny stock CheckBox: the ON/OFF label + accent fill make the
+    /// state unmistakable at a glance.
+    ///
+    /// The old 82×40 pill was NOT "a proper touch target" as this comment used to claim —
+    /// 40px is 21pt on an iPhone SE3, under half the 44pt floor. The tappable button is now
+    /// <see cref="TouchTarget"/> square-ish (108×84 = 56×44pt) with the pill DRAWN inside it
+    /// at the original slim height: growing the art to 84px would turn the switch into a
+    /// slab, so only the hit box grew.
     /// </summary>
     private Button Toggle(bool value, Action<bool> onChanged)
     {
@@ -536,13 +548,43 @@ public partial class SettingsScreen : Control
         {
             ToggleMode = true,
             ButtonPressed = value,
-            ThemeTypeVariation = "ChipButton",
-            Text = value ? Loc.T("ON") : Loc.T("OFF"),
-            CustomMinimumSize = new Vector2(82, 40),
+            CustomMinimumSize = new Vector2(108, TouchTarget),
             SizeFlagsVertical = SizeFlags.ShrinkCenter,
+            FocusMode = FocusModeEnum.None,
         };
+        // The hit box itself paints nothing — the pill child below is the whole visual.
+        foreach (var state in new[] { "normal", "hover", "pressed", "focus", "disabled" })
+            t.AddThemeStyleboxOverride(state, new StyleBoxEmpty());
+
+        var pillOff = UiTheme.Shared.GetStylebox("normal", "ChipButton");
+        var pillOn = UiTheme.Shared.GetStylebox("pressed", "ChipButton");
+        var pill = new Panel { MouseFilter = MouseFilterEnum.Ignore };
+        pill.AddThemeStyleboxOverride("panel", value ? pillOn : pillOff);
+        t.AddChild(pill);
+        pill.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        pill.OffsetTop = (TouchTarget - 40f) / 2f;      // 40px pill centred in the 84px target
+        pill.OffsetBottom = -(TouchTarget - 40f) / 2f;
+
+        var label = new Label
+        {
+            Text = value ? Loc.T("ON") : Loc.T("OFF"),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            MouseFilter = MouseFilterEnum.Ignore,
+        };
+        label.AddThemeFontSizeOverride("font_size", 15);
+        label.AddThemeColorOverride("font_color", value ? Palette.Accent : Palette.TextSecondary);
+        pill.AddChild(label);
+        label.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+
         Motion.BindButtonFeel(t);
-        t.Toggled += on => { t.Text = on ? Loc.T("ON") : Loc.T("OFF"); onChanged(on); };
+        t.Toggled += on =>
+        {
+            pill.AddThemeStyleboxOverride("panel", on ? pillOn : pillOff);
+            label.Text = on ? Loc.T("ON") : Loc.T("OFF");
+            label.AddThemeColorOverride("font_color", on ? Palette.Accent : Palette.TextSecondary);
+            onChanged(on);
+        };
         return t;
     }
 

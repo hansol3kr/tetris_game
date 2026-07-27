@@ -44,7 +44,10 @@ public partial class VersusController : Node2D
 
     public override void _Ready()
     {
-        _match = new VersusMatch(_difficulty, _seed);
+        // The player's DAS/ARR/ghost must feel identical to solo (GameController). The
+        // overlay lands on the PLAYER side of the match only — core takes just the handling
+        // knobs, so the bot keeps the mode's rules and the duel stays a fair race.
+        _match = new VersusMatch(_difficulty, _seed, Bootstrap.Instance.Save.Settings.HandlingConfig());
         _input = new InputController(_match.PlayerGame.Config);
 
         _playerView = new BoardView();

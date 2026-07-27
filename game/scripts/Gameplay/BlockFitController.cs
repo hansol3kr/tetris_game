@@ -35,6 +35,14 @@ public partial class BlockFitController : Node2D
     private Label _holdLabel = null!;
     private Control _overlay = null!;
     private Label _overScore = null!;
+    private Control? _coach;               // first-run "how this game works" card
+
+    // 44pt on the 720×1280 design canvas (1 design px ≈ 0.52pt on an iPhone SE3). Layout
+    // carves a strip of this height off the BOTTOM of the tray band for the exit button:
+    // the tray only ever uses ~3.4 mini-cells of that band, so the strip costs the tray
+    // nothing (verified — _trayCell stays width-bound at every portrait aspect) and buys a
+    // thumb-reachable exit.
+    private const float TouchTarget = 84f;
 
     // Geometry (recomputed in Layout).
     private float _cell, _trayCell, _holdCell;
@@ -129,13 +137,11 @@ public partial class BlockFitController : Node2D
         _holdLabel.AddThemeColorOverride("font_color", Palette.TextSecondary);
         _uiHost.AddChild(_holdLabel);
 
-        // Back button (top-left corner). Sized/positioned in Layout so it lines up with the
-        // score in the header band.
-        _back = new Button { Text = "‹", CustomMinimumSize = new Vector2(52, 52), MouseFilter = Control.MouseFilterEnum.Stop };
-        _back.AddThemeFontSizeOverride("font_size", 32);
-        _back.Pressed += () => QuitRequested?.Invoke();
-        Motion.BindButtonFeel(_back);
-        _back.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
+        // Exit button. It used to live in the top-LEFT corner — the single hardest spot to
+        // reach in a right-handed portrait grip, and only 52×52. It now sits in the bottom
+        // strip under the tray (thumb arc, same side as the pause button in the falling-block
+        // gesture layout) at a full 84×84. Sized/positioned in Layout.
+        _back = MakeGlassButton("‹", () => QuitRequested?.Invoke());
         _uiHost.AddChild(_back);
 
         BuildGameOverOverlay();
@@ -150,6 +156,9 @@ public partial class BlockFitController : Node2D
         };
         AddChild(_fxAdd);
         MoveChild(_fxAdd, 0);   // draw before _uiHost (glow under UI)
+
+        // First run only — added last so it sits above everything in _uiHost.
+        if (!Bootstrap.Instance.Save.BlockFitIntroSeen) BuildCoachCard();
 
         GetViewport().SizeChanged += Layout;
         Layout();
@@ -172,11 +181,47 @@ public partial class BlockFitController : Node2D
         return l;
     }
 
+    /// <summary>A round glass button at the 44pt touch floor — same language as the
+    /// falling-block gesture cluster, so "leave" looks the same in both games.</summary>
+    private static Button MakeGlassButton(string glyph, Action onPressed)
+    {
+        var b = new Button
+        {
+            Text = glyph,
+            CustomMinimumSize = new Vector2(TouchTarget, TouchTarget),
+            MouseFilter = Control.MouseFilterEnum.Stop,
+            FocusMode = Control.FocusModeEnum.None,
+            Modulate = new Color(1, 1, 1, 0.85f),
+        };
+        b.AddThemeStyleboxOverride("normal", new StyleBoxTexture {
+            Texture = TextureFactory.Circle(96, new Color(0.72f, 0.76f, 1f, 0.06f), new Color(1, 1, 1, 0.14f), 1.5f) });
+        b.AddThemeStyleboxOverride("hover", new StyleBoxTexture {
+            Texture = TextureFactory.Circle(96, new Color(0.72f, 0.76f, 1f, 0.09f), new Color(1, 1, 1, 0.20f), 1.5f) });
+        b.AddThemeStyleboxOverride("pressed", new StyleBoxTexture {
+            Texture = TextureFactory.Circle(96, new Color(Palette.Accent.R, Palette.Accent.G, Palette.Accent.B, 0.28f),
+                                                new Color(Palette.Accent.R, Palette.Accent.G, Palette.Accent.B, 0.9f), 2f) });
+        b.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+        // 28 keeps the button's own minimum size at exactly 84×84 (this UI font reports a
+        // 3× line height), so the round stylebox stays a circle instead of stretching.
+        b.AddThemeFontSizeOverride("font_size", 28);
+        b.AddThemeColorOverride("font_color", Palette.TextPrimary);
+        Motion.BindButtonFeel(b);
+        b.Pressed += onPressed;
+        return b;
+    }
+
     private void Layout()
     {
         var safe = Bootstrap.Instance.SafeCanvasSize;
         _uiHost.Position = Vector2.Zero;
         _uiHost.Size = safe;
+
+        // The exit strip is measured, not assumed: a Button never shrinks below its own
+        // minimum size, so trusting the constant would let a taller button run off-canvas.
+        var backMin = _back.GetCombinedMinimumSize();
+        float exitH = Mathf.Max(TouchTarget, backMin.Y);
+        float exitW = Mathf.Max(TouchTarget, backMin.X);
+        float exitBand = exitH + 12f;
 
         float headerH = Mathf.Clamp(safe.Y * 0.09f, 56f, 120f);
         // Board is width-bound on a phone; leave room for the tray below.
@@ -185,7 +230,10 @@ public partial class BlockFitController : Node2D
         _boardOrigin = new Vector2((safe.X - boardPx) / 2f, headerH + safe.Y * 0.02f);
 
         float trayTop = _boardOrigin.Y + boardPx + safe.Y * 0.03f;
-        float trayH = Mathf.Max(48f, safe.Y - trayTop - safe.Y * 0.03f);
+        // The tray band now ends above the exit strip so the exit button covers neither the
+        // board nor a tray slot (the slots are drag/drop targets — a button on top of one
+        // would steal the grab).
+        float trayH = Mathf.Max(48f, safe.Y - trayTop - exitBand);
         // Reserve a compact column on the left for the HOLD slot; the 3 tray slots split the rest.
         float holdW = safe.X * 0.22f;
         float slotW = (safe.X - holdW) / 3f;
@@ -199,18 +247,21 @@ public partial class BlockFitController : Node2D
         _holdLabel.Position = new Vector2(_holdSlot.Position.X, _holdSlot.Position.Y + 2f);
         _holdLabel.Size = new Vector2(_holdSlot.Size.X, 20f);
 
-        // Header row: back button, score (left) and best (right) all vertically centred in
-        // the header band so they line up (the score used to sit above a smaller button).
+        // Header row: score (left) and best (right), vertically centred in the header band.
+        // The exit button no longer shares this row — it moved to the bottom strip — so the
+        // score starts at the same left margin as everything else.
         float pad = Mathf.Max(12f, safe.X * 0.035f);
-        const float backSize = 52f;
-        _back.Size = new Vector2(backSize, backSize);
-        _back.Position = new Vector2(pad, (headerH - backSize) / 2f);
-
-        float scoreLeft = _back.Position.X + backSize + 14f;
-        _score.Position = new Vector2(scoreLeft, 0f); _score.Size = new Vector2(Mathf.Max(40f, safe.X * 0.5f - scoreLeft), headerH);
+        _score.Position = new Vector2(pad, 0f); _score.Size = new Vector2(Mathf.Max(40f, safe.X * 0.5f - pad), headerH);
         _best.Position = new Vector2(safe.X * 0.5f, 0f); _best.Size = new Vector2(safe.X * 0.5f - pad, headerH);
         _combo.Position = new Vector2(0, headerH); _combo.Size = new Vector2(safe.X, 40);
+
+        // Exit: bottom-left of the carved strip, clear of the tray band above it.
+        _back.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.TopLeft);
+        _back.Size = new Vector2(exitW, exitH);
+        _back.Position = new Vector2(pad, safe.Y - exitH - 6f);
+
         if (GodotObject.IsInstanceValid(_overlay)) { _overlay.Position = Vector2.Zero; _overlay.Size = safe; }
+        if (_coach is not null && GodotObject.IsInstanceValid(_coach)) { _coach.Position = Vector2.Zero; _coach.Size = safe; }
         QueueRedraw();
     }
 
@@ -232,6 +283,10 @@ public partial class BlockFitController : Node2D
         }
         _burst.Update(dt);
         _shimmer += dt;                 // drives material breathe / holo scroll / starfield twinkle
+
+        // While the first-run card is up the run is on hold: no idle-hint countdown and no
+        // Descent garbage, so reading it can't cost the player anything.
+        if (_coach is not null && GodotObject.IsInstanceValid(_coach)) { QueueRedraw(); _fxAdd.QueueRedraw(); return; }
 
         // Idle hint timer: only advances while the run is live and nothing is being dragged.
         if (!_game.GameOver && _dragIndex == -1)
@@ -262,18 +317,45 @@ public partial class BlockFitController : Node2D
 
     // ---- Input: grab a tray piece, drag it (floating above the finger), release to place ----
 
+    /// <summary>Grabs only. Presses go through the UNhandled path so the exit button (and any
+    /// overlay) wins the taps that land on it.</summary>
     public override void _UnhandledInput(InputEvent e)
     {
         switch (e)
         {
-            case InputEventScreenTouch t:
-                if (t.Pressed) Grab((int)t.Index, t.Position); else Release((int)t.Index, t.Position);
+            case InputEventScreenTouch { Pressed: true } t:
+                Grab((int)t.Index, t.Position);
+                break;
+            case InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left } mb:
+                Grab(int.MaxValue, mb.Position);
+                break;
+            // ESC also leaves the run (desktop parity with every other screen).
+            case InputEventKey when e.IsActionPressed("pause_game"):
+                QuitRequested?.Invoke();
+                GetViewport().SetInputAsHandled();
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Drag + release. These run on the RAW input path (never consumed) because the finger
+    /// can lift anywhere — including over the exit button, whose Stop mouse filter would
+    /// otherwise swallow the release and strand the piece mid-drag forever. Releasing over a
+    /// Button can't press it: Godot only fires a button whose press STARTED on it.
+    /// </summary>
+    public override void _Input(InputEvent e)
+    {
+        if (_dragIndex == -1) return;
+        switch (e)
+        {
+            case InputEventScreenTouch { Pressed: false } t:
+                Release((int)t.Index, t.Position);
                 break;
             case InputEventScreenDrag d:
                 if ((int)d.Index == _touchId) { _finger = d.Position; QueueRedraw(); }
                 break;
-            case InputEventMouseButton mb when mb.ButtonIndex == MouseButton.Left:
-                if (mb.Pressed) Grab(int.MaxValue, mb.Position); else Release(int.MaxValue, mb.Position);
+            case InputEventMouseButton { Pressed: false, ButtonIndex: MouseButton.Left } mb:
+                Release(int.MaxValue, mb.Position);
                 break;
             case InputEventMouseMotion mm when (mm.ButtonMask & MouseButtonMask.Left) != 0:
                 if (_touchId == int.MaxValue) { _finger = mm.Position; QueueRedraw(); }
@@ -761,10 +843,16 @@ public partial class BlockFitController : Node2D
         scrim.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
         _overlay.AddChild(scrim);
 
+        // CenterContainer keeps the card truly centered as its min size settles —
+        // an anchor preset computed before the children exist pins the top-left instead,
+        // which is why this card drifted to the bottom-right (same fix as GameController's
+        // pause overlay).
+        var center = new CenterContainer();
+        center.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+        _overlay.AddChild(center);
         var box = new VBoxContainer();
-        box.SetAnchorsPreset(Control.LayoutPreset.Center);
         box.AddThemeConstantOverride("separation", 16);
-        _overlay.AddChild(box);
+        center.AddChild(box);
 
         var title = new Label { Text = Loc.T("GAME OVER"), HorizontalAlignment = HorizontalAlignment.Center };
         title.AddThemeFontSizeOverride("font_size", 40);
@@ -773,14 +861,104 @@ public partial class BlockFitController : Node2D
         _overScore.AddThemeFontSizeOverride("font_size", 24);
         box.AddChild(_overScore);
 
-        var retry = new Button { Text = Loc.T("RETRY"), ThemeTypeVariation = "PrimaryButton", CustomMinimumSize = new Vector2(220, 54) };
+        var retry = new Button { Text = Loc.T("RETRY"), ThemeTypeVariation = "PrimaryButton", CustomMinimumSize = new Vector2(260, TouchTarget) };
         Motion.BindButtonFeel(retry);
         retry.Pressed += NewGame;
         box.AddChild(retry);
-        var menu = new Button { Text = Loc.T("MENU"), CustomMinimumSize = new Vector2(220, 48) };
+        var menu = new Button { Text = Loc.T("MENU"), CustomMinimumSize = new Vector2(260, TouchTarget) };
         Motion.BindButtonFeel(menu);
         menu.Pressed += () => QuitRequested?.Invoke();
         box.AddChild(menu);
+    }
+
+    // ---- First-run coaching ----
+
+    /// <summary>
+    /// Three lines, once, the first time anyone opens Block Fit — the mode the menu's PLAY
+    /// card actually launches, which had no explanation anywhere in the game (the HOW TO PLAY
+    /// tutorial teaches the falling-block game instead). This is an in-game overlay, not a
+    /// screen: <see cref="SceneRouter.GoToStart"/> deliberately never force-launches a
+    /// tutorial screen, and that decision stands. Dismissing it hands straight over to the
+    /// existing idle-hint system, which then points at a real first move.
+    /// </summary>
+    private void BuildCoachCard()
+    {
+        var scrim = new Control { MouseFilter = Control.MouseFilterEnum.Stop };
+        _coach = scrim;
+        _uiHost.AddChild(scrim);
+        scrim.Position = Vector2.Zero;
+        scrim.Size = Bootstrap.Instance.SafeCanvasSize;
+        var shade = new ColorRect { Color = new Color(0, 0, 0, 0.72f) };
+        shade.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+        scrim.AddChild(shade);
+
+        var center = new CenterContainer();
+        center.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+        scrim.AddChild(center);
+
+        var card = new PanelContainer { ThemeTypeVariation = "Card" };
+        center.AddChild(card);
+        // Every wrapping label needs this width as its OWN minimum: a Label with autowrap
+        // inside a container reports its min height for the width it has been given, and a
+        // width of zero makes it one word per line — the card grew to 6387px tall.
+        float textW = Mathf.Clamp(Bootstrap.Instance.SafeCanvasSize.X - 120f, 240f, 520f);
+        var box = new VBoxContainer { CustomMinimumSize = new Vector2(textW, 0) };
+        box.AddThemeConstantOverride("separation", 14);
+        card.AddChild(box);
+
+        var title = new Label
+        {
+            Text = Loc.T("BLOCK FIT"),
+            ThemeTypeVariation = "TitleLabel",
+            HorizontalAlignment = HorizontalAlignment.Center,
+        };
+        title.AddThemeFontSizeOverride("font_size", 34);
+        title.AddThemeColorOverride("font_color", Palette.Accent);
+        box.AddChild(title);
+
+        foreach (var line in new[]
+                 {
+                     Loc.T("1  ·  DRAG a piece from the tray onto the grid."),
+                     Loc.T("2  ·  FILL a whole row or column and it clears."),
+                     Loc.T("3  ·  It ends when none of the three pieces fit."),
+                 })
+        {
+            var l = new Label
+            {
+                Text = line,
+                AutowrapMode = TextServer.AutowrapMode.WordSmart,
+                CustomMinimumSize = new Vector2(textW, 0),
+            };
+            l.AddThemeFontSizeOverride("font_size", 20);
+            l.AddThemeColorOverride("font_color", Palette.TextPrimary);
+            box.AddChild(l);
+        }
+
+        var go = new Button
+        {
+            Text = Loc.T("GOT IT"),
+            ThemeTypeVariation = "PrimaryButton",
+            CustomMinimumSize = new Vector2(Mathf.Min(240f, textW), TouchTarget),
+        };
+        Motion.BindButtonFeel(go);
+        go.Pressed += DismissCoach;
+        box.AddChild(go);
+    }
+
+    private void DismissCoach()
+    {
+        if (_coach is null || !GodotObject.IsInstanceValid(_coach)) { _coach = null; return; }
+        var c = _coach;
+        _coach = null;
+        Bootstrap.Instance.Save.BlockFitIntroSeen = true;
+        // Hand over to the idle hint: instead of a fresh 5s wait, the first "put it here"
+        // pulse comes up immediately, so the card's words are followed by a live example.
+        _idle = HintDelay;
+        c.MouseFilter = Control.MouseFilterEnum.Ignore;
+        if (Motion.Reduced) { c.QueueFree(); return; }
+        var tw = CreateTween();
+        tw.TweenProperty(c, "modulate:a", 0f, 0.22f);
+        tw.TweenCallback(Callable.From(c.QueueFree));
     }
 
     private void ShowGameOver()

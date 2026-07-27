@@ -52,6 +52,10 @@ public partial class BlockFitVersusController : Node2D
     private float _flashTtl;   // callout label fade
     private float _shimmer;    // drives the shared block material breathe/shimmer
 
+    // 44pt on the 720×1280 design canvas (the exit strip carved off the tray band is
+    // measured from the button's real minimum size in Layout).
+    private const float TouchTarget = 84f;
+
     public BlockFitVersusController(BotDifficulty difficulty, ulong seed)
     {
         _diff = difficulty;
@@ -64,11 +68,10 @@ public partial class BlockFitVersusController : Node2D
         AddChild(_uiHost);
         UiTheme.ApplyTo(_uiHost);
 
-        _back = new Button { Text = "‹", CustomMinimumSize = new Vector2(52, 52), MouseFilter = Control.MouseFilterEnum.Stop };
-        _back.AddThemeFontSizeOverride("font_size", 32);
-        _back.Pressed += () => QuitRequested?.Invoke();
-        Motion.BindButtonFeel(_back);
-        _back.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
+        // Exit: bottom-left strip under the tray at the 44pt touch floor, not the unreachable
+        // top-left corner (see BlockFitController — same layout language in both Block Fit
+        // screens so "leave" is always in the same place).
+        _back = MakeGlassButton("‹", () => QuitRequested?.Invoke());
         _uiHost.AddChild(_back);
 
         _title = MakeLabel(HorizontalAlignment.Center, 22, Palette.AccentViolet);
@@ -96,6 +99,32 @@ public partial class BlockFitVersusController : Node2D
         _match.BotHit += OnBotHit;
     }
 
+    /// <summary>A round glass button at the 44pt touch floor (see BlockFitController).</summary>
+    private static Button MakeGlassButton(string glyph, Action onPressed)
+    {
+        var b = new Button
+        {
+            Text = glyph,
+            CustomMinimumSize = new Vector2(TouchTarget, TouchTarget),
+            MouseFilter = Control.MouseFilterEnum.Stop,
+            FocusMode = Control.FocusModeEnum.None,
+            Modulate = new Color(1, 1, 1, 0.85f),
+        };
+        b.AddThemeStyleboxOverride("normal", new StyleBoxTexture {
+            Texture = TextureFactory.Circle(96, new Color(0.72f, 0.76f, 1f, 0.06f), new Color(1, 1, 1, 0.14f), 1.5f) });
+        b.AddThemeStyleboxOverride("hover", new StyleBoxTexture {
+            Texture = TextureFactory.Circle(96, new Color(0.72f, 0.76f, 1f, 0.09f), new Color(1, 1, 1, 0.20f), 1.5f) });
+        b.AddThemeStyleboxOverride("pressed", new StyleBoxTexture {
+            Texture = TextureFactory.Circle(96, new Color(Palette.Accent.R, Palette.Accent.G, Palette.Accent.B, 0.28f),
+                                                new Color(Palette.Accent.R, Palette.Accent.G, Palette.Accent.B, 0.9f), 2f) });
+        b.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+        b.AddThemeFontSizeOverride("font_size", 28);   // keeps the min size at exactly 84×84 (see BlockFitController)
+        b.AddThemeColorOverride("font_color", Palette.TextPrimary);
+        Motion.BindButtonFeel(b);
+        b.Pressed += onPressed;
+        return b;
+    }
+
     private Label MakeLabel(HorizontalAlignment align, int size, Color color)
     {
         var l = new Label { HorizontalAlignment = align, VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore };
@@ -112,12 +141,17 @@ public partial class BlockFitVersusController : Node2D
         _uiHost.Size = safe;
         int n = BlockFitGame.Size;
 
+        // Measured, never assumed: a Button never shrinks below its own minimum size.
+        var backMin = _back.GetCombinedMinimumSize();
+        float exitH = Mathf.Max(TouchTarget, backMin.Y);
+        float exitBand = exitH + 12f;
+
         float headerH = Mathf.Clamp(safe.Y * 0.075f, 46f, 92f);
-        const float backSize = 52f;
         float pad = Mathf.Max(12f, safe.X * 0.035f);
-        _back.Size = new Vector2(backSize, backSize);
-        _back.Position = new Vector2(pad, (headerH - backSize) / 2f);
-        _title.Position = new Vector2(safe.X * 0.2f, 0); _title.Size = new Vector2(safe.X * 0.6f, headerH);
+        _back.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.TopLeft);
+        _back.Size = new Vector2(Mathf.Max(TouchTarget, backMin.X), exitH);
+        _back.Position = new Vector2(pad, safe.Y - exitH - 6f);
+        _title.Position = new Vector2(safe.X * 0.06f, 0); _title.Size = new Vector2(safe.X * 0.88f, headerH);
 
         // CPU board (top, smaller) with its score label above it.
         float botLabelY = headerH + safe.Y * 0.004f;
@@ -139,7 +173,9 @@ public partial class BlockFitVersusController : Node2D
         _pOrigin = new Vector2((safe.X - pBoardPx) / 2f, pTop);
 
         float trayTop = _pOrigin.Y + pBoardPx + safe.Y * 0.02f;
-        float trayH = Mathf.Max(46f, safe.Y - trayTop - safe.Y * 0.015f);
+        // Leave the exit strip clear at the bottom: a button over a tray slot would steal the
+        // grab, and the slots only ever use ~3.4 mini-cells of the band's height.
+        float trayH = Mathf.Max(46f, safe.Y - trayTop - exitBand);
         float slotW = safe.X / 3f;
         _pTrayCell = Mathf.Floor(Mathf.Min(_pCell * 0.55f, Mathf.Min(slotW * 0.9f / 5f, trayH / 3.4f)));
         for (int i = 0; i < 3; i++) _pTraySlot[i] = new Rect2(i * slotW, trayTop, slotW, trayH);
@@ -180,18 +216,39 @@ public partial class BlockFitVersusController : Node2D
 
     // ---- Input (player board only) -----------------------------------------
 
+    /// <summary>Grabs only — presses take the UNhandled path so the exit button wins its own taps.</summary>
     public override void _UnhandledInput(InputEvent e)
     {
         switch (e)
         {
-            case InputEventScreenTouch t:
-                if (t.Pressed) Grab((int)t.Index, t.Position); else Release((int)t.Index, t.Position);
+            case InputEventScreenTouch { Pressed: true } t:
+                Grab((int)t.Index, t.Position);
+                break;
+            case InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left } mb:
+                Grab(int.MaxValue, mb.Position);
+                break;
+            case InputEventKey when e.IsActionPressed("pause_game"):
+                QuitRequested?.Invoke();
+                GetViewport().SetInputAsHandled();
+                break;
+        }
+    }
+
+    /// <summary>Drag + release on the raw path: the finger may lift over the exit button, whose
+    /// Stop filter would otherwise swallow the release and strand the piece mid-drag.</summary>
+    public override void _Input(InputEvent e)
+    {
+        if (_dragIndex == -1) return;
+        switch (e)
+        {
+            case InputEventScreenTouch { Pressed: false } t:
+                Release((int)t.Index, t.Position);
                 break;
             case InputEventScreenDrag d:
                 if ((int)d.Index == _touchId) { _finger = d.Position; QueueRedraw(); }
                 break;
-            case InputEventMouseButton mb when mb.ButtonIndex == MouseButton.Left:
-                if (mb.Pressed) Grab(int.MaxValue, mb.Position); else Release(int.MaxValue, mb.Position);
+            case InputEventMouseButton { Pressed: false, ButtonIndex: MouseButton.Left } mb:
+                Release(int.MaxValue, mb.Position);
                 break;
             case InputEventMouseMotion mm when (mm.ButtonMask & MouseButtonMask.Left) != 0:
                 if (_touchId == int.MaxValue) { _finger = mm.Position; QueueRedraw(); }
@@ -479,10 +536,14 @@ public partial class BlockFitVersusController : Node2D
         scrim.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
         _overlay.AddChild(scrim);
 
+        // CenterContainer, not a Center anchor preset: the preset is computed before the
+        // children exist, so it pinned the card's top-left and the card drifted off-centre.
+        var center = new CenterContainer();
+        center.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+        _overlay.AddChild(center);
         var box = new VBoxContainer();
-        box.SetAnchorsPreset(Control.LayoutPreset.Center);
         box.AddThemeConstantOverride("separation", 16);
-        _overlay.AddChild(box);
+        center.AddChild(box);
 
         _overTitle = new Label { Text = Loc.T("YOU WIN!"), HorizontalAlignment = HorizontalAlignment.Center };
         _overTitle.AddThemeFontSizeOverride("font_size", 40);
@@ -491,11 +552,11 @@ public partial class BlockFitVersusController : Node2D
         _overSub.AddThemeFontSizeOverride("font_size", 22);
         box.AddChild(_overSub);
 
-        var rematch = new Button { Text = Loc.T("REMATCH"), ThemeTypeVariation = "PrimaryButton", CustomMinimumSize = new Vector2(220, 54) };
+        var rematch = new Button { Text = Loc.T("REMATCH"), ThemeTypeVariation = "PrimaryButton", CustomMinimumSize = new Vector2(260, TouchTarget) };
         Motion.BindButtonFeel(rematch);
         rematch.Pressed += () => RematchRequested?.Invoke();
         box.AddChild(rematch);
-        var menu = new Button { Text = Loc.T("MENU"), CustomMinimumSize = new Vector2(220, 48) };
+        var menu = new Button { Text = Loc.T("MENU"), CustomMinimumSize = new Vector2(260, TouchTarget) };
         Motion.BindButtonFeel(menu);
         menu.Pressed += () => QuitRequested?.Invoke();
         box.AddChild(menu);

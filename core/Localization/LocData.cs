@@ -126,6 +126,14 @@ internal static class LocData
         ["{0} left"] = "{0} 남음",
         ["{0} rows"] = "{0} 줄",
 
+        // ---- Touch coaching (gesture hint + Block Fit first run) ----------
+        ["DRAG TO LINE UP   ·   LIFT TO DROP   ·   TAP TO ROTATE"] = "끌어서 맞추고   ·   손을 떼면 내려가고   ·   탭하면 회전",
+        ["BLOCK FIT"] = "블록 핏",
+        ["1  ·  DRAG a piece from the tray onto the grid."] = "1  ·  아래 트레이의 조각을 끌어다 판에 놓습니다.",
+        ["2  ·  FILL a whole row or column and it clears."] = "2  ·  가로 또는 세로 한 줄을 채우면 사라집니다.",
+        ["3  ·  It ends when none of the three pieces fit."] = "3  ·  세 조각 모두 놓을 자리가 없으면 끝납니다.",
+        ["GOT IT"] = "알겠어요",
+
         // ---- In-game overlays (pause / revive / ghost) --------------------
         ["GHOST"] = "고스트",
         ["GHOST  {0}{1}"] = "고스트  {0}{1}",

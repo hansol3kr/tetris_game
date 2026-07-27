@@ -109,17 +109,22 @@ public partial class ReplaysScreen : Control
         info.AddChild(date);
         row.AddChild(info);
 
-        var watch = new Button { Text = Loc.T("WATCH"), CustomMinimumSize = new Vector2(90, 44), ThemeTypeVariation = "PrimaryButton" };
+        // Both at the 44pt floor (84px on the 720×1280 design canvas); WATCH was 90×44 and
+        // DELETE 44×44 — 23pt tall. DELETE is destructive and unconfirmed, so it keeps a
+        // wider gap from WATCH than the row's own separation: bigger targets must not mean
+        // an easier accidental delete.
+        var watch = new Button { Text = Loc.T("WATCH"), CustomMinimumSize = new Vector2(96, 84), ThemeTypeVariation = "PrimaryButton" };
         Motion.BindButtonFeel(watch);
         watch.Pressed += () =>
         {
             var data = ReplayStore.Load(e.Path);
             if (data is not null) WatchRequested?.Invoke(data);
         };
-        var del = new Button { Text = "✕", CustomMinimumSize = new Vector2(44, 44), ThemeTypeVariation = "GhostButton" };
+        var del = new Button { Text = "✕", CustomMinimumSize = new Vector2(84, 84), ThemeTypeVariation = "GhostButton" };
         Motion.BindButtonFeel(del);
         del.Pressed += () => { ReplayStore.Delete(e.Path); RebuildList(); };
         row.AddChild(watch);
+        row.AddChild(new Control { CustomMinimumSize = new Vector2(10, 0), MouseFilter = MouseFilterEnum.Ignore });
         row.AddChild(del);
 
         card.AddChild(row);

@@ -113,6 +113,18 @@ public partial class BoardView : Node2D
         return new Rect2(_boardOrigin - new Vector2(10, 10), new Vector2(boardW + 20, boardH + 20));
     }
 
+    /// <summary>The playfield itself (cells only, no glass frame) in this node's space —
+    /// what on-screen controls must never cover. <see cref="PanelRect"/> includes the
+    /// decorative 10px rim, which a control may sit over without hiding a cell.</summary>
+    public Rect2 CellsRect()
+        => new(_boardOrigin, new Vector2(_cell * _cols, _cell * _visibleRows));
+
+    /// <summary>Vertical room the phone-portrait layout reserves under the board for the
+    /// gesture aux cluster (rotate-CCW / HOLD / pause). Kept in one place so
+    /// <see cref="MobilePortraitArea"/> and <see cref="GestureBoardControls"/> can never
+    /// drift apart — they did, and the buttons ended up covering the bottom row.</summary>
+    public const float MobileThumbBandPx = 100f;
+
     /// <summary>
     /// On a phone held portrait the board is given almost the full width (a
     /// compact HUD strip lives along the top instead of side columns), so cells
@@ -123,7 +135,11 @@ public partial class BoardView : Node2D
     {
         if (!(TouchControls.ShouldShow() && vp.Y >= vp.X)) return null;
         float top = vp.Y * 0.12f;     // compact HUD strip (stats · HOLD · NEXT)
-        float bottom = vp.Y * 0.06f;  // thumb room for the drag / aux touch controls
+        // Thumb room for the aux cluster. The old flat 6% was 77px on a 16:9 canvas and
+        // 86px on 18:9 — smaller than the 84px (44pt) buttons plus their margin, so the
+        // cluster sat ON the bottom row of the playfield. The floor guarantees a band that
+        // a 44pt target always fits in; on tall canvases 6% is already bigger and wins.
+        float bottom = Mathf.Max(vp.Y * 0.06f, MobileThumbBandPx);
         return (new Vector2(vp.X * 0.96f, vp.Y - top - bottom), new Vector2(vp.X * 0.02f, top));
     }
 

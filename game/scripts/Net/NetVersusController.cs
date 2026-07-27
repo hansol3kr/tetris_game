@@ -49,6 +49,9 @@ public partial class NetVersusController : Node2D
     private double _poseTimer;
     private const double PoseInterval = 1.0 / 15.0;
 
+    /// <summary>44pt on the 720×1280 design canvas — the minimum touch target.</summary>
+    private const float TouchTarget = 84f;
+
     public NetVersusController(INetChannel net, bool isHost, ulong seed, string rivalName, bool ranked = false)
     {
         _net = net;
@@ -61,7 +64,14 @@ public partial class NetVersusController : Node2D
     public override void _Ready()
     {
         // Same piece seed both sides (fair race); garbage-hole streams differ per side.
-        _game = new Game(GameMode.Versus,
+        // Handling (DAS/ARR/ghost) is LOCAL and personal: it is applied to this client's own
+        // Game only, exactly as solo does, and core takes nothing but the handling knobs — so
+        // the two clients still simulate identical rules even with different settings, and
+        // nothing about handling crosses the wire. Ranked included: the rating is decided by
+        // the match outcome, never by a re-simulation of the opponent.
+        var mode = GameMode.Versus;
+        mode = mode.WithConfig(mode.Config.WithHandlingFrom(Bootstrap.Instance.Save.Settings.HandlingConfig()));
+        _game = new Game(mode,
             new SevenBagGenerator(new XorShiftRandom(_seed)),
             new XorShiftRandom(_seed ^ (_isHost ? 0x1111_2222_3333_4444UL : 0x5555_6666_7777_8888UL)));
         _game.CommitPendingGarbageOnLock = true;
@@ -127,6 +137,15 @@ public partial class NetVersusController : Node2D
 
         _youTag.Position = new Vector2(_view.BoardOrigin.X, _view.BoardOrigin.Y - 44);
         _rivalTag.Position = new Vector2(_remote.BoardOrigin.X, _remote.BoardOrigin.Y - 44);
+
+        // Forfeit sits in the top band (above both boards, which start at 16% of the canvas)
+        // so it can never cover a cell.
+        if (GodotObject.IsInstanceValid(_forfeitBtn))
+        {
+            _forfeitBtn.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.TopLeft);
+            _forfeitBtn.Size = new Vector2(TouchTarget, TouchTarget);
+            _forfeitBtn.Position = new Vector2(vp.X - TouchTarget - 14f, 12f);
+        }
         UpdateMeter();
     }
 
@@ -406,7 +425,7 @@ public partial class NetVersusController : Node2D
         var b = new Button
         {
             Text = text,
-            CustomMinimumSize = new Vector2(260, 52),
+            CustomMinimumSize = new Vector2(260, TouchTarget),
             ThemeTypeVariation = primary ? "PrimaryButton" : "GhostButton",
         };
         Motion.BindButtonFeel(b);
@@ -418,12 +437,17 @@ public partial class NetVersusController : Node2D
     // leaving was only reachable via the "pause_game" key — so on touch there was no way out
     // of a live match. Mirrors the CPU-versus corner button (red-tinted for "leave"); tapping
     // it opens the FORFEIT / KEEP PLAYING dialog. Hidden by _Process whenever an overlay is up.
+    //
+    // Placement is deliberate for a DESTRUCTIVE control: 84×84 (the 44pt floor, so it is never
+    // a near-miss) but parked in the top-right corner, the furthest point from the thumb arc
+    // that drives the board — big enough to hit on purpose, awkward enough not to hit by
+    // accident — and it still opens a confirm dialog whose PRIMARY button is KEEP PLAYING.
     private void BuildForfeitButton()
     {
         _forfeitBtn = new Button
         {
             Text = "✕",
-            CustomMinimumSize = new Vector2(56, 56),
+            CustomMinimumSize = new Vector2(TouchTarget, TouchTarget),
             Modulate = new Color(1, 1, 1, 0.85f),
             FocusMode = Control.FocusModeEnum.None,
             TooltipText = Loc.T("FORFEIT"),
@@ -438,13 +462,12 @@ public partial class NetVersusController : Node2D
                                                 new Color(Palette.AccentRed.R, Palette.AccentRed.G, Palette.AccentRed.B, 0.9f), 2f) });
         _forfeitBtn.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
         _forfeitBtn.AddThemeFontOverride("font", Fonts.UiBold);
-        _forfeitBtn.AddThemeFontSizeOverride("font_size", 22);
+        _forfeitBtn.AddThemeFontSizeOverride("font_size", 28);   // min size lands on exactly 84×84 → the circle stays round
         _forfeitBtn.AddThemeColorOverride("font_color", Palette.TextPrimary);
+        _forfeitBtn.FocusMode = Control.FocusModeEnum.None;
         Motion.BindButtonFeel(_forfeitBtn);
         _forfeitBtn.Pressed += () => { if (!_over) ConfirmForfeit(); };
-        _forfeitBtn.SetAnchorsPreset(Control.LayoutPreset.TopRight);
-        _forfeitBtn.Position = new Vector2(-72, 16);
-        _uiHost.AddChild(_forfeitBtn);
+        _uiHost.AddChild(_forfeitBtn);   // positioned in LayoutBoards, off the safe canvas
     }
 
     private TouchControls BuildTouchControls()

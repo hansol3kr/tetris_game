@@ -99,5 +99,20 @@ public sealed class GameConfig
             ScoreMultiplier = scoreMultiplier ?? ScoreMultiplier,
         };
 
+    /// <summary>
+    /// Overlays ONLY the player-tunable handling knobs from <paramref name="handling"/>
+    /// onto this config: DAS, ARR, and ghost. Everything the simulation depends on —
+    /// gravity, lock delay, spawn delay, scoring — deliberately stays as-is, so a
+    /// player's preferences can never change the RULES of a mode or of a duel. That
+    /// separation is what lets both sides of a versus match run different handling
+    /// while still racing the same game.
+    ///
+    /// Ghost is AND-ed rather than overwritten: a mode (or a Descent charm) that seals
+    /// the ghost off must stay sealed — a preference may only restrict it, never grant it.
+    /// </summary>
+    public GameConfig WithHandlingFrom(GameConfig handling)
+        => With(das: handling.Das, arr: handling.Arr,
+                ghost: GhostEnabled && handling.GhostEnabled);
+
     public static GameConfig Default => new();
 }

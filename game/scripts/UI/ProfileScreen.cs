@@ -191,7 +191,9 @@ public partial class ProfileScreen : Control
 
             if (!string.IsNullOrEmpty(e.ReplayPath) && FileAccess.FileExists(e.ReplayPath))
             {
-                var watch = new Button { Text = "▶", CustomMinimumSize = new Vector2(44, 40), ThemeTypeVariation = "GhostButton" };
+                // 84×84 = 44pt square on the 720×1280 design canvas. It was 44×40 (23×21pt),
+                // a target you had to aim at twice.
+                var watch = new Button { Text = "▶", CustomMinimumSize = new Vector2(84, 84), ThemeTypeVariation = "GhostButton" };
                 Motion.BindButtonFeel(watch);
                 string path = e.ReplayPath;
                 watch.Pressed += () =>

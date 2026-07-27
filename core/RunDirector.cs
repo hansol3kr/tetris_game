@@ -167,11 +167,7 @@ public sealed class RunDirector
     {
         var mode = BaseStageMode(spec);
         if (handling is not null)
-        {
-            mode = mode.WithConfig(mode.Config.With(
-                das: handling.Das, arr: handling.Arr,
-                ghost: mode.Config.GhostEnabled && handling.GhostEnabled));
-        }
+            mode = mode.WithConfig(mode.Config.WithHandlingFrom(handling));
         return CharmSet.Apply(mode, owned);
     }
 
