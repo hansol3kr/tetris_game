@@ -554,25 +554,29 @@ public partial class BlockFitController : Node2D
         // Merge preview: while dragging over another occupied tray slot, show the fused shape
         // LIVE in that slot — the source snaps to the finger cell-by-cell so the pieces join
         // EXACTLY where the player wants (green = legal, red = overlap / too big to fit).
+        int mergeRow = 0, mergeCol = 0;
+        bool mergeOk = false;
         if (mergeHover >= 0 && _game.Tray[_dragIndex] is { } mdp)
         {
             var mdst = _game.Tray[mergeHover]!;
-            MergeOffset(mdp, mergeHover, out int mr, out int mc);
-            bool okMerge = _game.CanMerge(_dragIndex, mergeHover, mr, mc);
+            MergeOffset(mdp, mergeHover, out mergeRow, out mergeCol);
+            mergeOk = _game.CanMerge(_dragIndex, mergeHover, mergeRow, mergeCol);
             var borigin = TrayPieceOrigin(mdst, mergeHover);
             DrawRect(_traySlot[mergeHover].Grow(-4f), new Color(0.55f, 0.85f, 1f, 0.4f), filled: false, width: 2f);
             DrawPiece(mdst, borigin, _trayCell, 0.5f, trayTex);   // destination, dimmed
-            var srcCol = okMerge ? new Color(0.4f, 1f, 0.6f) : Palette.AccentRed;
+            var srcCol = mergeOk ? new Color(0.4f, 1f, 0.6f) : Palette.AccentRed;
             foreach (var (dr, dc) in mdp.Cells)
             {
-                var rect = new Rect2(borigin + new Vector2((dc + mc) * _trayCell, (dr + mr) * _trayCell) + new Vector2(1, 1), new Vector2(_trayCell - 2, _trayCell - 2));
-                DrawTextureRect(trayTex, rect, false, new Color(srcCol.R, srcCol.G, srcCol.B, okMerge ? 0.95f : 0.6f));
+                var rect = new Rect2(borigin + new Vector2((dc + mergeCol) * _trayCell, (dr + mergeRow) * _trayCell) + new Vector2(1, 1), new Vector2(_trayCell - 2, _trayCell - 2));
+                DrawTextureRect(trayTex, rect, false, new Color(srcCol.R, srcCol.G, srcCol.B, mergeOk ? 0.95f : 0.6f));
             }
         }
 
-        // Dragged piece (a tray piece OR the held piece). While aiming at the board it shows a
-        // snapped ghost + clear preview + a top-of-screen magnifier; while over the hold/merge
-        // slots those slot previews take over and the board aim is suppressed.
+        // Dragged piece (a tray piece OR the held piece). While aiming at the board the piece
+        // itself snaps onto the cells it will occupy (WYSIWYG) with alignment rails + clear
+        // preview; while over the hold/merge slots those slot previews take over and the board
+        // aim is suppressed — the magnifier lives on the MERGE path, where the tray cells are
+        // genuinely too small to judge a cell-precise join.
         var dragged = DraggedPiece();
         if (_dragIndex != -1 && dragged is { } dp)
         {
@@ -604,23 +608,41 @@ public partial class BlockFitController : Node2D
 
             if (aimingBoard)
             {
-                // Ghost footprint on the board.
+                var col = ok ? Palette.ForPiece(dp.Color) : Palette.AccentRed;
+                var bb = new Rect2(origin, new Vector2(dp.Width * _cell, dp.Height * _cell));
+
+                // Alignment rails: the footprint's row band and column band extended to the board
+                // edges. Reading "which row/column am I on" no longer needs a zoomed inset — the
+                // rails answer it peripherally without covering a single cell.
+                var rail = new Color(col.R, col.G, col.B, 0.28f);
+                DrawRect(new Rect2(_boardOrigin.X, bb.Position.Y, boardPx, bb.Size.Y), rail, filled: false, width: 1.5f);
+                DrawRect(new Rect2(bb.Position.X, _boardOrigin.Y, bb.Size.X, boardPx), rail, filled: false, width: 1.5f);
+                DrawRect(bb.Grow(2f), new Color(col.R, col.G, col.B, 0.55f), filled: false, width: 2f);
+
+                // Footprint: tinted FILL (not a hairline outline) so the landing cells read as a
+                // solid target even under a hand, plus a bright per-cell border.
                 foreach (var (drr, dcc) in dp.Cells)
                 {
                     var gcell = new Rect2(origin + new Vector2(dcc * _cell, drr * _cell) + new Vector2(2, 2), new Vector2(_cell - 4, _cell - 4));
-                    var col = ok ? Palette.ForPiece(dp.Color) : Palette.AccentRed;
-                    DrawRect(gcell, new Color(col.R, col.G, col.B, 0.9f), filled: false, width: 2.5f);
+                    DrawRect(gcell, new Color(col.R, col.G, col.B, ok ? 0.30f : 0.22f), filled: true);
+                    DrawRect(gcell, new Color(col.R, col.G, col.B, 0.95f), filled: false, width: 2.5f);
                 }
             }
 
-            // The floating piece itself, drawn above the finger (always while dragging).
+            // The piece itself. Over the board it is drawn ON the target cells — what you see is
+            // exactly what lands, so no magnifier is needed; the drop point still sits clear of
+            // the fingertip because TargetCell derives it from a lifted origin. Down in the tray
+            // (just lifted, or aiming at hold/merge) it free-floats with the finger instead.
             var lift = _cell * 0.6f;
-            var floatOrigin = new Vector2(_finger.X - dp.Width * _cell / 2f, _finger.Y - lift - dp.Height * _cell);
+            bool snapped = aimingBoard && _finger.Y < _holdSlot.Position.Y;
+            var floatOrigin = snapped
+                ? origin
+                : new Vector2(_finger.X - dp.Width * _cell / 2f, _finger.Y - lift - dp.Height * _cell);
             DrawPiece(dp, floatOrigin, _cell, aimingBoard && !ok ? 0.6f : 1f, tex);
 
-            // Magnifier loupe: a zoomed inset of the landing area, pinned to the top of the screen
-            // (clear of the hand) so the fingertip never hides where the piece lands.
-            if (aimingBoard) DrawLoupe(dp, gr, gc, ok);
+            // Merge magnifier — drawn LAST so the floating piece can never cover it.
+            if (mergeHover >= 0 && _game.Tray[mergeHover] is { } mdst2)
+                DrawMergeLoupe(dp, mdst2, mergeRow, mergeCol, mergeOk);
         }
 
         // Line-clear celebration (top layer): bright bands over cleared lines + sparks.
@@ -657,67 +679,63 @@ public partial class BlockFitController : Node2D
     }
 
     /// <summary>
-    /// Draw the drag-time magnifier: a zoomed inset of the board around the landing origin
-    /// (gr,gc), pinned to the top of the screen so the player's hand never covers it. Shows the
-    /// piece footprint (bright when it fits, red when it doesn't) over the surrounding cells at
-    /// up to ~2.2× zoom. Skipped for pieces too wide to magnify meaningfully — the board ghost
-    /// already covers those. Reads the equipped skin so the loupe matches the board exactly.
+    /// Draw the merge magnifier: a zoomed view of the fused shape while the player drags one tray
+    /// piece over another, parked in the empty band just ABOVE the tray so the dragging hand never
+    /// covers it. This is where zoom actually earns its keep — a tray cell is at most 0.55× a board
+    /// cell, far too small to judge a cell-precise join, whereas board placement is already
+    /// WYSIWYG (the piece is drawn on the cells it will occupy). Destination keeps its own colour
+    /// (the fused piece inherits it); the source reads green when the fuse is legal and red when
+    /// the cells overlap or the result could never fit the board.
     /// </summary>
-    private void DrawLoupe(BlockPiece dp, int gr, int gc, bool ok)
+    private void DrawMergeLoupe(BlockPiece src, BlockPiece dst, int mr, int mc, bool ok)
     {
         var safe = Bootstrap.Instance.SafeCanvasSize;
-        const int margin = 1;
-        int cols = dp.Width + margin * 2;
-        int rows = dp.Height + margin * 2;
 
-        float lc = Mathf.Floor(Mathf.Min(safe.X * 0.90f / cols, _cell * 2.2f));
-        if (lc < _cell * 1.15f) return;   // too little room to meaningfully magnify
+        // Union bounding box of dst (anchored at 0,0) + src (at the finger-chosen offset), padded
+        // by one cell so the join reads against empty space instead of butting the panel edge.
+        const int margin = 1;
+        int r0 = Mathf.Min(0, mr) - margin, c0 = Mathf.Min(0, mc) - margin;
+        int rows = Mathf.Max(dst.Height, mr + src.Height) - r0 + margin;
+        int cols = Mathf.Max(dst.Width, mc + src.Width) - c0 + margin;
+
+        float trayTop = _holdSlot.Position.Y;
+        float roomY = trayTop - _boardOrigin.Y - 28f;
+        float lc = Mathf.Floor(Mathf.Min(Mathf.Min(safe.X * 0.86f / cols, roomY / rows), _trayCell * 3.2f));
+        if (lc <= _trayCell * 1.25f) return;   // not enough room to be a meaningful magnification
 
         float w = cols * lc, h = rows * lc;
-        int r0 = gr - margin, c0 = gc - margin;
-        var origin = new Vector2((safe.X - w) / 2f, _boardOrigin.Y + 6f);
+        var origin = new Vector2((safe.X - w) / 2f, trayTop - 16f - h);
 
-        // Backing panel + accent border.
-        var pad = new Vector2(9, 9);
+        // Backing panel — border colour doubles as the legal/illegal verdict at a glance.
+        var pad = new Vector2(10, 10);
         var panel = new Rect2(origin - pad, new Vector2(w, h) + pad * 2f);
-        DrawRect(panel, new Color(0.04f, 0.05f, 0.10f, 0.93f), filled: true);
-        DrawRect(panel, new Color(0.40f, 0.72f, 1f, 0.55f), filled: false, width: 2f);
+        var accent = ok ? new Color(0.35f, 1f, 0.60f) : Palette.AccentRed;
+        DrawRect(panel, new Color(0.04f, 0.05f, 0.10f, 0.95f), filled: true);
+        DrawRect(panel, new Color(accent.R, accent.G, accent.B, 0.75f), filled: false, width: 2.5f);
 
         var glyph = Palette.EquippedGlyph;
         var mat = Palette.EquippedMaterial;
         bool reduced = Motion.Reduced;
 
-        // Zoomed board cells in the neighbourhood.
+        // Faint lattice so the gaps around the join are countable.
         for (int rr = 0; rr < rows; rr++)
             for (int cc = 0; cc < cols; cc++)
-            {
-                int br = r0 + rr, bc = c0 + cc;
-                var rect = new Rect2(origin + new Vector2(cc * lc, rr * lc) + new Vector2(1, 1), new Vector2(lc - 2, lc - 2));
-                if ((uint)br >= BlockFitGame.Size || (uint)bc >= BlockFitGame.Size)
-                {
-                    DrawRect(rect, new Color(1, 1, 1, 0.03f), filled: true);   // off-board margin
-                    continue;
-                }
-                var t = _game.At(br, bc);
-                if (t == PieceType.Empty)
-                    DrawRect(rect, new Color(1, 1, 1, 0.07f), filled: false, width: 1f);
-                else
-                    BlockRender.DrawCell(this, rect, lc, t, 1f, mat, glyph, _shimmer, br + bc, reduced: reduced);
-            }
+                DrawRect(new Rect2(origin + new Vector2(cc * lc, rr * lc) + new Vector2(1, 1), new Vector2(lc - 2, lc - 2)),
+                         new Color(1, 1, 1, 0.05f), filled: false, width: 1f);
 
-        // The piece footprint at the landing spot: solid gem when it fits, red outline when not.
-        var red = Palette.AccentRed;
-        foreach (var (drr, dcc) in dp.Cells)
+        // Destination piece, rendered with the equipped skin so the preview matches the board.
+        foreach (var (dr, dc) in dst.Cells)
         {
-            int lr = (gr + drr) - r0, lcc = (gc + dcc) - c0;
-            var rect = new Rect2(origin + new Vector2(lcc * lc, lr * lc) + new Vector2(1, 1), new Vector2(lc - 2, lc - 2));
-            if (ok)
-                BlockRender.DrawCell(this, rect, lc, dp.Color, 0.97f, mat, glyph, _shimmer, lr + lcc, reduced: reduced);
-            else
-            {
-                DrawRect(rect, new Color(red.R, red.G, red.B, 0.35f), filled: true);
-                DrawRect(rect, red, filled: false, width: 2f);
-            }
+            var rect = new Rect2(origin + new Vector2((dc - c0) * lc, (dr - r0) * lc) + new Vector2(1, 1), new Vector2(lc - 2, lc - 2));
+            BlockRender.DrawCell(this, rect, lc, dst.Color, 1f, mat, glyph, _shimmer, dr + dc, reduced: reduced);
+        }
+
+        // Source piece at the finger-chosen offset.
+        foreach (var (dr, dc) in src.Cells)
+        {
+            var rect = new Rect2(origin + new Vector2((dc + mc - c0) * lc, (dr + mr - r0) * lc) + new Vector2(1, 1), new Vector2(lc - 2, lc - 2));
+            DrawRect(rect, new Color(accent.R, accent.G, accent.B, ok ? 0.90f : 0.45f), filled: true);
+            DrawRect(rect, accent, filled: false, width: 2f);
         }
     }
 
