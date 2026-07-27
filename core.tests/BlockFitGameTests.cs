@@ -225,7 +225,7 @@ public class BlockFitGameTests
 
         Assert.True(g.TryMerge(srcIndex: 1, dstIndex: 0));
         Assert.NotNull(g.Tray[0]);
-        Assert.Null(g.Tray[1]);                       // source consumed
+        Assert.NotNull(g.Tray[1]);                    // source consumed, then refilled at once
         Assert.Equal(2, g.Tray[0]!.Cells.Count);      // union of both cells
         Assert.Equal(2, g.Tray[0]!.Width);            // concatenated horizontally
         Assert.Equal(1, g.Tray[0]!.Height);
@@ -256,7 +256,7 @@ public class BlockFitGameTests
         var g = new BlockFitGame(EmptyGrid(), new BlockPiece?[] { a, b, null });
 
         Assert.True(g.TryMerge(srcIndex: 1, dstIndex: 0, srcRowOffset: 1, srcColOffset: 0));
-        Assert.Null(g.Tray[1]);
+        Assert.NotNull(g.Tray[1]);   // source slot refills immediately
         var m = g.Tray[0]!;
         Assert.Equal(2, m.Cells.Count);
         Assert.Equal(1, m.Width);
@@ -285,6 +285,41 @@ public class BlockFitGameTests
 
         Assert.True(g.CanMerge(1, 0, 0, 1));    // source to the right — legal
         Assert.True(g.TryMerge(1, 0, 0, 1));
+    }
+
+    [Fact]
+    public void TryMerge_RefillsTheEmptiedSourceSlot_SoTheTrayNeverStarves()
+    {
+        // Regression: merging used to leave the source slot empty until the next placement, so
+        // the "continuous stream" tray silently shrank every time the player fused two pieces
+        // (reported as "조합을 하면 대기 블록이 사라진다"). A merge must cost a slot's worth of
+        // SHAPE, never a slot — the same contract TryPlace and TryHold already honour.
+        var a = new BlockPiece(new[] { (0, 0) }, PieceType.I);
+        var b = new BlockPiece(new[] { (0, 0) }, PieceType.O);
+        var c = new BlockPiece(new[] { (0, 0) }, PieceType.T);
+        var g = new BlockFitGame(EmptyGrid(), new BlockPiece?[] { a, b, c });
+
+        Assert.True(g.TryMerge(srcIndex: 1, dstIndex: 0));
+
+        Assert.All(g.Tray, p => Assert.NotNull(p));   // all three slots full again
+        Assert.Equal(2, g.Tray[0]!.Cells.Count);      // the destination holds the fused shape
+        Assert.NotSame(b, g.Tray[1]);                 // slot 1 is a FRESH piece, not the consumed one
+        Assert.Same(c, g.Tray[2]);                    // untouched slots are never re-dealt
+        Assert.False(g.GameOver);
+    }
+
+    [Fact]
+    public void TryMerge_RepeatedMerges_KeepTheTrayFull()
+    {
+        // Merging twice in a row still leaves a full tray — the stream keeps up with the player.
+        var g = new BlockFitGame(seed: 7);
+        for (int i = 0; i < 2; i++)
+        {
+            // Fuse whichever pair is currently legal; skip if this deal offers none.
+            if (!g.CanMerge(1, 0, 0, g.Tray[0]!.Width)) continue;
+            Assert.True(g.TryMerge(1, 0, 0, g.Tray[0]!.Width));
+            Assert.All(g.Tray, p => Assert.NotNull(p));
+        }
     }
 
     [Fact]

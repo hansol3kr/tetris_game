@@ -248,6 +248,10 @@ public sealed class BlockFitGame
     /// destination slot; the source slot empties. Refuses (returns false, tray untouched) when
     /// the indices are invalid/equal, either slot is empty, the two pieces would overlap, or the
     /// result is too big to ever fit the board. Flips GameOver when the tray can no longer move.
+    /// The emptied source slot REFILLS immediately, exactly like a placement does: the tray is a
+    /// continuous stream, so fusing two pieces must cost a slot's worth of shape, never a slot.
+    /// (It used to leave the source slot empty until the next placement, which silently starved
+    /// the tray and made merging feel punitive.)
     /// </summary>
     public bool TryMerge(int srcIndex, int dstIndex, int srcRowOffset, int srcColOffset)
     {
@@ -257,7 +261,7 @@ public sealed class BlockFitGame
 
         Tray[dstIndex] = new BlockPiece(merged, dst!.Color);
         Tray[srcIndex] = null;
-        if (!AnyMoveAvailable()) GameOver = true;
+        Deal();   // the emptied source slot refills at once — see the summary
         return true;
     }
 

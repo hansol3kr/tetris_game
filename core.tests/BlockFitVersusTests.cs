@@ -90,6 +90,36 @@ public class BlockFitVersusTests
     }
 
     [Fact]
+    public void Versus_BotClear_GarbagesPlayer_AndBotWinsWhenPlayerTopsOut()
+    {
+        // The mirror of the test above — the direction that was never covered, and the one the
+        // player reported wrong ("CPU가 이겼는데 내가 이겼다고 나온다"). Player board is full but
+        // for one cell, so the bot's attack tops the PLAYER out; the winner must be the Bot.
+        var pGrid = EmptyGrid();
+        for (int i = 0; i < pGrid.Length; i++) pGrid[i] = PieceType.Z;
+        pGrid[Idx(5, 5)] = PieceType.Empty;
+        var player = new BlockFitGame(pGrid, new BlockPiece?[] { Single(), null, null });
+
+        // Bot: row 0 one cell short + a single → its first placement completes the row (an attack).
+        var bGrid = EmptyGrid();
+        for (int c = 0; c < N - 1; c++) bGrid[Idx(0, c)] = PieceType.O;
+        var botBoard = new BlockFitGame(bGrid, new BlockPiece?[] { Single(PieceType.T), null, null });
+
+        VersusSide? winner = null;
+        var match = new BlockFitVersus(player, botBoard, BotDifficulty.Easy, attackPerLine: 2);
+        match.MatchEnded += w => winner = w;
+
+        // Drive the bot until it acts (its think interval gates placement).
+        for (int i = 0; i < 60 && !match.IsOver; i++) match.Update(0.2);
+
+        Assert.True(match.IsOver);
+        Assert.True(player.GameOver);                   // the player is the side that topped out
+        Assert.False(botBoard.GameOver);
+        Assert.Equal(VersusSide.Bot, winner);           // …so the BOT must be reported the winner
+        Assert.Equal(VersusSide.Bot, match.Winner);
+    }
+
+    [Fact]
     public void Versus_Merge_ClearsNothing_SendsNoGarbage()
     {
         var a = Single(PieceType.I);
