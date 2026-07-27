@@ -141,20 +141,45 @@ public static class BlockRender
             GlyphArt.Draw(ci, glyph, center, cell * 0.60f, GlyphInk(color, alpha), withDetails: cell >= 26f);
     }
 
-    // Three deterministic twinkle specks per Starfield cell (unit positions × hash phase).
-    private static readonly Vector2[] StarSpots = { new(-0.28f, -0.22f), new(0.24f, 0.06f), new(0.02f, 0.30f) };
+    // Deterministic star field per Starfield cell (unit pos, radius scale, hue tint index).
+    private static readonly (Vector2 P, float R, int Hue)[] StarSpots =
+    {
+        (new(-0.30f, -0.24f), 1.15f, 0), (new(0.26f, 0.04f), 0.85f, 1), (new(0.04f, 0.30f), 1.0f, 2),
+        (new(-0.14f, 0.18f), 0.6f, 0),   (new(0.32f, -0.30f), 0.7f, 1),
+    };
+    private static readonly Color[] StarTints =
+    { new(1f, 1f, 1f), new(0.72f, 0.82f, 1f), new(0.85f, 0.72f, 1f) }; // white / blue / violet
 
+    /// <summary>Nebula finish (Figma "Nebula" fill technique): a faint drifting colour cloud
+    /// behind a small field of layered, twinkling, hue-varied stars — the brightest catches a
+    /// cross-glint. Cheap: ~7 draws/cell, all immediate-mode.</summary>
     private static void DrawStarfield(CanvasItem ci, Rect2 rect, float cell, float shimmer, float cellPhase, float alpha, bool reduced)
     {
         var c = rect.GetCenter();
         float h = cell * 0.5f;
+
+        // Soft nebula cloud — two offset translucent tints that breathe.
+        float cloud = reduced ? 0.5f : 0.5f + 0.5f * Mathf.Sin(shimmer * 0.8f + cellPhase);
+        ci.DrawCircle(c + new Vector2(-0.18f, 0.10f) * h, cell * 0.42f, new Color(0.45f, 0.35f, 0.85f, 0.10f * cloud * alpha));
+        ci.DrawCircle(c + new Vector2(0.20f, -0.12f) * h, cell * 0.34f, new Color(0.30f, 0.55f, 0.95f, 0.09f * (1f - cloud) * alpha));
+
         for (int i = 0; i < StarSpots.Length; i++)
         {
+            var (sp, rs, hue) = StarSpots[i];
             float ph = cellPhase * 1.7f + i * 2.1f;
-            float tw = reduced ? 0.7f : 0.45f + 0.55f * Mathf.Sin(shimmer * 3.2f + ph);
+            float tw = reduced ? 0.7f : 0.4f + 0.6f * Mathf.Sin(shimmer * 3.2f + ph);
             tw = Mathf.Clamp(tw, 0f, 1f);
-            ci.DrawCircle(c + StarSpots[i] * h, Mathf.Max(1f, cell * 0.045f) * (0.6f + 0.4f * tw),
-                          new Color(1f, 1f, 1f, 0.85f * tw * alpha));
+            var tint = StarTints[hue];
+            var pos = c + sp * h;
+            float r = Mathf.Max(1f, cell * 0.045f) * rs * (0.6f + 0.4f * tw);
+            ci.DrawCircle(pos, r, new Color(tint.R, tint.G, tint.B, 0.85f * tw * alpha));
+            // Brightest star gets a diagonal cross-glint when it peaks.
+            if (i == 0 && tw > 0.75f)
+            {
+                float g = r * 2.6f, ga = (tw - 0.75f) * 4f * alpha;
+                ci.DrawLine(pos - new Vector2(g, 0), pos + new Vector2(g, 0), new Color(1, 1, 1, 0.5f * ga), 1f);
+                ci.DrawLine(pos - new Vector2(0, g), pos + new Vector2(0, g), new Color(1, 1, 1, 0.5f * ga), 1f);
+            }
         }
     }
 }
