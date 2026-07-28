@@ -223,8 +223,14 @@ if [[ "$MODE" == "run" || "$MODE" == "editor" ]]; then
   require_display
 fi
 
-c_info "C# 솔루션 빌드 중…"
-"$GODOT_BIN" --headless --path "$GAME_DIR" --build-solutions --quit \
+# C# 솔루션 빌드 — Godot 은 빌드를 성공적으로 끝낸 뒤 셧다운에서 간헐적으로 세그폴트한다
+# (실측 7회 중 1회. "Assembly load context unloaded successfully" 직후에 죽는다).
+# 예전에는 그 종료코드를 그대로 믿어서 그린 빌드가 빨간불이 됐다 — 실제로 이번 세션에만
+# 세 번 관측됐다. 이제 재시도하고, 그래도 안 되면 dotnet build 로 진짜 컴파일 결과를
+# 확인해 판정한다. 판정 권위는 컴파일러이지 Godot 의 셧다운 경로가 아니다.
+# shellcheck source=tools/godot-guard.sh
+. "$ROOT/tools/godot-guard.sh"
+godot_build_solutions "$GODOT_BIN" "$GAME_DIR" \
   || die "C# 빌드 실패. 'dotnet build $GAME_DIR/Blockfall.csproj'로 상세 오류를 확인하세요."
 c_ok "빌드 성공."
 
@@ -234,7 +240,10 @@ case "$MODE" in
     ;;
   smoke)
     c_info "헤드리스 오토플레이 스모크 테스트 실행 중… (전 화면 + 게임 한 판)"
-    "$GODOT_BIN" --headless --path "$GAME_DIR" --import >/dev/null 2>&1 || true
+    # 리소스 임포트는 간헐적으로 행/SIGABRT 가 난다 → 타임아웃+재시도 래퍼로 감싼다.
+    # 로컬은 재시도 후 경고만 하고 스모크를 계속 돌린다(개발 편의). CI(CI=true)는 실패.
+    # (래퍼는 위 C# 빌드 단계에서 이미 source 됨)
+    godot_import "$GODOT_BIN" "$GAME_DIR" || die "리소스 임포트 실패 — 스모크를 신뢰할 수 없어 중단합니다."
     # 강제종료/널렌더 백엔드가 뿜는 무해한 종료 노이즈만 걸러내고, 판정은 종료코드로.
     NOISE='PagedAllocator|Unreferenced static string|ObjectDB instances leaked|non-existing signal .draw.|BUG: Unreferenced|EDITOR_GET|shader_parameter'
     set +e

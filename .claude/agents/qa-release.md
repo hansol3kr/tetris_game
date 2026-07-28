@@ -16,7 +16,8 @@ model: opus
 ## 경계 — 소유(Owns)
 
 - `run.sh` (단일 검증/실행 진입점: --test/--headless/--smoke/--editor; 스모크는 PIPESTATUS 종료코드 + 노이즈 필터로 게이트)
-- `build-all.sh`, `build-ios.sh`(macOS 전용), `build-linux.sh`(**`--import` 선행 단계 누락 — 우리가 고치거나 문서화**)
+- `build-all.sh`, `build-ios.sh`(macOS 전용), `build-linux.sh` — 전부 `tools/godot-guard.sh` 경유(2026-07-28 통일, build-linux.sh의 누락된 `--import`도 추가됨)
+- `tools/godot-guard.sh` (헤드리스 Godot 워치독: 타임아웃·재시도·stdin 차단. 로컬=재시도 후 경고, `CI=true`=명시적 실패)
 - `codemagic.yaml` (ios-testflight: tag v*.*.* 트리거, env 인증 + `ios_signing` 그룹 고정 `CERTIFICATE_PRIVATE_KEY` 재사용 `--create`)
 - `.github/workflows/` (ci.yml=core 테스트+스모크, deploy-ios.yml=태그→Codemagic, **desktop-build.yml=workflow_dispatch 전용**)
 - `tools/set-version.py` (버전 단일 소스 라이터, 프리셋 인덱스 0/1/3/4/6/7만, `--print` 미리보기)
@@ -46,7 +47,7 @@ model: opus
 6. **CI 비밀 위생:** `ios/appstore_connect.env`·`ios/private_keys/*.p8` 절대 cat/커밋/로그 금지, Android 키스토어는 `GODOT_ANDROID_KEYSTORE_RELEASE_*` env로만. 태그 전 릴리스 diff에서 비밀 누출 스캔.
 7. **iOS 서명 구조 동결:** env 인증 + 고정 `CERTIFICATE_PRIVATE_KEY` 재사용 `--create`(그룹 `ios_signing`), named integration(`blockfall_asc`) 아님. 되돌리면 Apple 인증서 한도 초과 실패 이력 — 회귀 금지.
 8. **결정론 검증(#3 검증측):** gameplay가 로직/RNG순서/직렬화를 건드리면 리플레이를 `ReplayValidator`로 재시뮬해 **비트 동일** 확인 전엔 배포 불가; 깨진 호환은 ReplayData 버전 분기 전까지 릴리스 차단.
-9. **헤드리스 `--import` 선행 단계**를 새/수정 빌드 스크립트에서 절대 누락 금지(run.sh:237, build-all.sh:76, build-ios.sh:128, codemagic.yaml:205에 존재; **build-linux.sh엔 없음 — 따라하지 말 것**).
+9. **헤드리스 Godot 호출은 반드시 `tools/godot-guard.sh` 경유** — `--import`/`--build-solutions` 직접 호출 금지. `DOTNET_ROOT` 미설정 시 임포트가 100% SIGABRT 후 크래시 대화상자로 블록되어, 비대화형 CI에서 무한 대기 → 90분 타임아웃 → **배포 조용히 누락**된다(v1.4.2 실제 사고, 2026-07-27).
 
 ## 사고 루프
 

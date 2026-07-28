@@ -242,6 +242,51 @@ shared across stores:
    seed per normal run; a daily-challenge mode would inject a fixed seed here
    instead (the only change needed to make a run reproducible).
 
+### 6.1 Rules versioning — how a rule bug gets fixed without rewriting history
+
+"Same seed + same button stream ⇒ same result" is only meaningful against a fixed
+rule set. When a rule that changes the outcome of an input stream has to be fixed,
+we do **not** silently re-interpret existing recordings. Instead:
+
+| Piece | Role |
+|---|---|
+| `RulesVersion` (`core/RulesVersion.cs`) | The enum of shipped rule generations. Append-only. |
+| `SimRules.Current` | The rules every **new** run is played under. |
+| `GameConfig.Rules` | The rules **this** `Game` obeys; defaults to `Current`. |
+| `ReplayData.Version` | Stamped on every recording; `ReplayData.Rules` maps it back. |
+| `ReplayPlayer` | Pins the reconstructed config to the recording's rules. |
+
+`Game` and `InputProcessor` branch on `Config.Rules`; `Tetromino.KickSequence` takes
+it as a parameter. A v1 recording therefore re-simulates on v1 logic and stays
+bit-identical forever, while a run started today uses v2.
+
+**Adding a version is a reviewed act.** It requires all four of:
+
+1. a new `RulesVersion` member with the behavioural delta documented on it,
+2. a bump of `ReplayData.CurrentVersion` and a mapping in `SimRules.ForReplayVersion`,
+3. golden fixtures in `core.tests/LegacyReplayGoldenTests.cs` pinning the **old**
+   version's exact output (score, lines, pieces, board hash),
+4. a sensitivity test proving those fixtures actually diverge under the new rules —
+   otherwise a green golden test proves nothing.
+
+The **byte layout of the replay blob did not change** between v1 and v2; only the
+interpretation of the input stream did. Old blobs deserialize unchanged and simply
+select the older branch. Keep it that way if you can — a semantic-only bump is far
+cheaper than a format migration.
+
+`ReplayValidator` accepts **every shipped version** and re-simulates each under its
+own rules. A rules fix must never retroactively invalidate an honest player's
+already-verified score.
+
+Shipped generations:
+
+- **V1** (v1.0–v1.4.x) — lock resets charged per cell moved (so lock delay scaled
+  with the player's ARR), `MaxLockResets` compared with `>` (granting N+1),
+  float-accumulated DAS/ARR (100 ms charged at 116.7 ms), 180 kick table that could
+  displace a piece two columns.
+- **V2** (v1.5+) — lock resets charged per action, exact `MaxLockResets`,
+  tick-quantised DAS/ARR (`Sim.TicksFor`), community-standard 180 kick table.
+
 ---
 
 ## 7. Extension recipes

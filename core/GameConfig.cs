@@ -7,6 +7,16 @@ namespace Blockfall.Core;
 /// </summary>
 public sealed class GameConfig
 {
+    // --- Rules generation ---------------------------------------------------
+    /// <summary>
+    /// Which generation of simulation rules this run obeys. Defaults to
+    /// <see cref="SimRules.Current"/> so every new game plays the newest rules;
+    /// <see cref="ReplayPlayer"/> overrides it from the recording's version so an
+    /// old replay re-simulates under the rules it was actually played on.
+    /// This is the ONE knob that lets us fix rule bugs without rewriting history.
+    /// </summary>
+    public RulesVersion Rules { get; init; } = SimRules.Current;
+
     // --- Gravity -----------------------------------------------------------
     /// <summary>Seconds a piece takes to fall one cell at level 1 (before soft drop).</summary>
     public double BaseGravity { get; init; } = 1.0;
@@ -81,9 +91,10 @@ public sealed class GameConfig
     public GameConfig With(double? das = null, double? arr = null, bool? ghost = null,
         bool? hold = null, double? baseGravity = null, int? previewCount = null,
         double? lockDelay = null, int? maxGravityLevel = null, bool? allSpin = null,
-        double? scoreMultiplier = null)
+        double? scoreMultiplier = null, RulesVersion? rules = null)
         => new()
         {
+            Rules = rules ?? Rules,
             BaseGravity = baseGravity ?? BaseGravity,
             SoftDropFactor = SoftDropFactor,
             MaxGravityLevel = maxGravityLevel ?? MaxGravityLevel,

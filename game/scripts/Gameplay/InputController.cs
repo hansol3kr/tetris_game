@@ -110,17 +110,21 @@ public sealed class InputController
             {
                 _arrTimer += delta;
                 // ARR of 0 means "teleport to wall": repeat until it can't move.
+                // Auto-repeat steps are CONTINUATIONS of the one held press (isNewAction:
+                // false), so a slide spends the lock-delay budget once instead of once per
+                // cell — the live versus path must feel identical to the deterministic solo
+                // path, or a duel would punish the same handling settings differently.
                 if (_config.Arr <= 0)
                 {
                     for (int i = 0; i < 32; i++)
-                        if (!(_dir < 0 ? g.MoveLeft() : g.MoveRight())) break;
+                        if (!(_dir < 0 ? g.MoveLeft(false) : g.MoveRight(false))) break;
                 }
                 else
                 {
                     while (_arrTimer >= _config.Arr)
                     {
                         _arrTimer -= _config.Arr;
-                        if (!(_dir < 0 ? g.MoveLeft() : g.MoveRight())) break;
+                        if (!(_dir < 0 ? g.MoveLeft(false) : g.MoveRight(false))) break;
                     }
                 }
             }

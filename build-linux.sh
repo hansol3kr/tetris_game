@@ -82,6 +82,15 @@ fi
 grep -q "name=\"$PRESET\"" "$GAME_DIR/export_presets.cfg" 2>/dev/null \
   || die "export_presets.cfg 에 '$PRESET' 프리셋이 없습니다."
 
+# ── 리소스 임포트(1회) ───────────────────────────────────────
+#   이 단계는 오랫동안 이 스크립트에만 빠져 있었다 (run.sh / build-all.sh / build-ios.sh /
+#   codemagic.yaml 에는 있음). fresh clone 에서는 .godot/ 캐시가 gitignore 라 임포트 없이
+#   바로 내보내면 리소스 누락으로 결과물이 깨진다.
+#   타임아웃/재시도 근거는 tools/godot-guard.sh 참고.
+# shellcheck source=tools/godot-guard.sh
+. "$ROOT/tools/godot-guard.sh"
+godot_import "$GODOT_BIN" "$GAME_DIR" || die "리소스 임포트 실패 — 내보내기를 중단합니다."
+
 # ── 내보내기 ─────────────────────────────────────────────────
 c_i "내보내기: '$PRESET' → $OUT_DIR/"
 rm -rf "$OUT_DIR"; mkdir -p "$OUT_DIR"

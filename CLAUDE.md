@@ -52,7 +52,7 @@
 ```
 ./run.sh --test      # core 테스트 (또는 --filter로 좁혀서)
 ./run.sh --headless  # C# 솔루션 빌드 검증
-./run.sh --smoke     # 헤드리스 오토플레이 39종 체크 — UI 0×0 회귀 게이트
+./run.sh --smoke     # 헤드리스 오토플레이 64종 체크 — UI 0×0 회귀 게이트
 ```
 성공 판정은 **로그가 아니라 종료코드**다. `PagedAllocator`, `ObjectDB instances leaked` 등 종료 노이즈는 무시한다.
 
@@ -66,7 +66,7 @@
 - **대화는 한국어**, 코드·주석·XML doc·식별자는 **영어** (기존 코드베이스 관례).
 - **결론 먼저, 근거 다음.** 서론·과정 나열로 시작하지 않는다.
 - 코드 참조는 `경로:줄번호` 형식 (`core/Game.cs:120`).
-- **검증한 것은 수치로, 안 한 것은 명시적으로**: "빌드 0 warn/0 err, 테스트 247/247, 스모크 39/39" / "실기기 테스트는 미수행".
+- **검증한 것은 수치로, 안 한 것은 명시적으로**: "빌드 0 warn/0 err, 테스트 335/335, 스모크 64/64" / "실기기 테스트는 미수행".
 - 불확실하면 추측임을 밝힌다. 아는 척으로 메우지 않는다.
 - 커밋 메시지: **한국어 제목 + 스코프 접두사**(`iOS CI:`, `모바일 UX:`, `보안:`), 본문은 왜/무엇을 불릿으로, 말미에 검증 라인.
 - 문서 이원화 유지: 대외/설계 문서(README, ARCHITECTURE 등)는 영어, 운영 문서(DEPLOYMENT, IOS_RELEASE, 실행방법)는 한국어.
@@ -91,7 +91,7 @@
 
 ### 아키텍처 — 2-레이어 + 결정론
 ```
-core/   Blockfall.Core — 엔진 무의존 순수 C# 룰 엔진 (NuGet 의존성 0개, xUnit 247 테스트)
+core/   Blockfall.Core — 엔진 무의존 순수 C# 룰 엔진 (NuGet 의존성 0개, xUnit 335 테스트)
 game/   Godot 프레젠테이션 — 렌더·입력·오디오·플랫폼만. core를 ProjectReference (단방향)
 server/ Node.js 매치메이킹/릴레이 (ws, 바이너리 릴레이, /health)
 ```
@@ -114,9 +114,9 @@ export DOTNET_ROOT="$HOME/.dotnet"; export PATH="$HOME/.dotnet:$PATH"   # .NET 8
 # Godot: ~/.local/godot/Godot_v4.3-stable_mono_linux_x86_64/ — 반드시 mono(.NET) 빌드
 
 ./run.sh              # 코어 빌드 후 게임 실행 (그래픽 세션 자동 입양)
-./run.sh --test       # core 테스트만 — Godot 불필요. 전체 247개 ≈ 1분 24초
+./run.sh --test       # core 테스트만 — Godot 불필요. 전체 335개 ≈ 1분 24초
 ./run.sh --headless   # 창 없이 C# 솔루션 빌드 검증
-./run.sh --smoke      # 헤드리스 오토플레이 스모크 (39체크, 0×0 회귀 게이트) — CI와 동일
+./run.sh --smoke      # 헤드리스 오토플레이 스모크 (64체크, 0×0 회귀 게이트) — CI와 동일
 ./run.sh --editor     # Godot 에디터
 
 dotnet test Blockfall.sln --filter "FullyQualifiedName~BoardTests"   # 반복 작업 시 필터 필수 (전체가 느림)
@@ -129,7 +129,9 @@ cd server && npm test           # 매치메이커 통합 테스트
 ```
 
 - SSH 등 디스플레이 없는 세션에서 GUI 직접 실행 시 Godot 세그폴트 — 확인만 할 땐 `--test`/`--headless`/`--smoke`.
-- `run.sh`를 우회해 새 스크립트를 쓸 땐 headless `--import` 선행 단계를 빼먹지 말 것 (run.sh:237, build-all.sh:76, build-ios.sh:128, codemagic.yaml:205가 `|| true`로 선행한다. build-linux.sh에는 이 단계가 빠져 있음 — 따라하지 말 것).
+- **헤드리스 Godot 호출은 전부 `tools/godot-guard.sh`를 경유한다** — `--import`/`--build-solutions`를 직접 호출하지 말 것. 워치독(타임아웃·재시도·stdin 차단)이 붙어 있고, 로컬은 재시도 후 경고, `CI=true`면 명시적 실패로 갈린다. 모든 빌드 스크립트가 이 래퍼를 쓴다(build-linux.sh 포함 — 예전에 누락됐던 `--import` 선행 단계도 추가됨).
+- **`DOTNET_ROOT`를 안 잡으면 임포트가 100% 죽는다** (측정: 시스템 dotnet 10/10 실패 `rc=134`, `~/.dotnet` 0/10). Godot이 `Failed to load hostfxr` 후 SIGABRT → **크래시 핸들러가 OS 대화상자를 띄우려다 블록**된다. 비대화형 CI에서 이게 무한 대기가 되어 v1.4.2 iOS 빌드가 90분 타임아웃으로 배포 누락된 전례가 있다(2026-07-27). 래퍼가 stdin을 `/dev/null`로 막아 방어한다.
+- `--build-solutions`는 **종료 시점 SIGSEGV가 간헐적으로 난다**(관측 7회 중 1회). 로그 마지막이 `Assembly load context unloaded successfully`면 **빌드는 성공한 것** — 판정 권위는 Godot 종료코드가 아니라 `dotnet build` 결과다.
 - 테스트 출력은 한국어 로케일("통과!") — CI 파싱 시 주의.
 
 ---
@@ -212,7 +214,7 @@ cd server && npm test           # 매치메이커 통합 테스트
 ### ⚠ 저장소 위생
 - `game/android/`, `game/build/`, `dist/`는 재생성 가능한 산출물 — grep에 잡혀도 수정 금지, 원본은 `game/scripts/`.
 - `.gitignore`는 인라인 주석 미지원 — 패턴 뒤 주석이 패턴을 깨뜨린 전례 있음.
-- 문서 간 수치 불일치 존재(테스트 개수 등) — 수치 인용은 README(247) 기준. `ROADMAP.md` 일부는 낡음(랭크 래더는 이미 출시됨).
+- 수치 인용 기준: core 테스트 **335**, 스모크 **64체크**(2026-07-28 확인). 낡은 수치(247/39)가 README·docs에 남아 있을 수 있다. `ROADMAP.md` 일부는 낡음(랭크 래더는 이미 출시됨).
 
 ### 📌 확정 의사결정
 - **화면 방향은 세로 고정** (2e1a0e9): 가로는 모든 메뉴가 460px 좁은 컬럼으로 붕괴해 폐기했다. 가로 지원을 재시도하려면 `game/project.godot:29-31`의 사유 주석을 먼저 읽을 것. preset.4(iOS) `portrait=true`와 일치 상태.

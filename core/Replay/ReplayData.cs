@@ -13,9 +13,22 @@ namespace Blockfall.Core;
 /// </summary>
 public sealed class ReplayData
 {
-    public const int CurrentVersion = 1;
+    /// <summary>
+    /// Recording format + RULES generation.
+    ///   1 — shipped v1.0–v1.4.x (<see cref="RulesVersion.V1"/>).
+    ///   2 — v1.5+ (<see cref="RulesVersion.V2"/>): action-based lock resets, exact
+    ///       MaxLockResets, tick-quantised DAS/ARR, community-standard 180 kicks.
+    /// The BYTE LAYOUT is unchanged between 1 and 2 — only the interpretation of the
+    /// input stream differs — so old blobs deserialize as-is and simply select the
+    /// older rule branch in <see cref="ReplayPlayer"/>. Bump this only alongside a new
+    /// <see cref="RulesVersion"/> member.
+    /// </summary>
+    public const int CurrentVersion = 2;
 
     public int Version { get; init; } = CurrentVersion;
+
+    /// <summary>The simulation rules this recording must be replayed under.</summary>
+    public RulesVersion Rules => SimRules.ForReplayVersion(Version);
     public ulong Seed { get; init; }
     public GameModeId Mode { get; init; }
     public GameModifier[] Modifiers { get; init; } = System.Array.Empty<GameModifier>();
@@ -172,8 +185,10 @@ public sealed class ReplayPlayer
     {
         _data = data;
         // Reconstruct the exact simulation config: mode base + player handling + modifiers,
-        // applied in the same order the live GameController uses.
-        var cfg = GameMode.ById(data.Mode).Config.With(das: data.Das, arr: data.Arr);
+        // applied in the same order the live GameController uses — and pinned to the RULES
+        // generation the run was recorded under, so a v1 recording is re-simulated by the
+        // v1 lock-reset / DAS / 180-kick logic and still reproduces bit-identically.
+        var cfg = GameMode.ById(data.Mode).Config.With(das: data.Das, arr: data.Arr, rules: data.Rules);
         if (data.Modifiers.Length > 0) cfg = ModifierSet.Apply(cfg, data.Modifiers);
         Game = Game.Create(data.Mode, data.Seed, cfg);
         _proc = new InputProcessor(Game.Config);

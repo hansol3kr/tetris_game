@@ -71,9 +71,12 @@ if [[ ! -f "$GAME_DIR/Blockfall.sln" ]]; then
   ( cd "$GAME_DIR" && dotnet new sln -n Blockfall >/dev/null && dotnet sln Blockfall.sln add Blockfall.csproj >/dev/null )
 fi
 
-# ── 리소스 임포트(1회) ───────────────────────────────────────
-c_i "리소스 임포트 중…"
-"$GODOT_BIN" --headless --path "$GAME_DIR" --import >/dev/null 2>&1 || true
+# ── 리소스 임포트(1회) — 타임아웃/재시도 방어 ────────────────
+#   래퍼의 존재 이유·튜닝 변수는 tools/godot-guard.sh 참고.
+#   로컬은 재시도 후 경고만, CI(CI=true)는 명시적 실패.
+# shellcheck source=tools/godot-guard.sh
+. "$ROOT/tools/godot-guard.sh"
+godot_import "$GODOT_BIN" "$GAME_DIR" || die "리소스 임포트 실패 — 내보내기를 중단합니다."
 
 mkdir -p "$DIST"
 

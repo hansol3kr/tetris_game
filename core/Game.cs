@@ -146,17 +146,31 @@ public sealed class Game
     // ======================================================================
     //  Commands (called from input)
     // ======================================================================
-    public bool MoveLeft() => TryShift(0, -1, MoveKind.Left);
-    public bool MoveRight() => TryShift(0, 1, MoveKind.Right);
+    /// <summary>
+    /// Shift the piece one column left.
+    ///
+    /// <paramref name="isNewAction"/> is the lock-delay accounting hint: true for a
+    /// fresh player action (a tap, or the first step of a newly held direction) and
+    /// false for the auto-repeat steps that belong to the SAME hold. Only the input
+    /// layer can tell those apart — the engine just sees repeated Move calls — so it
+    /// tells us here. Under <see cref="RulesVersion.V2"/> only new actions spend the
+    /// lock-reset budget, which is what makes lock delay independent of a player's
+    /// ARR setting. Defaults to true so tap-driven callers (touch, gestures, the bot)
+    /// stay correct without opting in.
+    /// </summary>
+    public bool MoveLeft(bool isNewAction = true) => TryShift(0, -1, MoveKind.Left, isNewAction);
 
-    private bool TryShift(int dRow, int dCol, MoveKind kind)
+    /// <inheritdoc cref="MoveLeft"/>
+    public bool MoveRight(bool isNewAction = true) => TryShift(0, 1, MoveKind.Right, isNewAction);
+
+    private bool TryShift(int dRow, int dCol, MoveKind kind, bool isNewAction)
     {
         if (Status != GameStatus.Running || Current is null) return false;
         var moved = Current.Moved(dRow, dCol);
         if (!Board.CanPlace(moved)) return false;
         Current = moved;
         _lastActionWasRotation = false;
-        OnPieceChanged();
+        OnPieceChanged(isNewAction);
         PieceMoved?.Invoke(kind);
         return true;
     }
@@ -195,7 +209,7 @@ public sealed class Game
     {
         if (Status != GameStatus.Running || Current is null) return false;
         var piece = Current;
-        var kicks = Tetromino.KickSequence(piece.Type, piece.State, target);
+        var kicks = Tetromino.KickSequence(piece.Type, piece.State, target, Config.Rules);
         for (int i = 0; i < kicks.Length; i++)
         {
             var k = kicks[i];
@@ -207,7 +221,9 @@ public sealed class Game
                 _lastActionWasRotation = true;
                 _lastKickIndex = i;
                 _lastRotationWas180 = (((int)piece.State + 2) & 3) == (int)target;
-                OnPieceChanged();
+                // Every rotation is a discrete edge-triggered press, so it is always a
+                // fresh action — there is no auto-repeat form of a rotation.
+                OnPieceChanged(isNewAction: true);
                 PieceRotated?.Invoke(new RotationEvent { Success = true, KickIndex = i, NewState = target });
                 return true;
             }
@@ -303,7 +319,13 @@ public sealed class Game
         if (Board.IsLanded(Current))
         {
             _lockTimer += dt;
-            if (_lockTimer >= Config.LockDelay || _lockResets > Config.MaxLockResets)
+            // V1 compared with '>', so MaxLockResets=15 actually granted 16 resets.
+            // V2 grants exactly the configured number; V1 keeps its extra one so old
+            // replays still lock on the same tick they always did.
+            int resetBudget = Config.Rules == RulesVersion.V1
+                ? Config.MaxLockResets + 1
+                : Config.MaxLockResets;
+            if (_lockTimer >= Config.LockDelay || _lockResets >= resetBudget)
                 LockPiece();
         }
         else
@@ -315,7 +337,12 @@ public sealed class Game
     // ======================================================================
     //  Internal helpers
     // ======================================================================
-    private void OnPieceChanged()
+    /// <summary>
+    /// Book-keeping after the piece moved or rotated. <paramref name="isNewAction"/>
+    /// distinguishes a fresh player action from an auto-repeat continuation of one
+    /// (see <see cref="MoveLeft"/>).
+    /// </summary>
+    private void OnPieceChanged(bool isNewAction)
     {
         if (Current is null) return;
         if (Current.Origin.Row > _lowestRow)
@@ -326,7 +353,14 @@ public sealed class Game
         {
             // Move/rotate reset while resting: refresh the timer, bounded by MaxLockResets.
             _lockTimer = 0;
-            _lockResets++;
+
+            // V1 charged one reset per CELL travelled. Because the ARR loop can shift a
+            // piece up to 32 cells in a single tick, the entire 15-reset budget could be
+            // spent in three direction changes at ARR=0 while a tapping player got 16 —
+            // i.e. choosing competitive handling silently tripled how fast pieces froze.
+            // V2 charges one reset per ACTION, so the budget means the same number of
+            // decisions regardless of the DAS/ARR a player picked.
+            if (isNewAction || Config.Rules == RulesVersion.V1) _lockResets++;
         }
     }
 

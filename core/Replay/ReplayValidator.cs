@@ -17,13 +17,20 @@ public static class ReplayValidator
         public double ActualTime { get; init; }
         public string Reason { get; init; }
 
+        /// <summary>Which rules generation the re-simulation ran under.</summary>
+        public RulesVersion Rules { get; init; }
+
         public static Result Fail(string reason) => new() { Valid = false, Reason = reason };
     }
 
     /// <summary>Re-simulate and confirm the replay's own claimed score/lines are genuine.</summary>
     public static Result Validate(ReplayData data)
     {
-        if (data.Version != ReplayData.CurrentVersion)
+        // Every SHIPPED version stays verifiable forever: each one re-simulates under the
+        // rules it was played on, so an old ranked submission keeps proving itself and a
+        // rules fix can never retroactively invalidate an honest player's score. Only
+        // versions from the future (a build we do not have the rules for) are rejected.
+        if (data.Version < 1 || data.Version > ReplayData.CurrentVersion)
             return Result.Fail($"unsupported replay version {data.Version}");
         if (data.Inputs.Length == 0)
             return Result.Fail("empty replay");
@@ -49,6 +56,7 @@ public static class ReplayValidator
             ActualScore = actualScore,
             ActualLines = actualLines,
             ActualTime = actualTime,
+            Rules = data.Rules,
             Reason = ok ? "ok" : $"claimed {data.FinalScore}/{data.FinalLines}, re-sim gave {actualScore}/{actualLines}",
         };
     }

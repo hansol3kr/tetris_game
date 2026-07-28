@@ -124,8 +124,12 @@ fi
 if [[ ! -f "$GAME_DIR/Blockfall.sln" ]]; then
   ( cd "$GAME_DIR" && dotnet new sln -n Blockfall >/dev/null && dotnet sln Blockfall.sln add Blockfall.csproj >/dev/null )
 fi
-c_i "리소스 임포트 중…"
-"$GODOT_BIN" --headless --path "$GAME_DIR" --import >/dev/null 2>&1 || true
+# 리소스 임포트 — 타임아웃/재시도 방어 래퍼 (tools/godot-guard.sh 주석에 사고 경위).
+# 예전 `|| true` 는 행에 걸리면 무한정 기다려 Codemagic 90분을 전부 태우고 배포를 통째로
+# 누락시켰다(v1.4.2). CI에서는 여기서 명시적으로 실패해야 뒤 단계를 침묵 속에 태우지 않는다.
+# shellcheck source=tools/godot-guard.sh
+. "$ROOT/tools/godot-guard.sh"
+godot_import "$GODOT_BIN" "$GAME_DIR" || die "리소스 임포트 실패 — 재시도로도 복구되지 않았습니다. 빌드를 재트리거하거나 .godot/ 캐시를 지우고 다시 시도하세요."
 
 c_i "iOS Xcode 프로젝트 생성 중… (C# AOT 컴파일 포함, 몇 분 걸릴 수 있음)"
 rm -rf "$OUT"; mkdir -p "$OUT"

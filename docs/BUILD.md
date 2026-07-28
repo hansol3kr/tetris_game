@@ -397,3 +397,23 @@ platform toolchains from §5 — but keep it off the fast core-test path.
   elapsed (1-in-3 frequency cap).
 - **Android build template errors** → re-run **Project → Install Android Build
   Template** and confirm JDK 17 + SDK paths in Editor Settings.
+- **Headless step dies with SIGABRT (134) / "Failed to load hostfxr"** → Godot's
+  .NET build aborts when it cannot resolve `hostfxr`. Measured on Linux: 0/10
+  failures with `DOTNET_ROOT=$HOME/.dotnet`, 10/10 failures using the system
+  `dotnet` (which is broken here: `/usr/lib/dotnet/host/fxr` does not exist).
+  Always `export DOTNET_ROOT="$HOME/.dotnet"; export PATH="$HOME/.dotnet:$PATH"`.
+  `tools/godot-guard.sh` now preflights this and reports it by name instead of
+  letting it surface as a mystery segfault.
+- **Headless step segfaults *after* "Assembly load context unloaded
+  successfully"** → harmless shutdown crash; the build itself succeeded
+  (observed ~1 run in 7). `godot_build_solutions` retries and then falls back to
+  `dotnet build` so a green build is never reported as a red gate.
+- **A build step hangs with no output** → every headless `--import` /
+  `--build-solutions` call goes through `tools/godot-guard.sh`, which applies a
+  per-attempt watchdog, retries, prints a 30s heartbeat, and fails explicitly in
+  CI. Tune with `BLOCKFALL_IMPORT_TIMEOUT` (default 300s),
+  `BLOCKFALL_IMPORT_ATTEMPTS` (default 3) and `BLOCKFALL_IMPORT_STRICT`
+  (`1` = fail, `0` = warn and continue; defaults to strict whenever `CI` is set).
+  This exists because a v1.4.2 tag build hung in `--import` and burned the full
+  90-minute Codemagic budget, so the signing/`.ipa`/TestFlight steps never ran
+  and the release silently did not ship.
