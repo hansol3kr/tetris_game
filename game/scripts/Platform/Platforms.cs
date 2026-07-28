@@ -103,7 +103,7 @@ public sealed class SteamPlatform : IPlatformServices
     public void ReportAchievements(RunStats stats, bool completed, GameModeId mode)
     {
         if (_steam is null) return;
-        if (stats.Quads >= 1) Unlock("ACH_FIRST_TETRIS");
+        if (stats.Quads >= 1) Unlock("ACH_FIRST_QUAD");
         if (stats.TSpins >= 1) Unlock("ACH_FIRST_TSPIN");
         if (stats.PerfectClears >= 1) Unlock("ACH_PERFECT_CLEAR");
         if (stats.MaxCombo >= 5) Unlock("ACH_COMBO_5");

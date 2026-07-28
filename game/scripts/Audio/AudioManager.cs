@@ -98,7 +98,7 @@ public partial class AudioManager : Node
     public void PlayLineClear(ClearResult r)
     {
         if (r.Spin != SpinType.None && r.LinesCleared > 0) PlaySfx("tspin");
-        else if (r.LinesCleared >= 4) PlaySfx("tetris");
+        else if (r.LinesCleared >= 4) PlaySfx("quad");
         else PlaySfx("line_clear");
 
         if (r.BackToBack) PlaySfx("b2b");

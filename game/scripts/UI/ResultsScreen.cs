@@ -140,7 +140,7 @@ public partial class ResultsScreen : Control
         {
             Stat(Loc.T("LINES"), _results.Lines.ToString()),
             Stat(Loc.T("LEVEL"), _results.Level.ToString()),
-            Stat(Loc.T("TETRISES"), s.Quads.ToString()),
+            Stat(Loc.T("QUADS"), s.Quads.ToString()),
             Stat(Loc.T("T-SPINS"), s.TSpins.ToString()),
             Stat(Loc.T("MAX COMBO"), s.MaxCombo.ToString()),
             Stat(Loc.T("PIECES/S"), s.PiecesPerSecond.ToString("0.00")),

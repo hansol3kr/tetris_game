@@ -538,7 +538,7 @@ public partial class JuiceLayer : Node2D
         }
         return r.LinesCleared switch
         {
-            4 => "TETRIS!",
+            4 => "QUAD!",
             3 => "TRIPLE",
             2 => "DOUBLE",
             _ => "", // singles are quiet; combos still pop via the sub-line

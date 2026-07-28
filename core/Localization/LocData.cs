@@ -21,7 +21,7 @@ internal static class LocData
         ["LEVEL"] = "레벨",
         ["TIME"] = "시간",
         ["SEED"] = "시드",
-        ["TETRISES"] = "테트리스",
+        ["QUADS"] = "쿼드",
         ["T-SPINS"] = "T-스핀",
         ["FINESSE"] = "피네스",
         ["PROFILE"] = "프로필",

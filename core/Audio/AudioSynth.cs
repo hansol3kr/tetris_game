@@ -27,7 +27,7 @@ public static class AudioSynth
     /// <summary>The names the game asks for; unknown names fall back to a soft blip.</summary>
     public static readonly string[] SfxNames =
     {
-        "move", "rotate", "lock", "hard_drop", "hold", "line_clear", "tetris",
+        "move", "rotate", "lock", "hard_drop", "hold", "line_clear", "quad",
         "tspin", "b2b", "combo", "garbage", "level_up", "perfect_clear",
         "game_over", "win",
     };
@@ -66,7 +66,7 @@ public static class AudioSynth
                     .Tone(E5, 0, 0.24, 0.10, Wave.Triangle, release: 0.10)
                     .Tone(G5, 0, 0.24, 0.09, Wave.Sine, release: 0.10).To16();
 
-            case "tetris":
+            case "quad":
                 return new Buf(0.42)
                     .Tone(C5, 0.00, 0.10, 0.20, Wave.Square, release: 0.04)
                     .Tone(E5, 0.09, 0.10, 0.20, Wave.Square, release: 0.04)
