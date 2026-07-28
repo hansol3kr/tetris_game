@@ -24,6 +24,10 @@ public sealed class StoreItem
     public BlockTheme? Theme { get; init; }
     public string BoosterId { get; init; } = "";
     public int BoosterCount { get; init; }
+    /// <summary>Marks a fresh drop: <see cref="UI.StoreScreen"/> floats these to the top of their
+    /// section and tags them. Purely a merchandising flag — never affects ownership or price.
+    /// Clear it on the previous wave whenever a new one lands, or "NEW" stops meaning anything.</summary>
+    public bool IsNew { get; init; }
 }
 
 /// <summary>
@@ -385,6 +389,66 @@ public static class StoreCatalog
                 L: new Color(1.00f, 0.60f, 0.25f),
                 BgTop: new Color(0.05f, 0.04f, 0.07f), BgBottom: new Color(0.11f, 0.08f, 0.15f),
                 Glyph: SkinGlyph.Rainbow),
+        },
+        // ---- ColorPlan skins: the "how many colours" axis --------------------------------
+        // Every skin above is a permutation of the same 7-hue rainbow, which is why they blur
+        // together at arm's length. These four spend a DIFFERENT NUMBER of colours on the
+        // board (three / one / two / a positional ramp) and pair it with a distinct material,
+        // so they read as different objects from across the room. Legal only because Block Fit
+        // attaches no rule meaning to a cell's hue — and colorblind mode overrides all of them
+        // back to Okabe–Ito, where the MATERIAL becomes the identity channel instead.
+        new()
+        {
+            Id = "theme_oak", ProductId = "", Kind = StoreItemKind.Theme,
+            Name = "OAK", Blurb = "THREE TIMBER TONES. MATTE GRAIN, NO GLOSS — IT BREAKS INTO SPLINTERS.",
+            PriceLabel = "FREE", IsNew = true,
+            Theme = new BlockTheme("theme_oak",
+                I: new Color(0.788f, 0.561f, 0.322f), O: new Color(0.890f, 0.729f, 0.522f),
+                T: new Color(0.549f, 0.353f, 0.200f), S: new Color(0.890f, 0.729f, 0.522f),
+                Z: new Color(0.549f, 0.353f, 0.200f), J: new Color(0.788f, 0.561f, 0.322f),
+                L: new Color(0.890f, 0.729f, 0.522f),
+                BgTop: new Color(0.055f, 0.040f, 0.028f), BgBottom: new Color(0.115f, 0.082f, 0.055f),
+                Material: CellMaterial.Wood, Plan: ColorPlan.Trio),
+        },
+        new()
+        {
+            Id = "theme_sumi", ProductId = "", Kind = StoreItemKind.Theme,
+            Name = "SUMI", Blurb = "ONE INK, SEVEN SHADES. FROSTED STONE — THE QUIETEST BOARD IN THE GAME.",
+            PriceLabel = "FREE", IsNew = true,
+            Theme = new BlockTheme("theme_sumi",
+                I: new Color(0.847f, 0.863f, 0.902f), O: new Color(0.780f, 0.796f, 0.839f),
+                T: new Color(0.714f, 0.729f, 0.776f), S: new Color(0.647f, 0.663f, 0.714f),
+                Z: new Color(0.580f, 0.596f, 0.651f), J: new Color(0.514f, 0.529f, 0.588f),
+                L: new Color(0.447f, 0.463f, 0.525f),
+                BgTop: new Color(0.035f, 0.036f, 0.043f), BgBottom: new Color(0.082f, 0.086f, 0.102f),
+                Material: CellMaterial.Frosted, Plan: ColorPlan.Mono),
+        },
+        new()
+        {
+            Id = "theme_vapor_tube", ProductId = "", Kind = StoreItemKind.Theme,
+            Name = "VAPOR TUBE", Blurb = "TWO GASES IN HOLLOW GLASS. IT SHATTERS INTO GLOWING ARCS.",
+            PriceLabel = "FREE", IsNew = true,
+            Theme = new BlockTheme("theme_vapor_tube",
+                I: new Color(0.247f, 0.910f, 1.000f), O: new Color(1.000f, 0.337f, 0.784f),
+                T: new Color(0.247f, 0.910f, 1.000f), S: new Color(1.000f, 0.337f, 0.784f),
+                Z: new Color(1.000f, 0.337f, 0.784f), J: new Color(0.247f, 0.910f, 1.000f),
+                L: new Color(1.000f, 0.337f, 0.784f),
+                BgTop: new Color(0.040f, 0.020f, 0.062f), BgBottom: new Color(0.090f, 0.043f, 0.130f),
+                Material: CellMaterial.NeonTube, Plan: ColorPlan.Duo),
+        },
+        new()
+        {
+            Id = "theme_dichroic", ProductId = "com.blockfall.theme.dichroic", Kind = StoreItemKind.Theme,
+            Name = "DICHROIC", Blurb = "THE BOARD ITSELF IS THE GRADIENT — CYAN AT ONE CORNER, VIOLET AT THE OTHER.",
+            PriceLabel = "US$2.99", IsNew = true,
+            Theme = new BlockTheme("theme_dichroic",
+                I: new Color(0.353f, 0.784f, 1.000f), O: new Color(0.620f, 0.640f, 1.000f),
+                T: new Color(0.780f, 0.482f, 1.000f), S: new Color(0.500f, 0.700f, 1.000f),
+                Z: new Color(0.700f, 0.560f, 1.000f), J: new Color(0.420f, 0.740f, 1.000f),
+                L: new Color(0.640f, 0.620f, 1.000f),
+                BgTop: new Color(0.030f, 0.030f, 0.070f), BgBottom: new Color(0.070f, 0.055f, 0.145f),
+                Material: CellMaterial.Holographic, Plan: ColorPlan.BoardGradient,
+                EdgeTint: new Color(1.000f, 0.851f, 0.941f, 0.35f)),
         },
         // Burst-FX artifacts (free): the line-clear celebration Block Fit plays.
         // Cosmetic only — never touches scoring. "artifact_sparks" is the default.

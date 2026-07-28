@@ -8,7 +8,17 @@ namespace Blockfall.Theme;
 /// only (never the piece hue), so the Okabe–Ito colorblind fills survive every finish.
 /// Append-only: values are persisted implicitly via the equipped <see cref="BlockTheme"/>.
 /// </summary>
-public enum CellMaterial { Gel, Pearl, Metallic, Holographic, Frosted, Gemstone, Starfield }
+public enum CellMaterial { Gel, Pearl, Metallic, Holographic, Frosted, Gemstone, Starfield, Wood, NeonTube }
+
+/// <summary>
+/// How many colours a skin actually spends on the Block Fit board. The 7-hue rainbow is the
+/// only plan the falling game may use (there, hue is INFORMATION — next/hold queues read by
+/// colour), so this axis exists purely for Block Fit, where a piece's colour carries nothing.
+/// It is what makes two skins tell apart at arm's length instead of being hue permutations.
+/// Colorblind mode overrides every plan back to Okabe–Ito (accessibility beats cosmetics).
+/// Append-only — persisted implicitly through the equipped <see cref="BlockTheme"/>.
+/// </summary>
+public enum ColorPlan { Rainbow7, Trio, Duo, Mono, BoardGradient }
 
 /// <summary>
 /// A purchasable cosmetic skin: the seven piece colors plus the backdrop
@@ -25,4 +35,5 @@ public sealed record BlockTheme(
     Color BgTop, Color BgBottom,
     SkinGlyph Glyph = SkinGlyph.None,
     CellMaterial Material = CellMaterial.Gel,
-    Color EdgeTint = default);
+    Color EdgeTint = default,
+    ColorPlan Plan = ColorPlan.Rainbow7);

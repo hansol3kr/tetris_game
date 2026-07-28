@@ -52,7 +52,7 @@
 ```
 ./run.sh --test      # core 테스트 (또는 --filter로 좁혀서)
 ./run.sh --headless  # C# 솔루션 빌드 검증
-./run.sh --smoke     # 헤드리스 오토플레이 64종 체크 — UI 0×0 회귀 게이트
+./run.sh --smoke     # 헤드리스 오토플레이 47종 체크 — UI 0×0 회귀 게이트
 ```
 성공 판정은 **로그가 아니라 종료코드**다. `PagedAllocator`, `ObjectDB instances leaked` 등 종료 노이즈는 무시한다.
 
@@ -66,7 +66,7 @@
 - **대화는 한국어**, 코드·주석·XML doc·식별자는 **영어** (기존 코드베이스 관례).
 - **결론 먼저, 근거 다음.** 서론·과정 나열로 시작하지 않는다.
 - 코드 참조는 `경로:줄번호` 형식 (`core/Game.cs:120`).
-- **검증한 것은 수치로, 안 한 것은 명시적으로**: "빌드 0 warn/0 err, 테스트 335/335, 스모크 64/64" / "실기기 테스트는 미수행".
+- **검증한 것은 수치로, 안 한 것은 명시적으로**: "빌드 0 warn/0 err, 테스트 374/374, 스모크 47/47" / "실기기 테스트는 미수행".
 - 불확실하면 추측임을 밝힌다. 아는 척으로 메우지 않는다.
 - 커밋 메시지: **한국어 제목 + 스코프 접두사**(`iOS CI:`, `모바일 UX:`, `보안:`), 본문은 왜/무엇을 불릿으로, 말미에 검증 라인.
 - 문서 이원화 유지: 대외/설계 문서(README, ARCHITECTURE 등)는 영어, 운영 문서(DEPLOYMENT, IOS_RELEASE, 실행방법)는 한국어.
@@ -91,7 +91,7 @@
 
 ### 아키텍처 — 2-레이어 + 결정론
 ```
-core/   Blockfall.Core — 엔진 무의존 순수 C# 룰 엔진 (NuGet 의존성 0개, xUnit 335 테스트)
+core/   Blockfall.Core — 엔진 무의존 순수 C# 룰 엔진 (NuGet 의존성 0개, xUnit 374 테스트)
 game/   Godot 프레젠테이션 — 렌더·입력·오디오·플랫폼만. core를 ProjectReference (단방향)
 server/ Node.js 매치메이킹/릴레이 (ws, 바이너리 릴레이, /health)
 ```
@@ -114,9 +114,9 @@ export DOTNET_ROOT="$HOME/.dotnet"; export PATH="$HOME/.dotnet:$PATH"   # .NET 8
 # Godot: ~/.local/godot/Godot_v4.3-stable_mono_linux_x86_64/ — 반드시 mono(.NET) 빌드
 
 ./run.sh              # 코어 빌드 후 게임 실행 (그래픽 세션 자동 입양)
-./run.sh --test       # core 테스트만 — Godot 불필요. 전체 335개 ≈ 1분 24초
+./run.sh --test       # core 테스트만 — Godot 불필요. 전체 374개 ≈ 1분 32초
 ./run.sh --headless   # 창 없이 C# 솔루션 빌드 검증
-./run.sh --smoke      # 헤드리스 오토플레이 스모크 (64체크, 0×0 회귀 게이트) — CI와 동일
+./run.sh --smoke      # 헤드리스 오토플레이 스모크 (47체크, 0×0 회귀 게이트) — CI와 동일
 ./run.sh --editor     # Godot 에디터
 
 dotnet test Blockfall.sln --filter "FullyQualifiedName~BoardTests"   # 반복 작업 시 필터 필수 (전체가 느림)
@@ -214,7 +214,7 @@ cd server && npm test           # 매치메이커 통합 테스트
 ### ⚠ 저장소 위생
 - `game/android/`, `game/build/`, `dist/`는 재생성 가능한 산출물 — grep에 잡혀도 수정 금지, 원본은 `game/scripts/`.
 - `.gitignore`는 인라인 주석 미지원 — 패턴 뒤 주석이 패턴을 깨뜨린 전례 있음.
-- 수치 인용 기준: core 테스트 **335**, 스모크 **64체크**(2026-07-28 확인). 낡은 수치(247/39)가 README·docs에 남아 있을 수 있다. `ROADMAP.md` 일부는 낡음(랭크 래더는 이미 출시됨).
+- 수치 인용 기준: core 테스트 **374**, 스모크 **47체크**(2026-07-28 확인). 스모크 수치는 과거 소유 스킨마다 1체크를 더해 **세이브 상태에 따라 변동**했다(64 등) — 지금은 스킨 스윕이 소유 무관 결정론적 1체크다. 낡은 수치(247/335/39/64)가 README·docs·에이전트 정의에 남아 있을 수 있다. `ROADMAP.md` 일부는 낡음(랭크 래더는 이미 출시됨).
 
 ### 📌 확정 의사결정
 - **화면 방향은 세로 고정** (2e1a0e9): 가로는 모든 메뉴가 460px 좁은 컬럼으로 붕괴해 폐기했다. 가로 지원을 재시도하려면 `game/project.godot:29-31`의 사유 주석을 먼저 읽을 것. preset.4(iOS) `portrait=true`와 일치 상태.

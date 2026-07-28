@@ -1,5 +1,6 @@
 using Godot;
 using System;
+using Blockfall.Audio;
 using Blockfall.Core;
 using Blockfall.Core.BlockFit;
 using Blockfall.Core.Localization;
@@ -31,11 +32,17 @@ public partial class BlockFitController : Node2D
     private BlockFitGame _game = new();
     private Control _uiHost = null!;
     private Button _back = null!;
-    private Label _score = null!, _best = null!, _combo = null!;
+    private Label _score = null!, _best = null!, _combo = null!, _streak = null!;
     private Label _holdLabel = null!;
     private Control _overlay = null!;
-    private Label _overScore = null!;
+    private Label _overScore = null!, _overBest = null!, _overStreak = null!, _overBadge = null!;
     private Control? _coach;               // first-run "how this game works" card
+
+    // Run bookkeeping for the game-over card. The engine owns Streak (it resets on a placement
+    // that clears nothing); the view only remembers the run's high-water mark and whether this
+    // run beat the stored best, so a finished run finally says something about itself.
+    private int _runBestStreak;
+    private bool _newBest;
 
     // 44pt on the 720×1280 design canvas (1 design px ≈ 0.52pt on an iPhone SE3). Layout
     // carves a strip of this height off the BOTTOM of the tray band for the exit button:
@@ -43,6 +50,11 @@ public partial class BlockFitController : Node2D
     // nothing (verified — _trayCell stays width-bound at every portrait aspect) and buys a
     // thumb-reachable exit.
     private const float TouchTarget = 84f;
+
+    // Height of the "HOLD" caption band at the top of the reserve slot. 26 = the 18px caption at
+    // this font's ≈1.40× line height (25.2px ink) plus a hair — the piece origin and the label
+    // box both derive from it so the caption can never sit on the parked piece.
+    private const float HoldCaptionH = 26f;
 
     // Geometry (recomputed in Layout).
     private float _cell, _trayCell, _holdCell;
@@ -71,11 +83,19 @@ public partial class BlockFitController : Node2D
     // material shimmer/breathe. The bands above are informational (always on); everything
     // the engine spawns is pure juice, gated off under reduced motion.
     private readonly BurstEngine _burst = new();
-    private AdditiveFxLayer _fxAdd = null!;
+    private AdditiveFxLayer _fxAdd = null!;      // glow ON TOP of the board (sparks, rings, bleach)
+    private AdditiveFxLayer _fxAddUnder = null!; // glowing DEBRIS, under the cells (see BoardUnderLayer)
+    private BoardUnderLayer _under = null!;      // board panel + normal-alpha debris, under the cells
     private float _shimmer;
     // Pre-clear cell colours (key = r*Size+c) captured before TryPlace so Shards fly in
     // the exact hues that shattered.
     private readonly System.Collections.Generic.Dictionary<int, PieceType> _shardColors = new();
+    // The exact cell set a clear popped (deduped where a row and a column cross), plus the
+    // centre of the piece that caused it. Both feed the FX pass: the reduced-motion fade needs
+    // the cells, the debris blast core needs the strike point.
+    private readonly System.Collections.Generic.List<(int R, int C)> _clearCells = new();
+    private readonly bool[] _clearMark = new bool[BlockFitGame.Size * BlockFitGame.Size];
+    private Vector2 _strike;
 
     // The equipped burst-FX artifact — the cosmetic line-clear style, read from the save on entry.
     private BurstArtifact _artifact;
@@ -130,11 +150,23 @@ public partial class BlockFitController : Node2D
         _combo.AddThemeColorOverride("font_color", Palette.AccentGold);
         _uiHost.AddChild(_combo);
 
+        // Streak read-out: the engine has scored consecutive clearing placements since day one
+        // (BlockFitGame.Streak, worth 5×(Streak-1) points) and never showed it. Accent cyan, not
+        // gold — gold is reserved for records/daily, and the value is spelled out ("×3") so the
+        // information never rides on hue alone.
+        _streak = new Label { HorizontalAlignment = HorizontalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore, Visible = false };
+        _streak.AddThemeFontSizeOverride("font_size", 16);
+        _streak.AddThemeColorOverride("font_color", Palette.Accent);
+        _uiHost.AddChild(_streak);
+
         // "HOLD" caption over the reserve slot (positioned in Layout). Drawn on _uiHost so it
         // sits above the slot panel painted in _Draw.
+        // 18, not the old 15: this caption is the ONLY thing naming the reserve slot, and 15 on
+        // the design canvas is ~8pt on a phone. Accent (not TextSecondary) marks it as an
+        // interactive target rather than decoration.
         _holdLabel = new Label { Text = Loc.T("HOLD"), HorizontalAlignment = HorizontalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore };
-        _holdLabel.AddThemeFontSizeOverride("font_size", 15);
-        _holdLabel.AddThemeColorOverride("font_color", Palette.TextSecondary);
+        _holdLabel.AddThemeFontSizeOverride("font_size", 18);
+        _holdLabel.AddThemeColorOverride("font_color", new Color(Palette.Accent.R, Palette.Accent.G, Palette.Accent.B, 0.75f));
         _uiHost.AddChild(_holdLabel);
 
         // Exit button. It used to live in the top-LEFT corner — the single hardest spot to
@@ -148,17 +180,46 @@ public partial class BlockFitController : Node2D
         _best.Text = Loc.T("BEST {0}", CurrentBest());
         _artifact = BurstArtifacts.FromId(Bootstrap.Instance.Save.EquippedArtifactId);
 
-        // Additive glow surface for the burst FX. A Node2D (NOT CanvasLayer — that would drop
-        // modulate and break crossfades); drawn UNDER _uiHost so the score/back button stay on top.
-        _fxAdd = new AdditiveFxLayer(_burst, () => _cell, () => new Rect2(Vector2.Zero, Bootstrap.Instance.SafeCanvasSize))
+        // ---- Draw stack ---------------------------------------------------------------
+        // A CanvasItem always paints ITSELF before its children, so anything that must sit
+        // BELOW this node's own _Draw (the board cells) has to be a separate canvas item at a
+        // lower z. Relative z-indices do that; the node itself is lifted to 2 first so the
+        // under-layers land on 1 — strictly above the shared Background at 0, never negative.
+        // (SceneRouter frees the old screen before adding the new one, so this stack never
+        // has another screen interleaved in it.)
+        //
+        //   z1  _under        board panel + normal-alpha debris
+        //   z1  _fxAddUnder   glowing (additive) debris — the VAPOR TUBE half
+        //   z2  this._Draw    cells, clear bands, tray, hint, previews, piece in hand
+        //   z2  _fxAdd        sparks/rings/screen bleach (debris excluded — drawn below)
+        //   z2  _uiHost       score, streak, HOLD caption, exit button, overlays
+        ZIndex = 2;
+        _under = new BoardUnderLayer(DrawUnder) { Position = Vector2.Zero, ZIndex = -1 };
+        AddChild(_under);
+        MoveChild(_under, 0);
+
+        // Additive glow surfaces. Node2D (NOT CanvasLayer — that would drop modulate and break
+        // crossfades). The debris half rides the under-layer; everything else stays above the
+        // board but below _uiHost so the score/back button are never washed out.
+        _fxAddUnder = new AdditiveFxLayer(_burst, () => _cell,
+            () => new Rect2(Vector2.Zero, Bootstrap.Instance.SafeCanvasSize), AdditiveFxLayer.Pass.DebrisOnly)
+        {
+            Position = Vector2.Zero,
+            ZIndex = -1,
+        };
+        AddChild(_fxAddUnder);
+        MoveChild(_fxAddUnder, 1);
+
+        _fxAdd = new AdditiveFxLayer(_burst, () => _cell,
+            () => new Rect2(Vector2.Zero, Bootstrap.Instance.SafeCanvasSize), AdditiveFxLayer.Pass.NoDebris)
         {
             Position = Vector2.Zero,
         };
         AddChild(_fxAdd);
-        MoveChild(_fxAdd, 0);   // draw before _uiHost (glow under UI)
+        MoveChild(_fxAdd, 2);   // draw before _uiHost (glow under UI)
 
-        // First run only — added last so it sits above everything in _uiHost.
-        if (!Bootstrap.Instance.Save.BlockFitIntroSeen) BuildCoachCard();
+        // First run — added last so it sits above everything in _uiHost.
+        if (!CoachSeen) BuildCoachCard();
 
         GetViewport().SizeChanged += Layout;
         Layout();
@@ -201,8 +262,11 @@ public partial class BlockFitController : Node2D
             Texture = TextureFactory.Circle(96, new Color(Palette.Accent.R, Palette.Accent.G, Palette.Accent.B, 0.28f),
                                                 new Color(Palette.Accent.R, Palette.Accent.G, Palette.Accent.B, 0.9f), 2f) });
         b.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
-        // 28 keeps the button's own minimum size at exactly 84×84 (this UI font reports a
-        // 3× line height), so the round stylebox stays a circle instead of stretching.
+        // CustomMinimumSize already pins 84×84; 28 keeps the glyph's own measured height well
+        // under that floor (this UI font reports ≈1.40× line height → ≈39px), so the button
+        // never grows past its minimum and the round stylebox stays a circle instead of
+        // stretching. (The old note here claimed a 3× line height — it was wrong, and the
+        // layout comments downstream inherited the error.)
         b.AddThemeFontSizeOverride("font_size", 28);
         b.AddThemeColorOverride("font_color", Palette.TextPrimary);
         Motion.BindButtonFeel(b);
@@ -242,10 +306,10 @@ public partial class BlockFitController : Node2D
         _trayCell = Mathf.Floor(Mathf.Min(_cell * 0.55f, Mathf.Min(slotW * 0.9f / 5f, trayH / 3.4f)));
         for (int i = 0; i < 3; i++)
             _traySlot[i] = new Rect2(holdW + i * slotW, trayTop, slotW, trayH);
-        // The held piece can be up to 5×5; leave ~22px at the slot top for the "HOLD" caption.
-        _holdCell = Mathf.Floor(Mathf.Max(6f, Mathf.Min(_trayCell, Mathf.Min((holdW - 10f) / 5f, (trayH - 24f) / 5f))));
+        // The held piece can be up to 5×5; leave the caption band (HoldCaptionH) at the slot top.
+        _holdCell = Mathf.Floor(Mathf.Max(6f, Mathf.Min(_trayCell, Mathf.Min((holdW - 10f) / 5f, (trayH - HoldCaptionH - 4f) / 5f))));
         _holdLabel.Position = new Vector2(_holdSlot.Position.X, _holdSlot.Position.Y + 2f);
-        _holdLabel.Size = new Vector2(_holdSlot.Size.X, 20f);
+        _holdLabel.Size = new Vector2(_holdSlot.Size.X, HoldCaptionH - 4f);
 
         // Header row: score (left) and best (right), vertically centred in the header band.
         // The exit button no longer shares this row — it moved to the bottom strip — so the
@@ -253,16 +317,39 @@ public partial class BlockFitController : Node2D
         float pad = Mathf.Max(12f, safe.X * 0.035f);
         _score.Position = new Vector2(pad, 0f); _score.Size = new Vector2(Mathf.Max(40f, safe.X * 0.5f - pad), headerH);
         _best.Position = new Vector2(safe.X * 0.5f, 0f); _best.Size = new Vector2(safe.X * 0.5f - pad, headerH);
-        _combo.Position = new Vector2(0, headerH); _combo.Size = new Vector2(safe.X, 40);
+        // COMBO used to start AT headerH and run 40px down, which put it 16px over the board's
+        // top row (measured: header 115.2 + 40 vs board top 140.8 on a 720×1280 canvas — the old
+        // "3× line height" note was wrong). It now hangs from the BOTTOM of the header band, so
+        // it lands in the empty strip between the two read-outs instead of on the playfield. It
+        // stays full width and centred: score is left-aligned and best right-aligned, so a
+        // centred pop can never collide with either.
+        const float comboH = 42f;
+        _combo.Position = new Vector2(0, Mathf.Max(0f, headerH - comboH)); _combo.Size = new Vector2(safe.X, comboH);
+        // Streak sits in the gap between the header and the board — never over a cell.
+        float gap = Mathf.Max(0f, _boardOrigin.Y - headerH);
+        float streakH = Mathf.Clamp(gap - 6f, 12f, 22f);
+        _streak.Position = new Vector2(0f, _boardOrigin.Y - 3f - streakH);
+        _streak.Size = new Vector2(safe.X, streakH);
 
         // Exit: bottom-left of the carved strip, clear of the tray band above it.
         _back.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.TopLeft);
         _back.Size = new Vector2(exitW, exitH);
         _back.Position = new Vector2(pad, safe.Y - exitH - 6f);
 
+        // Arm the debris play box. Nobody armed it before, so the field fell back to its
+        // conservative derived box — walls hugging the board and a floor 6px under the board's
+        // bottom lip — which meant every chunk bounced INSIDE the playfield and settled on the
+        // last row, exactly on top of the cells the player is reading. Here the walls are the
+        // whole canvas (chunks leave the board sideways) and the shelf is the empty gap between
+        // the board and the tray, so settled debris covers neither a board cell nor a drag
+        // target. Re-armed on every layout because it is pure geometry.
+        _burst.SetDebrisBounds(
+            new Rect2(0f, _boardOrigin.Y - _cell, safe.X, Mathf.Max(1f, trayTop - (_boardOrigin.Y - _cell))),
+            trayTop - 4f);
+
         if (GodotObject.IsInstanceValid(_overlay)) { _overlay.Position = Vector2.Zero; _overlay.Size = safe; }
         if (_coach is not null && GodotObject.IsInstanceValid(_coach)) { _coach.Position = Vector2.Zero; _coach.Size = safe; }
-        QueueRedraw();
+        RedrawAll();
     }
 
     public override void _Process(double delta)
@@ -275,6 +362,11 @@ public partial class BlockFitController : Node2D
         }
         else _combo.Text = "";
 
+        // Streak only earns screen space once it is actually paying (the bonus starts at 2).
+        bool showStreak = _game.Streak >= 2;
+        if (showStreak) _streak.Text = Loc.T("STREAK ×{0}", _game.Streak);
+        _streak.Visible = showStreak;
+
         float dt = (float)delta;
         for (int i = _bands.Count - 1; i >= 0; i--)
         {
@@ -286,7 +378,7 @@ public partial class BlockFitController : Node2D
 
         // While the first-run card is up the run is on hold: no idle-hint countdown and no
         // Descent garbage, so reading it can't cost the player anything.
-        if (_coach is not null && GodotObject.IsInstanceValid(_coach)) { QueueRedraw(); _fxAdd.QueueRedraw(); return; }
+        if (_coach is not null && GodotObject.IsInstanceValid(_coach)) { RedrawAll(); return; }
 
         // Idle hint timer: only advances while the run is live and nothing is being dragged.
         if (!_game.GameOver && _dragIndex == -1)
@@ -311,8 +403,17 @@ public partial class BlockFitController : Node2D
                 if (_game.GameOver) ShowGameOver();
             }
         }
+        RedrawAll();
+    }
+
+    /// <summary>Redraw every canvas item in the stack — the three FX/board layers all read the
+    /// same particle lists, so they must be invalidated together or the glow lags the bodies.</summary>
+    private void RedrawAll()
+    {
         QueueRedraw();
-        _fxAdd.QueueRedraw();           // additive glow surface tracks the same particle lists
+        _under.QueueRedraw();
+        _fxAddUnder.QueueRedraw();
+        _fxAdd.QueueRedraw();
     }
 
     // ---- Input: grab a tray piece, drag it (floating above the finger), release to place ----
@@ -363,24 +464,64 @@ public partial class BlockFitController : Node2D
         }
     }
 
+    /// <summary>
+    /// PICKING UP IS WIDE; DROPPING IS PRECISE. The asymmetry is the design, not an oversight.
+    ///
+    /// Picking up has NO ambiguity to resolve: the four slots partition the tray band, each
+    /// holds at most one piece, and there is nothing else down there to hit — so a generous
+    /// judgement costs literally nothing and there is no second interpretation it could steal.
+    /// Dropping is the opposite: a release over a tray piece means FUSE, a release two pixels
+    /// away means "nothing happened", and that call has to be made from the piece's real cells
+    /// (see <see cref="MergeReach"/>). The complaint that started this was "it fuses when I only
+    /// brush it" — a complaint about the DROP.
+    ///
+    /// A shared rect was tried and reverted: it shrank the pick-up target to the piece's own
+    /// silhouette, which on the versus board (a 25px tray cell) is a 50×50px = 26pt = 4.1mm
+    /// patch you must hit under time pressure. The "hand learns the wide slot, then gets
+    /// betrayed on the drop" worry is real, but it is a job for the HIGHLIGHT — the merge rect
+    /// is already outlined exactly as the hit test computes it (<see cref="DrawMergeTarget"/>) —
+    /// not a reason to cripple the grab.
+    /// </summary>
     private void Grab(int id, Vector2 pos)
     {
         if (_game.GameOver || _dragIndex != -1) return;
-        ResetIdle();
-        // Reserve slot: grab the parked piece to place it back on the board.
-        if (_game.Held is not null && _holdSlot.HasPoint(pos))
+        // Reserve slot: grab the parked piece to place it back on the board. Whole rect, same
+        // as on the way in (stash), so hold is symmetric in both directions.
+        bool inBand = _holdSlot.HasPoint(pos);
+        if (_game.Held is not null && inBand)
         {
             _dragIndex = HoldSlot; _touchId = id; _finger = pos;
+            // Sweep settled debris so nothing shares the screen with the piece in hand. The
+            // tray branch has always done this; the hold branch silently didn't.
+            _burst.Debris.ClearResting();
+            ResetIdle();
             QueueRedraw();
             return;
         }
-        for (int i = 0; i < 3; i++)
-            if (_game.Tray[i] is not null && _traySlot[i].HasPoint(pos))
+        if (_trayCell > 0f)
+            for (int i = 0; i < 3; i++)
             {
+                if (!_traySlot[i].HasPoint(pos)) continue;
+                inBand = true;
+                if (_game.Tray[i] is null) break;      // slots don't overlap — no other can match
                 _dragIndex = i; _touchId = id; _finger = pos;
+                _burst.Debris.ClearResting();
+                // Only a SUCCESSFUL grab retires the idle hint. Resetting it up front meant a
+                // fumbled grab wiped the merge outlines and the "put it here" pulse — deleting
+                // the one on-screen clue about where the targets are at the exact moment the
+                // player just proved they needed it.
+                ResetIdle();
                 QueueRedraw();
                 return;
             }
+
+        // A press that landed in the tray band and picked up nothing was AIMED at a piece (there
+        // is nothing else down there) and found an empty slot. Say so with the same "nothing
+        // happened" click a rejected drop uses: silence here is indistinguishable from a frozen
+        // app, which is exactly what a missed grab used to look like. Presses OUTSIDE the band
+        // stay silent on purpose — a tap on the board or the header is not a failed grab, and
+        // clicking at every stray touch would train the player to ignore the cue.
+        if (inBand) Bootstrap.Instance.Audio.PlaySfx("move");
     }
 
     /// <summary>The piece currently being dragged (a tray piece, the held piece, or null).</summary>
@@ -402,9 +543,20 @@ public partial class BlockFitController : Node2D
         // Dragging the parked piece: place it on the board (or drop it back on hold to cancel).
         if (idx == HoldSlot) { ReleaseHeld(pos); QueueRedraw(); return; }
 
+        // Reaching the board's BOTTOM ROW necessarily puts the finger ~0.6 cell below the board,
+        // which is inside the top of the reserve slot's column. The whole-rect stash test used to
+        // win there, so aiming at the bottom-left corner silently stashed instead. A verified
+        // board aim (a real target the piece actually fits) now outranks the wide slot guess —
+        // same principle as TargetCell: precise intent beats a rectangle's benefit of the doubt.
+        var trayPiece = _game.Tray[idx];
+        int gr = 0, gc = 0;
+        bool boardOk = trayPiece is not null
+                       && TargetCell(trayPiece, pos, out gr, out gc)
+                       && _game.CanPlace(trayPiece, gr, gc);
+
         // Stash intent: released over the reserve slot → park this tray piece in hold (swaps if
         // the slot is already occupied). Checked before merge/placement so it always wins here.
-        if (_holdSlot.HasPoint(pos) && _game.Tray[idx] is not null)
+        if (!boardOk && _holdSlot.HasPoint(pos) && trayPiece is not null)
         {
             if (_game.TryHold(idx))
             {
@@ -431,24 +583,25 @@ public partial class BlockFitController : Node2D
             return;
         }
 
-        var piece = _game.Tray[idx];
-        if (piece is not null && TargetCell(piece, pos, out int gr, out int gc) && _game.CanPlace(piece, gr, gc))
-            CommitPlacement(piece, gr, gc, fromHold: false, trayIdx: idx);
+        // Board placement, or — for every other release, including anywhere in the tray band —
+        // nothing at all but the snap-back cue. "Nothing happened" is the correct default for an
+        // ambiguous gesture; the piece stays in its slot and the player simply tries again.
+        if (boardOk && trayPiece is not null)
+            CommitPlacement(trayPiece, gr, gc, fromHold: false, trayIdx: idx);
         else
             Bootstrap.Instance.Audio.PlaySfx("move"); // snap-back cue
         QueueRedraw();
     }
 
     /// <summary>Release path for the parked (held) piece: place it on the board, or cancel (snap
-    /// back into hold) if it was dropped over the reserve slot again.</summary>
+    /// back into hold) if it was dropped anywhere that isn't a legal board target.</summary>
     private void ReleaseHeld(Vector2 pos)
     {
-        if (_holdSlot.HasPoint(pos)) { Bootstrap.Instance.Audio.PlaySfx("move"); return; }
         var piece = _game.Held;
         if (piece is not null && TargetCell(piece, pos, out int gr, out int gc) && _game.CanPlace(piece, gr, gc))
             CommitPlacement(piece, gr, gc, fromHold: true, trayIdx: -1);
         else
-            Bootstrap.Instance.Audio.PlaySfx("move");
+            Bootstrap.Instance.Audio.PlaySfx("move");   // back into hold, untouched
     }
 
     /// <summary>Commit a legal drop (from a tray slot or the hold slot): snapshot the lines it
@@ -458,8 +611,13 @@ public partial class BlockFitController : Node2D
     {
         _game.LinesClearedBy(piece, gr, gc, _pvRows, _pvCols);
         CaptureShardColors(piece, gr, gc);   // snapshot popped hues before the placement clears them
+        // Where the blow landed: the centre of the piece just placed. Debris blasts outward from
+        // here instead of from the middle of the line, so a corner placement reads as a corner hit.
+        _strike = _boardOrigin + new Vector2((gc + piece.Width * 0.5f) * _cell, (gr + piece.Height * 0.5f) * _cell);
         if (fromHold) _game.TryPlaceHeld(gr, gc); else _game.TryPlace(trayIdx, gr, gc);
-        Bootstrap.Instance.Audio.PlaySfx("lock");
+        // The material axis finally speaks: wood locks low, a glass tube locks high. One cached
+        // waveform, PitchScale only — the synth and its render path stay untouched.
+        Bootstrap.Instance.Audio.PlaySfx("lock", AudioManager.MaterialPitch(Palette.EquippedMaterial));
         if (_game.LastClearedRows + _game.LastClearedCols > 0)
         {
             Bootstrap.Instance.Audio.PlaySfx(_game.LastClearedRows + _game.LastClearedCols >= 2 ? "combo" : "line_clear");
@@ -468,34 +626,109 @@ public partial class BlockFitController : Node2D
             _comboFlash = 0.9f;
             SpawnClearFx();
         }
+        if (_runBestStreak < _game.Streak) _runBestStreak = _game.Streak;
         if (_game.Score > CurrentBest())
         {
             SubmitBest(_game.Score);
+            _newBest = true;
             _best.Text = Loc.T("BEST {0}", _game.Score);
         }
         if (_game.GameOver) ShowGameOver();
     }
 
-    /// <summary>Grid origin the dragged piece snaps to — computed so the piece floats
-    /// centred ABOVE the finger (fingertip never hides it).</summary>
+    /// <summary>
+    /// Grid origin the dragged piece snaps to — computed so the piece floats centred ABOVE the
+    /// finger (fingertip never hides it). Returns FALSE when the finger is not actually pointing
+    /// at the board, in which case a release must do NOTHING.
+    ///
+    /// The old version clamped the raw origin into range and returned true unconditionally. Once
+    /// the merge test tightened to the destination piece's real cells, most of the tray band
+    /// stopped claiming a release — and every one of those releases fell through to here, got
+    /// clamped, and force-placed the piece at the clamped edge, which for a finger below the
+    /// board always means the LAST ROW. Missing a fuse by 10px silently dumped the piece in the
+    /// worst legal square on the board. An ambiguous gesture must default to no-op, never to the
+    /// most destructive legal action.
+    ///
+    /// Rounding supplies the forgiveness: a target is accepted while the lifted origin is within
+    /// half a cell of a legal grid origin, so every row and column stays reachable — including
+    /// the bottom row, whose finger position necessarily sits ~0.6 cell BELOW the board — and
+    /// one more half cell out is a clean, harmless miss.
+    /// </summary>
     private bool TargetCell(BlockPiece p, Vector2 finger, out int gr, out int gc)
     {
+        gr = 0; gc = 0;
+        if (_cell <= 0f) return false;
         float lift = _cell * 0.6f;
         var topLeft = new Vector2(finger.X - p.Width * _cell / 2f, finger.Y - lift - p.Height * _cell);
         gc = Mathf.RoundToInt((topLeft.X - _boardOrigin.X) / _cell);
         gr = Mathf.RoundToInt((topLeft.Y - _boardOrigin.Y) / _cell);
-        gc = Mathf.Clamp(gc, 0, BlockFitGame.Size - p.Width);
-        gr = Mathf.Clamp(gr, 0, BlockFitGame.Size - p.Height);
-        return true;
+        int maxC = BlockFitGame.Size - p.Width, maxR = BlockFitGame.Size - p.Height;
+        bool on = gc >= 0 && gr >= 0 && gc <= maxC && gr <= maxR;
+        gc = Mathf.Clamp(gc, 0, maxC);
+        gr = Mathf.Clamp(gr, 0, maxR);
+        return on;
     }
 
-    /// <summary>The occupied tray slot the finger is over — other than the dragged one — or
-    /// -1. When ≥0 a release fuses the pieces (merge) instead of placing on the board.</summary>
+    /// <summary>
+    /// Reach around the destination piece's silhouette in the MERGE hit test, in tray cells.
+    /// (Grabbing does not use this — see <see cref="Grab"/> for why the two are asymmetric.)
+    ///
+    /// The rect is the piece's bounding box grown by this reach and then CLIPPED TO ITS OWN SLOT.
+    /// The slots partition the tray band, so two neighbours claiming the same point is
+    /// structurally impossible rather than arithmetically lucky — that is what lets the reach be
+    /// this generous at all (the previous ceiling was 0.28 cells). With a missed drop now
+    /// harmless (see <see cref="TargetCell"/>), half a cell is set for the HAND.
+    ///
+    /// THE MEASUREMENT, done properly. The design canvas is 720×1280; on an iPhone SE3 (375×667pt)
+    /// the fit scale is min(375/720, 667/1280) ≈ 0.521, so 1 design px ≈ 0.521 pt. An iOS point is
+    /// 1/163 inch = 0.1558 mm — NOT 1/72 inch. (An earlier version of this comment divided by 72
+    /// and claimed 12mm; every physical figure it quoted was 2.2× too large.)
+    ///
+    ///   solo tray cell 33px → 1×1 merge target 66×66px = 34.4pt = 5.4mm
+    ///   versus tray cell 25px → 1×1 merge target 50×50px = 26.0pt = 4.1mm
+    ///   under the old 0.28 ceiling the same targets were: solo 51.5px = 26.8pt = 4.2mm,
+    ///     versus 39.0px = 20.3pt = 3.2mm — and with no reach at all (a bare per-cell test)
+    ///     simply the tray cell itself: solo 33px = 17.2pt = 2.7mm, versus 25px = 13.0pt = 2.0mm.
+    ///     (An earlier draft of this list quoted one "44.9px = 23.4pt = 3.6mm" for the pre-reach
+    ///     case. The pt/mm conversion in it was right but the pixel figure reproduces from no
+    ///     layout here — it is neither board's cell nor either board's 0.28 rect — so it has been
+    ///     replaced by the per-board arithmetic above. Both boards, always: this screen and the
+    ///     duel have different cells and a single number can only mislead about one of them.)
+    ///   platform minimum 44pt = 6.9mm · this file's <see cref="TouchTarget"/> 84px = 43.8pt = 6.8mm
+    ///
+    /// So state it plainly: THE MERGE TARGET IS BELOW THE PLATFORM MINIMUM — 78% of 44pt on the
+    /// solo board and 59% on the versus board. It is deliberate for three reasons, and only
+    /// because all three hold: (1) missing is free — a release that hits no merge rect and no
+    /// legal board cell does nothing at all, so the cost of a miss is one repeated gesture, not a
+    /// ruined board; (2) the player explicitly asked for a fuse that stops firing on a brush, and
+    /// precision is the thing they asked for; (3) the accepted rect is not invisible — it is
+    /// outlined on screen from this exact geometry (<see cref="DrawMergeTarget"/>) and magnified
+    /// while aiming (<see cref="MergeLoupe"/> — on BOTH boards now, which is what lets the duel's
+    /// smaller rect stand), so the target is aimed at, not guessed.
+    /// If any of those three stops being true, this constant is wrong.
+    /// </summary>
+    private const float MergeReach = 0.5f;
+
+    /// <summary>The merge target rect of one tray piece — the single geometry source shared by the
+    /// merge hit test and the merge highlight, so what lights up is exactly what accepts a drop.
+    /// (Grabbing uses the whole slot; see <see cref="Grab"/>.)</summary>
+    private static Rect2 MergeHitRect(BlockPiece p, Vector2 origin, float cell, Rect2 slot)
+        => new Rect2(origin, new Vector2(p.Width * cell, p.Height * cell))
+            .Grow(cell * MergeReach).Intersection(slot);
+
+    /// <summary>The occupied tray slot whose PIECE the finger is over — other than the dragged
+    /// one — or -1. When ≥0 a release fuses the pieces (merge) instead of placing on the board.
+    /// Both the release path and the hover preview call this, so "it looked green" and "it
+    /// merged" can never disagree.</summary>
     private int MergeTargetSlot(Vector2 pos, int dragIdx)
     {
+        if (_trayCell <= 0f) return -1;
         for (int i = 0; i < 3; i++)
-            if (i != dragIdx && _game.Tray[i] is not null && _traySlot[i].HasPoint(pos))
+        {
+            if (i == dragIdx || _game.Tray[i] is not { } p) continue;
+            if (MergeHitRect(p, TrayPieceOrigin(p, i), _trayCell, _traySlot[i]).HasPoint(pos))
                 return i;
+        }
         return -1;
     }
 
@@ -519,8 +752,21 @@ public partial class BlockFitController : Node2D
         // captured just before the placement that completed them.
         foreach (int r in _pvRows) _bands.Add(new ClearBand { Row = true, Index = r });
         foreach (int c in _pvCols) _bands.Add(new ClearBand { Row = false, Index = c });
+        if (_cell <= 0) return;
 
-        if (Motion.Reduced || _cell <= 0) return; // the burst artifact is pure juice
+        BuildClearCells();
+        if (Motion.Reduced)
+        {
+            // Reduced motion used to return here empty-handed: the accessibility setting cost the
+            // player the entire "these cells, in these colours, popped" signal and left only the
+            // two band strips. The calm substitute exists — a 140ms flat fade in place, no travel,
+            // no spin, no shadow — and this is its one caller.
+            _burst.Debris.EmitReducedFade(_clearCells, _boardOrigin, _cell, PreClearColor);
+            return;
+        }
+
+        // Blast core biased to the placement, not to the middle of the line.
+        _burst.Debris.SetStrike(_strike);
 
         // Scale counts down on big combos so a huge clear can't flood the particle pool.
         int lines = _pvRows.Count + _pvCols.Count;
@@ -567,10 +813,47 @@ public partial class BlockFitController : Node2D
         foreach (int c in _pvCols) for (int r = 0; r < n; r++) Snapshot(r, c);
     }
 
+    /// <summary>The exact cell set a clear popped, deduped where a row and a column cross. Feeds
+    /// the reduced-motion fade; the mark array keeps it allocation-free.</summary>
+    private void BuildClearCells()
+    {
+        const int n = BlockFitGame.Size;
+        _clearCells.Clear();
+        Array.Clear(_clearMark, 0, _clearMark.Length);
+        foreach (int r in _pvRows)
+            for (int c = 0; c < n; c++)
+                if (!_clearMark[r * n + c]) { _clearMark[r * n + c] = true; _clearCells.Add((r, c)); }
+        foreach (int c in _pvCols)
+            for (int r = 0; r < n; r++)
+                if (!_clearMark[r * n + c]) { _clearMark[r * n + c] = true; _clearCells.Add((r, c)); }
+    }
+
+    /// <summary>
+    /// The colour a popped cell was actually WEARING. This must go through
+    /// <see cref="Palette.FitFill"/> with the same cellPhase the board draw uses (row+col), not
+    /// through <see cref="Palette.ForPiece"/>: FitFill is where the equipped skin's ColorPlan
+    /// lives, so the raw-hue version made a Mono skin like SUMI ("ONE INK") explode in seven
+    /// colours it never shows on the board. The debris and the sparks now shatter in the board's
+    /// own palette, whatever plan is equipped.
+    /// </summary>
     private Color PreClearColor(int r, int c)
-        => Palette.ForPiece(_shardColors.TryGetValue(r * BlockFitGame.Size + c, out var t) ? t : PieceType.Garbage);
+        => Palette.FitFill(_shardColors.TryGetValue(r * BlockFitGame.Size + c, out var t) ? t : PieceType.Garbage,
+                           r + c);
 
     // ---- Render ----
+
+    /// <summary>The under-board layer (z1): the panel, then the normal-alpha chunk pass. Debris
+    /// lives behind the glass — chunks read through the empty cells they came from and can never
+    /// hide a filled one, the clear preview, or the piece in the player's hand. Its glowing twin
+    /// is drawn by <c>_fxAddUnder</c>, which sits immediately above this and below the cells.</summary>
+    private void DrawUnder(CanvasItem ci)
+    {
+        if (_cell <= 0) return;
+        float boardPx = _cell * BlockFitGame.Size;
+        ci.DrawRect(new Rect2(_boardOrigin - new Vector2(6, 6), new Vector2(boardPx + 12, boardPx + 12)),
+                    new Color(0.05f, 0.06f, 0.11f, 0.85f), filled: true);
+        _burst.DrawDebrisNormal(ci);
+    }
 
     public override void _Draw()
     {
@@ -581,9 +864,22 @@ public partial class BlockFitController : Node2D
         var mat = Palette.EquippedMaterial;                     // the equipped skin's finish
         bool reduced = Motion.Reduced;
 
-        // Board panel + empty grid cells.
-        DrawRect(new Rect2(_boardOrigin - new Vector2(6, 6), new Vector2(boardPx + 12, boardPx + 12)),
-                 new Color(0.05f, 0.06f, 0.11f, 0.85f), filled: true);
+        // ---------------------------------------------------------------------------------
+        // Z-ORDER CONTRACT (bottom → top). Everything the player needs in order to choose the
+        // NEXT move outranks everything that celebrates the LAST one:
+        //   panel → debris → cells → clear bands → particles → tray/hold → hint → merge preview
+        //   → piece in hand + clear preview.
+        // Debris in particular is the heaviest, longest-lived, most opaque thing the FX engine
+        // makes; letting BurstEngine.DrawNormal emit it last (its default) put rigid chunks over
+        // the board cells, over the green clear preview and over the piece being dragged.
+        // The first two rows of that list live on _under / _fxAddUnder (see _Ready): the panel
+        // and BOTH debris passes — the additive one included, or the promise would hold for
+        // eight materials and quietly break on the ninth.
+        // ---------------------------------------------------------------------------------
+
+        // Grid cells. Filled cells ride the shock wave the clear emitted — the board itself
+        // recoils. BoardShock returns false when nothing is displacing (and ALWAYS under reduced
+        // motion), so the common frame costs one early-out per cell and zero extra draws.
         for (int r = 0; r < BlockFitGame.Size; r++)
             for (int c = 0; c < BlockFitGame.Size; c++)
             {
@@ -591,14 +887,47 @@ public partial class BlockFitController : Node2D
                                          new Vector2(_cell - 2, _cell - 2));
                 var t = _game.At(r, c);
                 if (t == PieceType.Empty)
+                {
                     DrawRect(cellRect, new Color(1, 1, 1, 0.045f), filled: false, width: 1f);
-                else
-                    BlockRender.DrawCell(this, cellRect, _cell, t, 1f, mat, glyph, _shimmer, r + c, reduced: reduced);
+                    continue;
+                }
+                if (_burst.BoardShock(cellRect.GetCenter(), out var sdir, out var samp))
+                    cellRect.Position += sdir * (samp * _cell * 0.18f);
+                BlockRender.DrawCell(this, cellRect, _cell, t, 1f, mat, glyph, _shimmer, r + c, reduced: reduced);
             }
 
+        // Line-clear celebration over the cells, but UNDER everything interactive.
+        foreach (var b in _bands)
+        {
+            float bt = b.Age / ClearBandLife;               // 0 → 1
+            float ba = (1f - bt) * (1f - bt);               // ease-out fade
+            float thick = _cell * (1f + 0.5f * (1f - bt));  // swell then settle
+            var bcol = new Color(1f, 1f, 1f, ba).Lerp(new Color(1f, 0.82f, 0.2f, ba), bt);
+            if (b.Row)
+                DrawRect(new Rect2(_boardOrigin.X, _boardOrigin.Y + (b.Index + 0.5f) * _cell - thick / 2f, boardPx, thick), bcol, filled: true);
+            else
+                DrawRect(new Rect2(_boardOrigin.X + (b.Index + 0.5f) * _cell - thick / 2f, _boardOrigin.Y, thick, boardPx), bcol, filled: true);
+        }
+        // Particle bodies (paper/glass) + Supernova vignette; debris was already drawn under the
+        // cells above, and the glow half lives on _fxAdd.
+        _burst.DrawNormal(this, _cell, new Rect2(Vector2.Zero, Bootstrap.Instance.SafeCanvasSize), includeDebris: false);
+
+        // The drag verdict, resolved ONCE and reused by every preview below, so the highlights and
+        // the release path can never tell different stories.
+        var dragged = DraggedPiece();
+        int dgr = 0, dgc = 0;
+        bool dragOnBoard = false, dragOk = false;
+        if (dragged is { } dpv)
+        {
+            dragOnBoard = TargetCell(dpv, _finger, out dgr, out dgc);
+            dragOk = dragOnBoard && _game.CanPlace(dpv, dgr, dgc);
+        }
+
         // Reserve (HOLD) slot: panel + parked piece. Highlights green when a tray piece is being
-        // dragged over it (stash target). Only a tray drag (not the held piece itself) can stash.
-        bool stashHover = _dragIndex is >= 0 and < 3 && _holdSlot.HasPoint(_finger);
+        // dragged over it (stash target). Only a tray drag (not the held piece itself) can stash,
+        // and a verified board aim outranks it (see Release) — otherwise the highlight would
+        // promise a stash that the bottom row is about to steal.
+        bool stashHover = _dragIndex is >= 0 and < 3 && !dragOk && _holdSlot.HasPoint(_finger);
         DrawRect(_holdSlot.Grow(-3f), new Color(0.06f, 0.07f, 0.13f, 0.80f), filled: true);
         DrawRect(_holdSlot.Grow(-3f), stashHover ? new Color(0.35f, 1f, 0.6f, 0.95f) : new Color(1, 1, 1, 0.12f),
                  filled: false, width: stashHover ? 3f : 1.5f);
@@ -609,18 +938,29 @@ public partial class BlockFitController : Node2D
         // Merge only applies to tray drags, so the merge target is -1 while dragging the held piece.
         int mergeHover = _dragIndex is >= 0 and < 3 ? MergeTargetSlot(_finger, _dragIndex) : -1;
         var trayTex = TextureFactory.Cell(Mathf.Clamp((int)_trayCell, 8, 128));
+        // Merge affordance. While a tray piece is in hand it outlines every OTHER tray piece —
+        // the exact rects that accept a fuse. It ALSO comes up while the idle hint is showing:
+        // before you ever lift a piece there is nothing on screen saying "fuse" exists, and the
+        // idle moment (5s of no move — the player is scanning for options) is precisely when a
+        // second option is worth naming. It costs at most 3 rects, retires the instant anything
+        // is touched, and needs two occupied slots to mean anything.
+        bool showMergeHint = _dragIndex is >= 0 and < 3 || (_hintOn && _dragIndex == -1 && OccupiedTraySlots() >= 2);
         for (int i = 0; i < 3; i++)
         {
             var p = _game.Tray[i];
             if (p is null || i == _dragIndex || i == mergeHover) continue;
-            DrawPiece(p, TrayPieceOrigin(p, i), _trayCell, 1f, trayTex);
+            var porigin = TrayPieceOrigin(p, i);
+            DrawPiece(p, porigin, _trayCell, 1f, trayTex);
+            if (showMergeHint) DrawMergeTarget(p, porigin, _traySlot[i], hot: false);
         }
 
         // Idle hint (after 5s without a move): pulse the suggested placement + its tray slot
         // so a stuck player sees exactly where a piece fits (FindHint prefers a line-clearing spot).
         if (_hintOn && _dragIndex == -1 && _hintIdx >= 0 && _game.Tray[_hintIdx] is { } hp)
         {
-            float pulse = 0.5f + 0.5f * Mathf.Sin(_hintPulse * 4f);
+            // Reduced motion gets the same cue held at a steady mid-brightness — the hint is
+            // information, the throb is not.
+            float pulse = Motion.Reduced ? 0.7f : 0.5f + 0.5f * Mathf.Sin(_hintPulse * 4f);
             var horigin = _boardOrigin + new Vector2(_hintC * _cell, _hintR * _cell);
             var fill = new Color(0.25f, 1f, 0.5f, 0.16f + 0.26f * pulse);
             var edge = new Color(0.4f, 1f, 0.6f, 0.55f + 0.35f * pulse);
@@ -631,6 +971,21 @@ public partial class BlockFitController : Node2D
                 DrawRect(hc, edge, filled: false, width: 2f);
             }
             DrawRect(_traySlot[_hintIdx].Grow(-4f), edge, filled: false, width: 3f);
+
+            // If the suggested move actually CLEARS something, mark the lines it would pop with a
+            // thin gold rail. The suggestion itself stays green; the payoff is told by POSITION
+            // (which row/column lights up) rather than by hue alone, so it survives a colour-blind
+            // palette and it stops the hint from reading as "any legal square will do".
+            _game.LinesClearedBy(hp, _hintR, _hintC, _pvRows, _pvCols);
+            if (_pvRows.Count + _pvCols.Count > 0)
+            {
+                var gold = new Color(Palette.AccentGold.R, Palette.AccentGold.G, Palette.AccentGold.B, 0.30f + 0.35f * pulse);
+                float rail = Mathf.Max(3f, _cell * 0.16f);
+                foreach (int rr in _pvRows)
+                    DrawRect(new Rect2(_boardOrigin.X, _boardOrigin.Y + (rr + 0.5f) * _cell - rail / 2f, boardPx, rail), gold, filled: true);
+                foreach (int cc in _pvCols)
+                    DrawRect(new Rect2(_boardOrigin.X + (cc + 0.5f) * _cell - rail / 2f, _boardOrigin.Y, rail, boardPx), gold, filled: true);
+            }
         }
 
         // Merge preview: while dragging over another occupied tray slot, show the fused shape
@@ -644,8 +999,10 @@ public partial class BlockFitController : Node2D
             MergeOffset(mdp, mergeHover, out mergeRow, out mergeCol);
             mergeOk = _game.CanMerge(_dragIndex, mergeHover, mergeRow, mergeCol);
             var borigin = TrayPieceOrigin(mdst, mergeHover);
-            DrawRect(_traySlot[mergeHover].Grow(-4f), new Color(0.55f, 0.85f, 1f, 0.4f), filled: false, width: 2f);
             DrawPiece(mdst, borigin, _trayCell, 0.5f, trayTex);   // destination, dimmed
+            // Bright version of the same outline the other slots wear — the hit area is
+            // confirmed in place, so the player learns where the accepted zone actually is.
+            DrawMergeTarget(mdst, borigin, _traySlot[mergeHover], hot: true);
             var srcCol = mergeOk ? new Color(0.4f, 1f, 0.6f) : Palette.AccentRed;
             foreach (var (dr, dc) in mdp.Cells)
             {
@@ -659,12 +1016,15 @@ public partial class BlockFitController : Node2D
         // preview; while over the hold/merge slots those slot previews take over and the board
         // aim is suppressed — the magnifier lives on the MERGE path, where the tray cells are
         // genuinely too small to judge a cell-precise join.
-        var dragged = DraggedPiece();
         if (_dragIndex != -1 && dragged is { } dp)
         {
-            bool aimingBoard = mergeHover < 0 && !stashHover;
-            TargetCell(dp, _finger, out int gr, out int gc);   // always returns a clamped target
-            bool ok = _game.CanPlace(dp, gr, gc);
+            // "aimingBoard" now means the finger is REALLY over the board. When it is false a
+            // release does nothing at all, and the drawing says so: no footprint, no rails, no
+            // clear preview — the piece just hangs off the finger. The affordance and the
+            // outcome are the same fact, so a miss is visible before it happens.
+            int gr = dgr, gc = dgc;
+            bool aimingBoard = dragOnBoard && mergeHover < 0 && !stashHover;
+            bool ok = aimingBoard && dragOk;
             var origin = _boardOrigin + new Vector2(gc * _cell, gr * _cell);
 
             if (aimingBoard && ok)
@@ -716,31 +1076,39 @@ public partial class BlockFitController : Node2D
             // the fingertip because TargetCell derives it from a lifted origin. Down in the tray
             // (just lifted, or aiming at hold/merge) it free-floats with the finger instead.
             var lift = _cell * 0.6f;
-            bool snapped = aimingBoard && _finger.Y < _holdSlot.Position.Y;
-            var floatOrigin = snapped
+            var floatOrigin = aimingBoard
                 ? origin
                 : new Vector2(_finger.X - dp.Width * _cell / 2f, _finger.Y - lift - dp.Height * _cell);
             DrawPiece(dp, floatOrigin, _cell, aimingBoard && !ok ? 0.6f : 1f, tex);
 
-            // Merge magnifier — drawn LAST so the floating piece can never cover it.
+            // Merge magnifier — drawn LAST so the floating piece can never cover it. The drawing
+            // itself lives in the shared MergeLoupe so the duel screen shows the SAME panel.
             if (mergeHover >= 0 && _game.Tray[mergeHover] is { } mdst2)
-                DrawMergeLoupe(dp, mdst2, mergeRow, mergeCol, mergeOk);
+                MergeLoupe.Draw(this, dp, mdst2, mergeRow, mergeCol, mergeOk,
+                                Bootstrap.Instance.SafeCanvasSize, _boardOrigin.Y, _holdSlot.Position.Y,
+                                _trayCell, _shimmer);
         }
+    }
 
-        // Line-clear celebration (top layer): bright bands over cleared lines + sparks.
-        foreach (var b in _bands)
-        {
-            float t = b.Age / ClearBandLife;               // 0 → 1
-            float a = (1f - t) * (1f - t);                 // ease-out fade
-            float thick = _cell * (1f + 0.5f * (1f - t));  // swell then settle
-            var col = new Color(1f, 1f, 1f, a).Lerp(new Color(1f, 0.82f, 0.2f, a), t);
-            if (b.Row)
-                DrawRect(new Rect2(_boardOrigin.X, _boardOrigin.Y + (b.Index + 0.5f) * _cell - thick / 2f, boardPx, thick), col, filled: true);
-            else
-                DrawRect(new Rect2(_boardOrigin.X + (b.Index + 0.5f) * _cell - thick / 2f, _boardOrigin.Y, thick, boardPx), col, filled: true);
-        }
-        // Particle bodies (paper/glass) + Supernova vignette; the glow half is on _fxAdd.
-        _burst.DrawNormal(this, _cell, new Rect2(Vector2.Zero, Bootstrap.Instance.SafeCanvasSize));
+    private int OccupiedTraySlots()
+    {
+        int n = 0;
+        for (int i = 0; i < 3; i++) if (_game.Tray[i] is not null) n++;
+        return n;
+    }
+
+    /// <summary>Outlines the rect that actually accepts a merge drop — the very rect the hit test
+    /// and the grab test use. Dim + thin while the finger is elsewhere (an affordance), bright +
+    /// thick while it is over it (a confirmation) — the state reads from line weight as much as
+    /// from hue, so it survives a colour-blind palette. Static (no pulse), so no Motion.Reduced
+    /// gate is owed.</summary>
+    private void DrawMergeTarget(BlockPiece p, Vector2 origin, Rect2 slot, bool hot)
+    {
+        if (_trayCell <= 0f) return;
+        var col = hot
+            ? new Color(0.4f, 1f, 0.6f, 0.95f)
+            : new Color(Palette.Accent.R, Palette.Accent.G, Palette.Accent.B, 0.34f);
+        DrawRect(MergeHitRect(p, origin, _trayCell, slot), col, filled: false, width: hot ? 3f : 1.5f);
     }
 
     private Vector2 TrayPieceOrigin(BlockPiece p, int slot)
@@ -753,72 +1121,10 @@ public partial class BlockFitController : Node2D
     /// <summary>Centre the held piece in the reserve slot, below the "HOLD" caption band.</summary>
     private Vector2 HoldPieceOrigin(BlockPiece p)
     {
-        const float labelH = 22f;
         float pw = p.Width * _holdCell, ph = p.Height * _holdCell;
         return _holdSlot.Position + new Vector2(
             (_holdSlot.Size.X - pw) / 2f,
-            labelH + (_holdSlot.Size.Y - labelH - ph) / 2f);
-    }
-
-    /// <summary>
-    /// Draw the merge magnifier: a zoomed view of the fused shape while the player drags one tray
-    /// piece over another, parked in the empty band just ABOVE the tray so the dragging hand never
-    /// covers it. This is where zoom actually earns its keep — a tray cell is at most 0.55× a board
-    /// cell, far too small to judge a cell-precise join, whereas board placement is already
-    /// WYSIWYG (the piece is drawn on the cells it will occupy). Destination keeps its own colour
-    /// (the fused piece inherits it); the source reads green when the fuse is legal and red when
-    /// the cells overlap or the result could never fit the board.
-    /// </summary>
-    private void DrawMergeLoupe(BlockPiece src, BlockPiece dst, int mr, int mc, bool ok)
-    {
-        var safe = Bootstrap.Instance.SafeCanvasSize;
-
-        // Union bounding box of dst (anchored at 0,0) + src (at the finger-chosen offset), padded
-        // by one cell so the join reads against empty space instead of butting the panel edge.
-        const int margin = 1;
-        int r0 = Mathf.Min(0, mr) - margin, c0 = Mathf.Min(0, mc) - margin;
-        int rows = Mathf.Max(dst.Height, mr + src.Height) - r0 + margin;
-        int cols = Mathf.Max(dst.Width, mc + src.Width) - c0 + margin;
-
-        float trayTop = _holdSlot.Position.Y;
-        float roomY = trayTop - _boardOrigin.Y - 28f;
-        float lc = Mathf.Floor(Mathf.Min(Mathf.Min(safe.X * 0.86f / cols, roomY / rows), _trayCell * 3.2f));
-        if (lc <= _trayCell * 1.25f) return;   // not enough room to be a meaningful magnification
-
-        float w = cols * lc, h = rows * lc;
-        var origin = new Vector2((safe.X - w) / 2f, trayTop - 16f - h);
-
-        // Backing panel — border colour doubles as the legal/illegal verdict at a glance.
-        var pad = new Vector2(10, 10);
-        var panel = new Rect2(origin - pad, new Vector2(w, h) + pad * 2f);
-        var accent = ok ? new Color(0.35f, 1f, 0.60f) : Palette.AccentRed;
-        DrawRect(panel, new Color(0.04f, 0.05f, 0.10f, 0.95f), filled: true);
-        DrawRect(panel, new Color(accent.R, accent.G, accent.B, 0.75f), filled: false, width: 2.5f);
-
-        var glyph = Palette.EquippedGlyph;
-        var mat = Palette.EquippedMaterial;
-        bool reduced = Motion.Reduced;
-
-        // Faint lattice so the gaps around the join are countable.
-        for (int rr = 0; rr < rows; rr++)
-            for (int cc = 0; cc < cols; cc++)
-                DrawRect(new Rect2(origin + new Vector2(cc * lc, rr * lc) + new Vector2(1, 1), new Vector2(lc - 2, lc - 2)),
-                         new Color(1, 1, 1, 0.05f), filled: false, width: 1f);
-
-        // Destination piece, rendered with the equipped skin so the preview matches the board.
-        foreach (var (dr, dc) in dst.Cells)
-        {
-            var rect = new Rect2(origin + new Vector2((dc - c0) * lc, (dr - r0) * lc) + new Vector2(1, 1), new Vector2(lc - 2, lc - 2));
-            BlockRender.DrawCell(this, rect, lc, dst.Color, 1f, mat, glyph, _shimmer, dr + dc, reduced: reduced);
-        }
-
-        // Source piece at the finger-chosen offset.
-        foreach (var (dr, dc) in src.Cells)
-        {
-            var rect = new Rect2(origin + new Vector2((dc + mc - c0) * lc, (dr + mr - r0) * lc) + new Vector2(1, 1), new Vector2(lc - 2, lc - 2));
-            DrawRect(rect, new Color(accent.R, accent.G, accent.B, ok ? 0.90f : 0.45f), filled: true);
-            DrawRect(rect, accent, filled: false, width: 2f);
-        }
+            HoldCaptionH + (_holdSlot.Size.Y - HoldCaptionH - ph) / 2f);
     }
 
     private void DrawPiece(BlockPiece p, Vector2 origin, float cell, float alpha, Texture2D tex)
@@ -857,9 +1163,29 @@ public partial class BlockFitController : Node2D
         var title = new Label { Text = Loc.T("GAME OVER"), HorizontalAlignment = HorizontalAlignment.Center };
         title.AddThemeFontSizeOverride("font_size", 40);
         box.AddChild(title);
+        // A run that ends should say what it was worth. Block Fit has no results screen on
+        // purpose (a new screen would drag the interstitial gating in with it), so the payload
+        // lands here: record badge, the score, the best it is measured against, and the run's
+        // longest streak. Everything is spelled out in words/numbers — the gold badge is a
+        // bonus signal, never the only one.
+        _overBadge = new Label { Text = Loc.T("NEW BEST"), HorizontalAlignment = HorizontalAlignment.Center, Visible = false };
+        _overBadge.AddThemeFontSizeOverride("font_size", 22);
+        _overBadge.AddThemeColorOverride("font_color", Palette.AccentGold);
+        box.AddChild(_overBadge);
+
         _overScore = new Label { HorizontalAlignment = HorizontalAlignment.Center };
         _overScore.AddThemeFontSizeOverride("font_size", 24);
         box.AddChild(_overScore);
+
+        _overBest = new Label { HorizontalAlignment = HorizontalAlignment.Center };
+        _overBest.AddThemeFontSizeOverride("font_size", 18);
+        _overBest.AddThemeColorOverride("font_color", Palette.TextSecondary);
+        box.AddChild(_overBest);
+
+        _overStreak = new Label { HorizontalAlignment = HorizontalAlignment.Center, Visible = false };
+        _overStreak.AddThemeFontSizeOverride("font_size", 18);
+        _overStreak.AddThemeColorOverride("font_color", Palette.Accent);
+        box.AddChild(_overStreak);
 
         var retry = new Button { Text = Loc.T("RETRY"), ThemeTypeVariation = "PrimaryButton", CustomMinimumSize = new Vector2(260, TouchTarget) };
         Motion.BindButtonFeel(retry);
@@ -874,13 +1200,32 @@ public partial class BlockFitController : Node2D
     // ---- First-run coaching ----
 
     /// <summary>
-    /// Three lines, once, the first time anyone opens Block Fit — the mode the menu's PLAY
+    /// Five lines, once, the first time anyone opens Block Fit — the mode the menu's PLAY
     /// card actually launches, which had no explanation anywhere in the game (the HOW TO PLAY
     /// tutorial teaches the falling-block game instead). This is an in-game overlay, not a
     /// screen: <see cref="SceneRouter.GoToStart"/> deliberately never force-launches a
     /// tutorial screen, and that decision stands. Dismissing it hands straight over to the
     /// existing idle-hint system, which then points at a real first move.
     /// </summary>
+    /// <summary>
+    /// The coach card's REVISION flag. <c>Save.BlockFitIntroSeen</c> is a plain bool that v1.4.2
+    /// set the moment anyone read the 3-line version of this card, so the two lines added since —
+    /// the ones that name FUSE and HOLD at all — could never reach an existing player. Those are
+    /// exactly the players stranded by the tightened merge judgement: they don't know the feature
+    /// exists, so they can't know why a drop did nothing.
+    ///
+    /// Versioning it needs a second, independent flag, and SaveManager belongs to another team.
+    /// The owned-items set is the one string-keyed sticky store it already exposes, it is only
+    /// ever read as <c>OwnsItem(catalogId)</c> (never enumerated for display, so a reserved
+    /// non-catalog id is invisible), and its cloud merge is a union — precisely "seen, on any
+    /// device, forever". Bump the suffix to re-show the card after a future revision.
+    /// See the handoff note: a first-class <c>Save.SeenFlag(string)</c> would retire this.
+    /// </summary>
+    private const string CoachFlagV2 = "__coach_blockfit_v2";
+
+    private static bool CoachSeen
+        => Bootstrap.Instance.Save.BlockFitIntroSeen && Bootstrap.Instance.Save.OwnsItem(CoachFlagV2);
+
     private void BuildCoachCard()
     {
         var scrim = new Control { MouseFilter = Control.MouseFilterEnum.Stop };
@@ -906,9 +1251,11 @@ public partial class BlockFitController : Node2D
         box.AddThemeConstantOverride("separation", 14);
         card.AddChild(box);
 
+        // A returning player is not being taught the game, they are being told what they missed —
+        // say so, or the card reads as a bug.
         var title = new Label
         {
-            Text = Loc.T("BLOCK FIT"),
+            Text = Loc.T(Bootstrap.Instance.Save.BlockFitIntroSeen ? "NEW  ·  FUSE & HOLD" : "BLOCK FIT"),
             ThemeTypeVariation = "TitleLabel",
             HorizontalAlignment = HorizontalAlignment.Center,
         };
@@ -920,7 +1267,12 @@ public partial class BlockFitController : Node2D
                  {
                      Loc.T("1  ·  DRAG a piece from the tray onto the grid."),
                      Loc.T("2  ·  FILL a whole row or column and it clears."),
-                     Loc.T("3  ·  It ends when none of the three pieces fit."),
+                     // Fusing and stashing were both fully built and mentioned NOWHERE: the odds
+                     // of discovering "let go on top of another tray piece" by accident are ~0,
+                     // and HOLD was a 15px caption. Two lines is the whole fix.
+                     Loc.T("3  ·  DROP a piece on ANOTHER TRAY PIECE to fuse them."),
+                     Loc.T("4  ·  DROP a piece on the HOLD slot to save it for later."),
+                     Loc.T("5  ·  It ends when none of the three pieces fit."),
                  })
         {
             var l = new Label
@@ -951,6 +1303,7 @@ public partial class BlockFitController : Node2D
         var c = _coach;
         _coach = null;
         Bootstrap.Instance.Save.BlockFitIntroSeen = true;
+        Bootstrap.Instance.Save.GrantItem(CoachFlagV2);
         // Hand over to the idle hint: instead of a fresh 5s wait, the first "put it here"
         // pulse comes up immediately, so the card's words are followed by a live example.
         _idle = HintDelay;
@@ -964,6 +1317,10 @@ public partial class BlockFitController : Node2D
     private void ShowGameOver()
     {
         _overScore.Text = Loc.T("SCORE {0}", _game.Score);
+        _overBadge.Visible = _newBest;
+        _overBest.Text = Loc.T("BEST {0}", CurrentBest());
+        _overStreak.Visible = _runBestStreak >= 2;
+        if (_overStreak.Visible) _overStreak.Text = Loc.T("BEST STREAK ×{0}", _runBestStreak);
         _overlay.Visible = true;
         Bootstrap.Instance.Audio.PlaySfx("game_over");
     }
@@ -974,9 +1331,24 @@ public partial class BlockFitController : Node2D
         _overlay.Visible = false;
         _dragIndex = -1; _touchId = int.MinValue;
         _rainTimer = 0f;
+        _runBestStreak = 0; _newBest = false;
+        _streak.Visible = false;
         _artifact = BurstArtifacts.FromId(Bootstrap.Instance.Save.EquippedArtifactId);
         _bands.Clear(); _burst.Clear(); _shardColors.Clear();
         ResetIdle();
-        QueueRedraw();
+        RedrawAll();
     }
+}
+
+/// <summary>
+/// A bare canvas item that renders a host-supplied callback. Its whole reason to exist is
+/// z-order: a Godot CanvasItem paints itself BEFORE its children, so a host that needs
+/// something drawn underneath its own <c>_Draw</c> cannot do it in that method — it needs a
+/// second item at a lower z. Normal alpha (the additive twin is <see cref="AdditiveFxLayer"/>).
+/// </summary>
+public sealed partial class BoardUnderLayer : Node2D
+{
+    private readonly Action<CanvasItem> _draw;
+    public BoardUnderLayer(Action<CanvasItem> draw) => _draw = draw;
+    public override void _Draw() => _draw(this);
 }

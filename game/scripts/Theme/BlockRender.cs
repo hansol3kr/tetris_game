@@ -37,6 +37,10 @@ public static class BlockRender
         CellMaterial.Frosted     => new MatSpec(0.16f, 0.14f, 0.16f),
         CellMaterial.Gemstone    => new MatSpec(0.30f, 0.30f, 0f),
         CellMaterial.Starfield   => new MatSpec(0.28f, 0.44f, 0f),
+        // Wood: almost no bloom, no specular — matte timber is the whole point.
+        CellMaterial.Wood        => new MatSpec(0.06f, 0.18f, 0.85f),
+        // NeonTube: hollow glass. Strong bloom, a little sheen, zero overlay (one draw).
+        CellMaterial.NeonTube    => new MatSpec(0.46f, 0.30f, 0.00f),
         _                        => new MatSpec(0.32f, 0.50f, 0f), // Gel
     };
 
@@ -45,6 +49,8 @@ public static class BlockRender
     {
         CellMaterial.Frosted  => TextureFactory.CellFrost(px),
         CellMaterial.Gemstone => TextureFactory.CellGem(px),
+        CellMaterial.Wood     => TextureFactory.CellWood(px),
+        CellMaterial.NeonTube => TextureFactory.CellTube(px),
         _                     => TextureFactory.Cell(px),
     };
 
@@ -60,16 +66,26 @@ public static class BlockRender
 
     /// <summary>
     /// Draw one filled cell with the full material stack, reading the equipped skin's colours
-    /// from <see cref="Palette"/> (the gameplay path — respects colorblind override).
+    /// from <see cref="Palette"/> (the BLOCK FIT path — respects the colorblind override).
     /// <paramref name="shimmer"/> is a monotonic time driving holo scroll / starfield twinkle /
     /// gloss breathe; <paramref name="cellPhase"/> (e.g. row+col) de-syncs neighbours so the
     /// board breathes as a wave. Pass shimmer unchanged under reduced motion (caller freezes it).
+    ///
+    /// The fill is resolved through <see cref="Palette.FitFill"/>, so the equipped skin's
+    /// <see cref="ColorPlan"/> (Mono / Duo / Trio / BoardGradient) applies — and
+    /// <paramref name="cellPhase"/> doubles as the board diagonal the gradient plan needs, which
+    /// is why the plan needed no new call signature. This is legal ONLY because Block Fit
+    /// attaches no rule meaning to a cell's hue; the falling game must keep using the explicit
+    /// -colour overload below, since there the next/hold queues are read by colour.
     /// </summary>
     public static void DrawCell(CanvasItem ci, Rect2 rect, float cell, PieceType type, float alpha,
                                 CellMaterial mat, SkinGlyph glyph, float shimmer, float cellPhase,
                                 bool drawGlyph = true, bool reduced = false)
-        => DrawCell(ci, rect, cell, Palette.ForPiece(type), Palette.Emissive(type), alpha, mat,
-                    Palette.EquippedEdgeTint, glyph, shimmer, cellPhase, drawGlyph, reduced);
+    {
+        var fill = Palette.FitFill(type, cellPhase);
+        DrawCell(ci, rect, cell, fill, Palette.EmissiveFor(type, fill), alpha, mat,
+                 Palette.EquippedEdgeTint, glyph, shimmer, cellPhase, drawGlyph, reduced);
+    }
 
     /// <summary>The material-stack core with EXPLICIT colours — lets the store previews render a
     /// not-yet-equipped theme's gems without touching the live global palette.</summary>
@@ -118,6 +134,11 @@ public static class BlockRender
                     break;
                 case CellMaterial.Starfield:
                     DrawStarfield(ci, rect, cell, shimmer, cellPhase, alpha, reduced);
+                    break;
+                case CellMaterial.Wood:
+                    // Alpha-only dark grain: laid OVER the tint (not multiplied) so the rings
+                    // read as timber on a pale oak and a deep walnut alike.
+                    ci.DrawTextureRect(TextureFactory.CellWoodGrain(px), rect, false, new Color(1, 1, 1, spec.OverlayA * alpha));
                     break;
             }
         }

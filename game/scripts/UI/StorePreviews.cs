@@ -1,38 +1,77 @@
 using Godot;
+using Blockfall.Core;
 using Blockfall.Gameplay;
 using Blockfall.Theme;
 
 namespace Blockfall.UI;
 
 /// <summary>
-/// A live skin preview: a strip of real gems rendered through the shared
-/// <see cref="BlockRender"/> with the theme's actual material + glyph + edge tint, breathing
-/// on the same shimmer clock the board uses — so what you see in the shop is exactly what you
-/// wear. Renders explicit theme colours (not the equipped palette), so it previews any skin
-/// without disturbing the live board behind the store. Reduced motion → a static poster frame.
+/// A live skin preview: a 3×3 slice of a real board rendered through the shared
+/// <see cref="BlockRender"/> with the theme's actual material + glyph + edge tint + colour
+/// plan, breathing on the same shimmer clock the board uses — so what you see in the shop is
+/// exactly what you wear. Renders explicit theme colours (not the equipped palette), so it
+/// previews any skin without disturbing the live board behind the store.
+///
+/// Two deliberate choices, both fixing a shop-vs-play mismatch:
+///   • CELL 38px, not 24–30. BlockRender sheds layers below hard size guards (glow &lt;16,
+///     overlay &lt;14, rim &lt;16) — the old strip fell under them, so a metallic or frosted
+///     skin previewed as a flat tile. 38 clears every material guard. Only the glyph DETAIL
+///     guard (26) is deliberately left in play: the stamp is a watermark here, not the sell.
+///   • A GRID, not a strip. A <see cref="ColorPlan"/> (Mono / Duo / Trio / BoardGradient)
+///     lives in the RELATIONSHIP between neighbouring cells; six isolated swatches literally
+///     cannot show it.
+/// Colours come from <see cref="Palette.PlanFill"/>, which shows the theme's OWN hues even under
+/// colorblind mode — the board stays Okabe–Ito, the showcase stays shoppable (see PlanFill's note).
+/// Reduced motion → a static poster frame (shimmer frozen, no _Process work).
 /// </summary>
 public partial class ThemePreview : Control
 {
+    private const float Cell = 38f;
+    private const int Span = 3;
+
+    // An L-tromino plus two loose cells — enough adjacency for a plan to read, enough gaps
+    // for the empty-cell outline (identical to the game board) to frame it.
+    private static readonly (int R, int C, PieceType T)[] Layout =
+    {
+        (0, 0, PieceType.I), (1, 0, PieceType.O), (1, 1, PieceType.T),
+        (0, 2, PieceType.S), (2, 1, PieceType.Z),
+    };
+
+    /// <summary>The diagonal range actually occupied by <see cref="Layout"/> (max row+col). A
+    /// positional plan normalises against THIS, not the 10-wide play field: with the board
+    /// denominator (2·9 = 18) this card's largest diagonal (3) reached mix 0.167, so DICHROIC —
+    /// the one US$2.99 skin whose entire pitch is "cyan at one corner, violet at the other" —
+    /// previewed with not a single violet pixel. Ramping across the card's own range makes the
+    /// swatch the WHOLE gradient: first cell pure A, last cell pure B, exactly what is being sold.
+    /// Declared after <see cref="Layout"/> on purpose — static initialisers run in textual order.</summary>
+    private static readonly float LayoutDiagRange = ComputeDiagRange();
+
+    private static float ComputeDiagRange()
+    {
+        int max = 1;
+        foreach (var (r, c, _) in Layout) if (r + c > max) max = r + c;
+        return max;
+    }
+
     private readonly BlockTheme _theme;
-    private readonly float _cell;
-    private readonly Color[] _fills;
     private float _shimmer;
 
-    /// <summary>When set, frames the strip with an accent halo (the equipped skin).</summary>
+    /// <summary>When set, frames the tile with an accent halo (the equipped skin).</summary>
     public bool Selected { get; init; }
 
-    public ThemePreview(BlockTheme theme, float cell = 30f)
+    public ThemePreview(BlockTheme theme)
     {
         _theme = theme;
-        _cell = cell;
-        _fills = new[] { theme.I, theme.T, theme.S, theme.Z, theme.J, theme.L };
         MouseFilter = MouseFilterEnum.Ignore;
-        CustomMinimumSize = new Vector2(_fills.Length * (cell + 4f), cell + 2f);
+        CustomMinimumSize = new Vector2(Span * Cell + 8f, Span * Cell + 8f);
     }
 
     public override void _Process(double delta)
     {
         if (Motion.Reduced || !IsVisibleInTree()) return;
+        // Nine material stacks × a 40-row catalog is a lot to animate off-screen; only tick
+        // when actually scrolled into view (same guard ArtifactPreview uses).
+        if (!GetGlobalRect().Intersects(GetViewportRect())) return;
         _shimmer += (float)delta;
         QueueRedraw();
     }
@@ -41,13 +80,31 @@ public partial class ThemePreview : Control
     {
         if (Size.X <= 0f) return;
         bool reduced = Motion.Reduced;
-        for (int i = 0; i < _fills.Length; i++)
+        var origin = new Vector2(4f, 4f);
+
+        // Empty cells first — the same faint outline the Block Fit board draws.
+        for (int r = 0; r < Span; r++)
+            for (int c = 0; c < Span; c++)
+            {
+                bool filled = false;
+                foreach (var (lr, lc, _) in Layout) if (lr == r && lc == c) { filled = true; break; }
+                if (filled) continue;
+                DrawRect(new Rect2(origin + new Vector2(c * Cell, r * Cell) + new Vector2(1, 1),
+                                   new Vector2(Cell - 2, Cell - 2)),
+                         new Color(1, 1, 1, 0.045f), filled: false, width: 1f);
+            }
+
+        foreach (var (r, c, type) in Layout)
         {
-            var rect = new Rect2(i * (_cell + 4f), 1f, _cell, _cell);
-            var fill = _fills[i];
-            var emissive = Palette.Emissive(fill, 2.0f);
-            BlockRender.DrawCell(this, rect, _cell, fill, emissive, 1f, _theme.Material, _theme.EdgeTint,
-                                 _theme.Glyph, _shimmer, i, drawGlyph: true, reduced: reduced);
+            var rect = new Rect2(origin + new Vector2(c * Cell, r * Cell) + new Vector2(1, 1),
+                                 new Vector2(Cell - 2, Cell - 2));
+            // The plan is resolved against THIS theme, not the equipped palette — the shop
+            // must never mutate what the board behind it is wearing. Normalised to the CARD's
+            // diagonal range so a positional plan shows its full A→B sweep at 3×3.
+            var fill = Palette.PlanFill(_theme, type, r, c, LayoutDiagRange);
+            BlockRender.DrawCell(this, rect, Cell, fill, Palette.Emissive(fill, 2.0f), 1f,
+                                 _theme.Material, _theme.EdgeTint, _theme.Glyph, _shimmer, r + c,
+                                 drawGlyph: true, reduced: reduced);
         }
         if (Selected) DrawSelectionHalo(this, Size);
     }
@@ -99,6 +156,22 @@ public partial class ArtifactPreview : Control
     {
         _add = new AdditiveFxLayer(_burst, () => Cell, () => new Rect2()) { Position = Vector2.Zero };
         AddChild(_add);
+        ArmDebris();
+    }
+
+    public override void _Notification(int what)
+    {
+        if (what == NotificationResized) ArmDebris();
+    }
+
+    /// <summary>Give the debris pass this card's walls and a floor just inside the bottom edge.
+    /// Without bounds the chunks would free-fall forever and the pool would never drain, so the
+    /// field REFUSES to emit until armed — and a zero-sized card stays opted out.</summary>
+    private void ArmDebris()
+    {
+        if (Size.X <= 2f || Size.Y <= 2f) { _burst.DebrisEnabled = false; return; }
+        _burst.DebrisEnabled = true;
+        _burst.SetDebrisBounds(new Rect2(Vector2.Zero, Size), Size.Y - 8f);
     }
 
     private Vector2 Origin => new((Size.X - N * Cell) / 2f, Size.Y * 0.5f - Cell * 0.5f);

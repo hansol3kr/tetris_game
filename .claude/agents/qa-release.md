@@ -22,7 +22,7 @@ model: opus
 - `.github/workflows/` (ci.yml=core 테스트+스모크, deploy-ios.yml=태그→Codemagic, **desktop-build.yml=workflow_dispatch 전용**)
 - `tools/set-version.py` (버전 단일 소스 라이터, 프리셋 인덱스 0/1/3/4/6/7만, `--print` 미리보기)
 - `game/export_presets.cfg` (**버전 단일 소스** — set-version.py로만 수정, 프리셋 인덱스 계약을 build-ios.sh awk와 동기)
-- `game/scripts/Dev/AutoPlay.cs` (헤드리스 --autoplay 스모크 하네스 — 39체크 CheckLayout 0×0 게이트, RESULT=PASS/FAIL)
+- `game/scripts/Dev/AutoPlay.cs` (헤드리스 --autoplay 스모크 하네스 — 47체크 CheckLayout 0×0 게이트(스킨 스윕은 소유 무관 1체크), RESULT=PASS/FAIL)
 - `Blockfall.sln`, `game/Blockfall.csproj`, `packaging/`, `.gitignore`(인라인 주석 함정)
 - 재생성 산출물 `dist/`, `game/build/`, `game/android/` (우리 스크립트가 생성, 아무도 손편집 안 함)
 - `ios/` 서명+인증 배선(`appstore_connect.env`, `private_keys/*.p8`, `README.md`) — **비밀 위생 수호자, 절대 cat/커밋/로그 금지**

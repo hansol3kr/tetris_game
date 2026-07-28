@@ -125,13 +125,22 @@ internal static class LocData
         ["CLEAN ×{0}"] = "완벽 ×{0}",
         ["{0} left"] = "{0} 남음",
         ["{0} rows"] = "{0} 줄",
+        ["STREAK ×{0}"] = "연속 ×{0}",
+        ["BEST {0}"] = "최고 {0}",
+        ["BEST STREAK ×{0}"] = "최고 연속 ×{0}",
+        ["NEW BEST"] = "신기록",
 
         // ---- Touch coaching (gesture hint + Block Fit first run) ----------
         ["DRAG TO LINE UP   ·   LIFT TO DROP   ·   TAP TO ROTATE"] = "끌어서 맞추고   ·   손을 떼면 내려가고   ·   탭하면 회전",
         ["BLOCK FIT"] = "블록 핏",
+        // Same card, shown a second time to players who only ever saw its 3-line version.
+        ["NEW  ·  FUSE & HOLD"] = "새 기능  ·  조합과 홀드",
         ["1  ·  DRAG a piece from the tray onto the grid."] = "1  ·  아래 트레이의 조각을 끌어다 판에 놓습니다.",
         ["2  ·  FILL a whole row or column and it clears."] = "2  ·  가로 또는 세로 한 줄을 채우면 사라집니다.",
         ["3  ·  It ends when none of the three pieces fit."] = "3  ·  세 조각 모두 놓을 자리가 없으면 끝납니다.",
+        ["3  ·  DROP a piece on ANOTHER TRAY PIECE to fuse them."] = "3  ·  다른 트레이 조각 위에 놓으면 두 조각이 합쳐집니다.",
+        ["4  ·  DROP a piece on the HOLD slot to save it for later."] = "4  ·  홀드 칸에 놓으면 나중을 위해 보관합니다.",
+        ["5  ·  It ends when none of the three pieces fit."] = "5  ·  세 조각 모두 놓을 자리가 없으면 끝납니다.",
         ["GOT IT"] = "알겠어요",
 
         // ---- In-game overlays (pause / revive / ghost) --------------------
@@ -166,7 +175,6 @@ internal static class LocData
         // ---- Results screen ----------------------------------------------
         ["CLEAR!"] = "클리어!",
         ["GAME OVER"] = "게임 오버",
-        ["NEW BEST"] = "신기록",
         ["ACHIEVEMENT: {0}"] = "업적: {0}",
         ["MAX COMBO"] = "최대 콤보",
         ["PIECES/S"] = "초당 블록",
@@ -207,6 +215,9 @@ internal static class LocData
         ["RESTORE PURCHASES"] = "구매 복원",
         ["EQUIPPED"] = "장착됨",
         ["EQUIP"] = "장착",
+        ["NEW"] = "신규",
+        ["COLOR-SAFE PALETTE IS ON: THE BOARD KEEPS IT. PREVIEWS BELOW SHOW EACH SKIN'S OWN COLORS."]
+            = "색약 팔레트 사용 중: 보드는 색약 팔레트를 유지합니다. 아래 미리보기는 각 스킨 고유의 색을 보여줍니다.",
         ["{0}   ·   OWNED: {1}"] = "{0}   ·   보유: {1}",
 
         // ---- Replays screen ----------------------------------------------

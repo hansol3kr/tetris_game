@@ -78,6 +78,11 @@ public static class Palette
     /// <summary>Optional iridescent rim colour for the equipped skin (alpha 0 = no rim).</summary>
     public static Color EquippedEdgeTint { get; private set; } = new(0, 0, 0, 0);
 
+    /// <summary>The equipped skin's Block Fit colour plan. Read by <see cref="FitFill"/> only —
+    /// the falling game always uses the 7-hue <see cref="ForPiece"/> path because there the
+    /// piece hue is information (next/hold queues).</summary>
+    public static ColorPlan EquippedPlan { get; private set; } = ColorPlan.Rainbow7;
+
     // Neon-pastel piece fills (the default "NEON FLUX" theme): hue identities
     // preserved, saturation/luminance pulled into one band so the set reads as a
     // family on the navy background. Mutable — retinted by cosmetic themes.
@@ -114,7 +119,107 @@ public static class Palette
         EquippedGlyph = t.Glyph;
         EquippedMaterial = t.Material;
         EquippedEdgeTint = t.EdgeTint;
+        EquippedPlan = t.Plan;
     }
+
+    // ---- Block Fit colour plans -------------------------------------------
+    // A plan folds the 7 piece hues onto fewer colours (or onto a board-space gradient).
+    // Legal ONLY on the Block Fit board, where a cell's hue carries no rule information.
+    // Resolution is split in two: PlanSlot is a pure rule table (which piece slots to sample,
+    // how to mix, how to scale luminance), and the two call sites supply the colours — the
+    // live palette for gameplay, an arbitrary BlockTheme for a store preview. One rule table
+    // ⇒ the shop can never show a plan the board renders differently.
+
+    /// <summary>Board span the BoardGradient plan normalises against on the PLAY FIELD. Mirrors
+    /// <c>BlockFitGame.Size</c> (10) — duplicated as a constant because Palette must not
+    /// take a core dependency for a cosmetic ramp.</summary>
+    public const int BoardSpan = 10;
+
+    /// <summary>The diagonal range (0 … 2·(span−1)) a positional plan ramps across on a square
+    /// field of <paramref name="span"/> cells. Callers pass THEIR OWN range: a 3×3 store card
+    /// normalised against the 10-wide board denominator only ever reached mix 0.22, so the one
+    /// gradient skin previewed as its first fifth and never showed the colour it is sold on.</summary>
+    public static float DiagRange(int span) => 2f * (span - 1);
+
+    private static readonly PieceType[] TrioAnchor = { PieceType.I, PieceType.T, PieceType.S };
+
+    /// <summary>Pure plan rule: which piece slot(s) to sample, the A→B mix, and a luminance
+    /// multiplier. Addressed by the board DIAGONAL (row+col) rather than (row,col), because
+    /// that is the only positional term any plan needs and it is what every Block Fit draw
+    /// site already passes as its shimmer phase — so the plan needs no new call signature.
+    /// No colour access here, so gameplay and previews share one source of truth.
+    /// <paramref name="diagRange"/> is the diagonal span the CALLER ramps across (see
+    /// <see cref="DiagRange"/>) so one rule table serves a 10-wide board and a 3-wide card.</summary>
+    private static (PieceType A, PieceType B, float Mix, float Lum) PlanSlot(ColorPlan plan, PieceType t, float diag, float diagRange)
+        => plan switch
+        {
+            ColorPlan.Trio => (TrioAnchor[(int)t % 3], PieceType.I, 0f, 1f),
+            ColorPlan.Duo => ((int)t % 2 == 0 ? PieceType.I : PieceType.Z, PieceType.I, 0f, 1f),
+            // One hue, seven luminance rungs — the ink-wash read.
+            ColorPlan.Mono => (PieceType.I, PieceType.I, 0f, 0.55f + 0.075f * Mathf.Clamp((int)t - 1, 0, 6)),
+            ColorPlan.BoardGradient => (PieceType.I, PieceType.T,
+                                        Mathf.Clamp(diag / Mathf.Max(1f, diagRange), 0f, 1f), 1f),
+            _ => (t, t, 0f, 1f),
+        };
+
+    private static Color Scale(Color c, float k) => new(c.R * k, c.G * k, c.B * k, c.A);
+
+    /// <summary>
+    /// The Block Fit cell fill: the equipped skin's <see cref="ColorPlan"/> applied to the live
+    /// palette. Colorblind mode short-circuits to <see cref="ForPiece"/> so the Okabe–Ito set is
+    /// never folded away — a plan may cost identity, never accessibility.
+    /// </summary>
+    public static Color FitFill(PieceType type, int row, int col) => FitFill(type, row + col);
+
+    /// <summary>Plan-resolved fill addressed by the board diagonal (row+col).</summary>
+    public static Color FitFill(PieceType type, float diag)
+    {
+        if (ColorblindMode || EquippedPlan == ColorPlan.Rainbow7) return ForPiece(type);
+        if (type is PieceType.Empty or PieceType.Garbage) return ForPiece(type);
+        var (a, b, mix, lum) = PlanSlot(EquippedPlan, type, diag, DiagRange(BoardSpan));
+        var col2 = mix <= 0f ? ForPiece(a) : ForPiece(a).Lerp(ForPiece(b), mix);
+        return lum >= 0.999f ? col2 : Scale(col2, lum);
+    }
+
+    /// <summary>
+    /// The SHOWCASE fill: the same plan rule table resolved against an arbitrary (not-equipped)
+    /// theme's own colours — the store-preview path, which must never disturb the live palette.
+    ///
+    /// Deliberately does NOT fold to <see cref="ColorblindMode"/>, and that asymmetry is the point.
+    /// The accessibility contract binds the PLAY FIELD, where a cell must tell apart from its
+    /// neighbour: there <see cref="FitFill"/>/<see cref="ForPiece"/> still hard-override every skin
+    /// to Okabe–Ito. A shop card is a product photo, not a play surface. Folding it too made all 31
+    /// skins render the identical seven swatches, so a colourblind collector had nothing to look at
+    /// when deciding what US$2.99 buys — the showcase stopped showing the goods. Board stays
+    /// colour-safe, showcase shows the product; <c>StoreScreen</c> states the split in a standing
+    /// note rather than leaving the player to discover it after paying.
+    ///
+    /// <paramref name="diagRange"/>: the caller's own diagonal span for positional plans — a 3×3
+    /// card must pass ITS range, not the board's, or the ramp clips to its first fifth.
+    /// </summary>
+    public static Color PlanFill(BlockTheme theme, PieceType type, int row, int col, float diagRange)
+    {
+        // Twin of the FitFill guard: structural cells are never a plan slot. Without this the
+        // fold would sample garbage/empty through the piece table and paint holes solid.
+        if (type is PieceType.Empty or PieceType.Garbage) return OfTheme(theme, type);
+        if (theme.Plan == ColorPlan.Rainbow7) return OfTheme(theme, type);
+        var (a, b, mix, lum) = PlanSlot(theme.Plan, type, row + col, diagRange);
+        var col2 = mix <= 0f ? OfTheme(theme, a) : OfTheme(theme, a).Lerp(OfTheme(theme, b), mix);
+        return lum >= 0.999f ? col2 : Scale(col2, lum);
+    }
+
+    private static Color OfTheme(BlockTheme t, PieceType type) => type switch
+    {
+        PieceType.I => t.I,
+        PieceType.O => t.O,
+        PieceType.T => t.T,
+        PieceType.S => t.S,
+        PieceType.Z => t.Z,
+        PieceType.J => t.J,
+        PieceType.L => t.L,
+        PieceType.Garbage => Garbage,
+        _ => new Color(0, 0, 0, 0),
+    };
 
     // Colorblind-safe fills (Okabe–Ito). Kept bright so the neon glow still reads.
     private static readonly Color CbI = new(0.35f, 0.70f, 0.90f); // sky blue
@@ -157,16 +262,20 @@ public static class Palette
     /// no-bloom fallback still looks intentional. Warm hues get a smaller boost
     /// so they don't clip toward white and lose their identity.
     /// </summary>
-    public static Color Emissive(PieceType type)
+    public static Color Emissive(PieceType type) => EmissiveFor(type, ForPiece(type));
+
+    /// <summary>The same per-type bloom boost applied to an ALREADY-RESOLVED fill — needed
+    /// once a <see cref="ColorPlan"/> can change a piece's hue out from under
+    /// <see cref="ForPiece"/> (garbage still never glows).</summary>
+    public static Color EmissiveFor(PieceType type, Color fill)
     {
-        var c = ForPiece(type);
         float boost = type switch
         {
             PieceType.O or PieceType.L or PieceType.Z => 1.9f, // warm — clip earlier
             PieceType.Garbage => 1.0f,                          // garbage never glows
             _ => 2.3f,
         };
-        return new Color(c.R * boost, c.G * boost, c.B * boost, c.A);
+        return new Color(fill.R * boost, fill.G * boost, fill.B * boost, fill.A);
     }
 
     /// <summary>Overbright variant of an arbitrary accent for bloom-seeded UI moments.</summary>

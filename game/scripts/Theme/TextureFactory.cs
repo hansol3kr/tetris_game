@@ -458,6 +458,86 @@ public static class TextureFactory
         });
     }
 
+    /// <summary>Turned-timber body (replaces Cell for the Wood material): a vertical
+    /// brightness ramp, a warm top-left bevel and a dark bottom-right chamfer, and NO
+    /// specular gloss — wood is matte, which is exactly what makes it read as not-plastic
+    /// next to the gel skins. Grayscale; tinted per piece via modulate.</summary>
+    public static ImageTexture CellWood(int px)
+    {
+        px = Math.Clamp(px, 8, 128);
+        string key = $"wood:{px}";
+        float radius = px * 0.16f;
+        var half = new Vector2(px / 2f, px / 2f);
+        return Bake(key, px, px, (x, y) =>
+        {
+            var p = new Vector2(x + 0.5f, y + 0.5f) - half;
+            float sdf = RoundedBoxSdf(p, half, radius);
+            float body = Feather(sdf, 1.2f);
+            if (body <= 0f) return new Color(0, 0, 0, 0);
+            float t = (y + 0.5f) / px;
+            float v = Mathf.Lerp(0.90f, 1.00f, t);
+            float dEdge = -sdf;                                  // px inside the shape
+            // Dark chamfer on the bottom-right two edges, warm bevel on the top-left two.
+            if (dEdge < 2f && (p.X > 0f || p.Y > 0f) && Mathf.Abs(p.X) + Mathf.Abs(p.Y) > px * 0.18f)
+                v *= Mathf.Lerp(0.72f, 1f, dEdge / 2f);
+            if (dEdge < 2f && p.X <= 0f && p.Y <= 0f)
+                v *= Mathf.Lerp(1.14f, 1f, dEdge / 2f);
+            v = Mathf.Clamp(v, 0f, 1f);
+            return new Color(v, v, v, body);
+        });
+    }
+
+    /// <summary>Growth rings for the Wood finish: dark (RGB 0) alpha-only arcs so the grain
+    /// reads on ANY hue the skin paints the cell — it is drawn as a normal-alpha overlay,
+    /// not multiplied, so a pale oak and a deep walnut both keep their timber.</summary>
+    public static ImageTexture CellWoodGrain(int px)
+    {
+        px = Math.Clamp(px, 8, 128);
+        string key = $"woodgrain:{px}";
+        float radius = px * 0.16f;
+        var half = new Vector2(px / 2f, px / 2f);
+        float cx = px * 1.7f * 0.5f, cy = px * 0.5f;             // off-canvas pith → near-parallel grain
+        float period = px * 0.11f;
+        return Bake(key, px, px, (x, y) =>
+        {
+            var p = new Vector2(x + 0.5f, y + 0.5f) - half;
+            float mask = Feather(RoundedBoxSdf(p, half, radius), 1.2f);
+            if (mask <= 0f) return new Color(0, 0, 0, 0);
+            float dx = (x + 0.5f) - cx, dy = (y + 0.5f) - cy;
+            float d = Mathf.Sqrt(dx * dx * 0.35f + dy * dy);
+            float ring = d / period;
+            ring -= Mathf.Floor(ring);
+            float s = Mathf.Abs(ring - 0.5f) * 2f;
+            s = Mathf.Clamp((s - 0.42f) / 0.08f, 0f, 1f);
+            s = s * s * (3f - 2f * s);                            // smoothstep(0.42, 0.50)
+            return new Color(0f, 0f, 0f, 0.30f * s * mask);
+        });
+    }
+
+    /// <summary>Hollow arcade tube (replaces Cell for the NeonTube material): a nearly empty
+    /// core with a bright glass wall, so the cell reads as bent neon rather than a filled
+    /// tile. One draw call — cheaper than the gel body+gloss pair.</summary>
+    public static ImageTexture CellTube(int px)
+    {
+        px = Math.Clamp(px, 8, 128);
+        string key = $"tube:{px}";
+        float radius = px * 0.24f;
+        var half = new Vector2(px / 2f, px / 2f);
+        return Bake(key, px, px, (x, y) =>
+        {
+            var p = new Vector2(x + 0.5f, y + 0.5f) - half;
+            float sdf = RoundedBoxSdf(p, half, radius);
+            float body = Feather(sdf, 1.2f);
+            if (body <= 0f) return new Color(0, 0, 0, 0);
+            float dEdge = -sdf;                                   // px inside the shape
+            float wall = px * 0.18f * 0.5f;                       // outer 18% is the glass wall
+            float k = Mathf.Clamp(1f - dEdge / Mathf.Max(1f, wall), 0f, 1f);
+            k = k * k * (3f - 2f * k);                            // smoothstep toward the rim
+            float a = Mathf.Lerp(0.15f, 0.95f, k);
+            return new Color(1f, 1f, 1f, a * body);
+        });
+    }
+
     /// <summary>Bright inner-edge ring (white; tinted per skin) hugging the cell contour —
     /// the iridescent rim on Obsidian/holographic skins.</summary>
     public static ImageTexture CellRim(int px)
@@ -492,4 +572,169 @@ public static class TextureFactory
             return new Color(1, 1, 1, s);
         });
     }
+
+    // ---- Debris atlas (the line-clear "physical destruction" pass) ----------
+    // Ten silhouettes, baked once at 40px and drawn rotated+tinted. Grayscale RGB is a
+    // BEVEL luminance ramp (lit from up-left) — so a chunk still reads as a broken solid
+    // when the hue is stripped (grayscale/colorblind check), and the shape channel carries
+    // the "this shattered" information rather than colour.
+
+    // Deterministic wedge radii — a constant table, so a variant always bakes identically.
+    private static readonly float[] ShardWedgeR =
+    {
+        0.44f, 0.33f, 0.47f, 0.36f,   // variant 0
+        0.39f, 0.46f, 0.31f, 0.43f,   // variant 1
+        0.48f, 0.34f, 0.41f, 0.37f,   // variant 2
+        0.35f, 0.45f, 0.40f, 0.30f,   // variant 3
+    };
+
+    private static readonly Vector2 ShardLight = new Vector2(-0.55f, -0.83f).Normalized();
+
+    /// <summary>
+    /// One debris silhouette. <paramref name="variant"/> 0–3 = blobby wedges (gel/metal/gem
+    /// chunks), 4–7 = splinters (wood/frost), 8–9 = ring arcs (NeonTube glass). Baked at
+    /// px=40; drawn white-modulated so it takes any piece hue.
+    /// </summary>
+    public static ImageTexture CellShard(int px, int variant)
+    {
+        px = Math.Clamp(px, 8, 64);
+        variant = ((variant % 10) + 10) % 10;
+        string key = $"shard:{px}:{variant}";
+        var half = new Vector2(px / 2f, px / 2f);
+
+        Vector2[]? poly = null;
+        if (variant <= 3)
+        {
+            poly = new Vector2[4];
+            for (int i = 0; i < 4; i++)
+            {
+                float ang = variant * 0.7f + i * Mathf.Tau / 4f;
+                float r = ShardWedgeR[variant * 4 + i];
+                poly[i] = new Vector2(Mathf.Cos(ang), Mathf.Sin(ang)) * r;
+            }
+        }
+        else if (variant <= 7)
+        {
+            // Splinter: 2.4:1 long axis, rotated per variant.
+            float ang = (variant - 4) * 0.9f;
+            float ca = Mathf.Cos(ang), sa = Mathf.Sin(ang);
+            Vector2 R(float lx, float ly) => new(lx * ca - ly * sa, lx * sa + ly * ca);
+            poly = new[] { R(0.46f, 0f), R(-0.30f, 0.155f), R(-0.30f, -0.155f) };
+        }
+        float arcSpan = variant == 8 ? Mathf.DegToRad(110f) * 0.5f : Mathf.DegToRad(150f) * 0.5f;
+
+        Vector2 centre = Vector2.Zero;
+        if (poly is not null) { foreach (var v in poly) centre += v; centre /= poly.Length; }
+
+        return Bake(key, px, px, (x, y) =>
+        {
+            var p = (new Vector2(x + 0.5f, y + 0.5f) - half) / px;   // unit space, |p| <= 0.5
+            float sdf; Vector2 n;
+            if (poly is not null) PolySdf(p, poly, centre, out sdf, out n);
+            else ArcSdf(p, arcSpan, out sdf, out n);
+
+            float a = Feather(sdf * px, 1.5f);
+            if (a <= 0f) return new Color(0, 0, 0, 0);
+            float lum = 0.52f + 0.48f * Mathf.Clamp(n.Dot(ShardLight), 0f, 1f);
+            float u = (p.X + p.Y + 1f) * 0.5f;                       // 0 at top-left corner
+            if (u < 0.22f) lum = 1f;                                 // gloss band
+            return new Color(lum, lum, lum, a);
+        });
+    }
+
+    /// <summary>Max-of-half-planes SDF for a convex polygon, plus the outward normal of the
+    /// dominant edge (drives the bevel ramp). Exact inside; a slight underestimate outside
+    /// corners, which only softens the 1.5px feather.</summary>
+    private static void PolySdf(Vector2 p, Vector2[] v, Vector2 centre, out float sdf, out Vector2 n)
+    {
+        sdf = float.NegativeInfinity; n = new Vector2(0, -1);
+        for (int i = 0; i < v.Length; i++)
+        {
+            var a = v[i]; var b = v[(i + 1) % v.Length];
+            var e = b - a;
+            if (e.LengthSquared() < 1e-9f) continue;
+            var nn = new Vector2(e.Y, -e.X).Normalized();
+            if (nn.Dot(a - centre) < 0f) nn = -nn;                   // force outward
+            float d = (p - a).Dot(nn);
+            if (d > sdf) { sdf = d; n = nn; }
+        }
+    }
+
+    /// <summary>Ring-arc SDF (inner 0.62 / outer 0.94 of the half-extent), centred on -Y.</summary>
+    private static void ArcSdf(Vector2 p, float halfSpan, out float sdf, out Vector2 n)
+    {
+        const float rIn = 0.62f * 0.5f, rOut = 0.94f * 0.5f;
+        float rMid = (rIn + rOut) * 0.5f, rHalf = (rOut - rIn) * 0.5f;
+        float d = p.Length();
+        if (d < 1e-5f) { sdf = 1f; n = new Vector2(0, -1); return; }
+        float radial = Mathf.Abs(d - rMid) - rHalf;
+        float ang = Mathf.Atan2(p.Y, p.X) + Mathf.Pi / 2f;           // 0 = straight up
+        ang = Mathf.Wrap(ang, -Mathf.Pi, Mathf.Pi);
+        float angular = (Mathf.Abs(ang) - halfSpan) * d;
+        if (angular > radial) { sdf = angular; n = new Vector2(-p.Y, p.X).Normalized() * Mathf.Sign(ang); }
+        else { sdf = radial; n = p / d * Mathf.Sign(d - rMid); }
+    }
+
+    /// <summary>
+    /// Anisotropic bloom kernel: a tight core, a wide skirt, and <paramref name="points"/>
+    /// diffraction streaks — one quad replaces the "glow disc + polygon spikes" pair, so a
+    /// particle gets a lens-flare read for the same single draw call. White; tinted at draw.
+    /// </summary>
+    public static ImageTexture BloomStar(int px, int points)
+    {
+        px = Math.Clamp(px, 16, 256);
+        points = Math.Max(2, points);
+        string key = $"bloomstar:{px}:{points}";
+        var half = new Vector2(px / 2f, px / 2f);
+        int axes = Math.Max(1, points / 2);
+        return Bake(key, px, px, (x, y) =>
+        {
+            var p = (new Vector2(x + 0.5f, y + 0.5f) - half) / (px * 0.5f);
+            float r = p.Length();
+            float core = 0.70f * Mathf.Exp(-(r / 0.10f) * (r / 0.10f));
+            float skirt = 0.30f * Mathf.Exp(-(r / 0.42f) * (r / 0.42f));
+            float streak = 0f;
+            for (int k = 0; k < axes; k++)
+            {
+                float a = k * Mathf.Pi / axes;
+                float dperp = Mathf.Abs(-p.X * Mathf.Sin(a) + p.Y * Mathf.Cos(a));
+                streak += Mathf.Exp(-(dperp / 0.020f) * (dperp / 0.020f));
+            }
+            streak *= Mathf.Exp(-r / 0.50f) * 0.55f;
+            float alpha = Mathf.Clamp(core + skirt + streak, 0f, 1f);
+            return new Color(1f, 1f, 1f, alpha);
+        });
+    }
+
+    /// <summary>
+    /// A baked shockwave annulus (sharp inside, soft outside) with the R/G/B channels sampled
+    /// at 0.97/1.00/1.03 of the ring radius, so the wave carries chromatic dispersion for free.
+    /// Replaces a 48-segment DrawArc with one textured quad.
+    /// </summary>
+    public static ImageTexture ShockRing(int px = 128)
+    {
+        px = Math.Clamp(px, 32, 256);
+        string key = $"shockring:{px}";
+        var half = new Vector2(px / 2f, px / 2f);
+
+        static float Prof(float rn)
+        {
+            if (rn <= ShockRingCrest) return Mathf.Clamp(1f - (ShockRingCrest - rn) / 0.06f, 0f, 1f); // sharp inner wall
+            float t = (rn - ShockRingCrest) / 0.10f;
+            return Mathf.Exp(-t * t);                                            // soft outer bleed
+        }
+
+        return Bake(key, px, px, (x, y) =>
+        {
+            float rn = ((new Vector2(x + 0.5f, y + 0.5f) - half) / (px * 0.5f)).Length();
+            float r = Prof(rn / 0.97f), g = Prof(rn), b = Prof(rn / 1.03f);
+            float a = Mathf.Max(r, Mathf.Max(g, b));
+            if (a <= 0.002f) return new Color(0, 0, 0, 0);
+            return new Color(r / a, g / a, b / a, a);
+        });
+    }
+
+    /// <summary>Normalized radius (0..1 of the half-extent) at which <see cref="ShockRing"/>
+    /// puts its crest — callers size the quad by this so the ring lands on the wanted radius.</summary>
+    public const float ShockRingCrest = 0.86f;
 }

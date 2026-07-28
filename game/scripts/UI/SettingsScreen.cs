@@ -360,7 +360,6 @@ public partial class SettingsScreen : Control
         var b = new Button
         {
             ThemeTypeVariation = "CardButton",
-            CustomMinimumSize = new Vector2(0, 60),
             SizeFlagsHorizontal = SizeFlags.ExpandFill,
         };
         Motion.BindButtonFeel(b);
@@ -372,13 +371,18 @@ public partial class SettingsScreen : Control
         b.AddChild(row);
 
         var info = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ShrinkCenter };
-        info.AddThemeConstantOverride("separation", 5);
+        info.AddThemeConstantOverride("separation", InfoSep);
         var name = new Label { Text = Loc.T(item.Name) };
         name.AddThemeFontOverride("font", Fonts.UiBold);
         name.AddThemeFontSizeOverride("font_size", 18);
         if (active) name.AddThemeColorOverride("font_color", Palette.Accent);
         info.AddChild(name);
-        if (item.Theme is { } theme) info.AddChild(new ThemePreview(theme, 24f) { Selected = active });
+        ThemePreview? preview = null;
+        if (item.Theme is { } theme)
+        {
+            preview = new ThemePreview(theme) { Selected = active };
+            info.AddChild(preview);
+        }
         row.AddChild(info);
 
         if (active)
@@ -390,8 +394,43 @@ public partial class SettingsScreen : Control
             row.AddChild(chip);
         }
 
+        b.CustomMinimumSize = new Vector2(0, SkinRowHeight(name, preview));
         b.Pressed += () => EquipSkin(item);
         return b;
+    }
+
+    /// <summary>Vertical separation inside a skin row's info column (name over swatch).</summary>
+    private const int InfoSep = 5;
+
+    /// <summary>Breathing room above + below the info column inside the row.</summary>
+    private const float SkinRowPad = 20f;
+
+    /// <summary>Floor for a skin row: the 44pt touch target this list has always used.</summary>
+    private const float SkinRowMinH = 60f;
+
+    /// <summary>
+    /// The height a skin row actually needs, derived from what is in it.
+    ///
+    /// This used to be a hard 60. A <see cref="Button"/> is NOT a <see cref="Container"/>: it
+    /// never grows to fit children pinned inside it, and its own minimum size only counts its
+    /// text and icon. Meanwhile every Control clamps its size UP to its combined minimum — so
+    /// when <see cref="ThemePreview"/> grew from a 26px strip to a 122px 3×3 grid, the row's
+    /// inner HBox was forced to ≈151px (name 18px ⇒ ≈25 + sep 5 + swatch 122) inside a 60px
+    /// button and spilled ≈91px past it, straight over the neighbouring rows (they sit 8px
+    /// apart). The store never showed this because <c>StoreScreen.Card()</c> is a real
+    /// PanelContainer, which does absorb its children's minimum.
+    ///
+    /// The swatch is NOT shrunk to fit instead: 38px cells are what clear BlockRender's layer
+    /// guards (glow ≥16, overlay ≥14, rim ≥16, gloss ≥12, glyph ≥18, glyph detail ≥26), and the
+    /// settings gallery and the store must sell the same skin with the same picture. So the row
+    /// grows to the content, and the content is measured — the label's real font metrics, the
+    /// preview's own declared minimum — rather than re-hardcoded here.
+    /// </summary>
+    private static float SkinRowHeight(Label name, Control? preview)
+    {
+        float h = Mathf.Max(name.GetCombinedMinimumSize().Y, 25f);
+        if (preview is not null) h += InfoSep + Mathf.Max(preview.CustomMinimumSize.Y, preview.GetCombinedMinimumSize().Y);
+        return Mathf.Max(SkinRowMinH, h + SkinRowPad);
     }
 
     private void EquipSkin(StoreItem item)

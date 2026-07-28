@@ -20,6 +20,10 @@ public partial class StoreScreen : Control
 
     private VBoxContainer _list = null!;
 
+    /// <summary>Two stable passes over the catalog: flagged rows, then the rest. Keeps the
+    /// declaration order inside each group (no comparer, no shuffling of the familiar list).</summary>
+    private static readonly bool[] NewFirst = { true, false };
+
     public override void _Ready()
     {
         UiTheme.ApplyTo(this);
@@ -80,9 +84,18 @@ public partial class StoreScreen : Control
         bool paidOk = !OS.HasFeature("mobile") || platform.SupportsIap;
 
         _list.AddChild(Section(Loc.T("THEMES")));
-        foreach (var item in StoreCatalog.Items)
-            if (item.Kind == StoreItemKind.Theme && (paidOk || save.OwnsItem(item.Id)))
-                _list.AddChild(ThemeRow(item));
+        // State the accessibility split instead of letting the player find it after paying:
+        // previews below render each skin's OWN colours (otherwise every card looks identical),
+        // while the play field keeps the colour-safe palette. See Palette.PlanFill.
+        if (Palette.ColorblindMode)
+            _list.AddChild(Note(Loc.T("COLOR-SAFE PALETTE IS ON: THE BOARD KEEPS IT. PREVIEWS BELOW SHOW EACH SKIN'S OWN COLORS.")));
+        // New arrivals first. The list is 31 rows of 122px-tall cards; appended, the newest
+        // drop lands at rows 28-31 and the only skins that read differently at arm's length
+        // sit behind a scroll of look-alikes. Two stable passes — no sort, no comparer.
+        foreach (bool fresh in NewFirst)
+            foreach (var item in StoreCatalog.Items)
+                if (item.Kind == StoreItemKind.Theme && item.IsNew == fresh && (paidOk || save.OwnsItem(item.Id)))
+                    _list.AddChild(ThemeRow(item));
 
         // Burst-FX artifacts (all free ⇒ always shown, even on a mobile build without billing).
         _list.AddChild(Section(Loc.T("BURST FX")));
@@ -129,13 +142,23 @@ public partial class StoreScreen : Control
 
         var info = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ShrinkCenter };
         info.AddThemeConstantOverride("separation", 4);
-        var name = new Label { Text = item.Name };
+        var name = new Label { Text = item.Name, SizeFlagsVertical = SizeFlags.ShrinkCenter };
         name.AddThemeFontOverride("font", Fonts.UiBold);
         name.AddThemeFontSizeOverride("font_size", 20);
         if (equipped) name.AddThemeColorOverride("font_color", Palette.Accent);
-        info.AddChild(name);
+        if (item.IsNew)
+        {
+            // Name + tag on one line: the badge is what makes a floated-up row legible as a
+            // fresh drop rather than an arbitrary reordering of a list the player knows.
+            var nameRow = new HBoxContainer();
+            nameRow.AddThemeConstantOverride("separation", 8);
+            nameRow.AddChild(name);
+            nameRow.AddChild(NewBadge());
+            info.AddChild(nameRow);
+        }
+        else info.AddChild(name);
         if (item.Theme is { } theme)
-            info.AddChild(new ThemePreview(theme, 28f) { Selected = equipped });
+            info.AddChild(new ThemePreview(theme) { Selected = equipped });
         var blurb = new Label { Text = item.Blurb, ThemeTypeVariation = "DimLabel" };
         blurb.AddThemeFontSizeOverride("font_size", 13);
         info.AddChild(blurb);
@@ -339,6 +362,32 @@ public partial class StoreScreen : Control
     private static Control Section(string text)
     {
         var l = new Label { Text = text, ThemeTypeVariation = "SectionLabel" };
+        return l;
+    }
+
+    /// <summary>A standing, section-level caption (wraps). Used for policy the player must know
+    /// BEFORE buying, not for flavour text.</summary>
+    private static Control Note(string text)
+    {
+        var l = new Label
+        {
+            Text = text,
+            ThemeTypeVariation = "DimLabel",
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+        };
+        l.AddThemeFontSizeOverride("font_size", 13);
+        return l;
+    }
+
+    /// <summary>The "NEW" tag. Gold is otherwise reserved (daily / new-best / perfect clear); a
+    /// fresh drop is the store's equivalent of NEW BEST, and gold is already this screen's title
+    /// accent, so the reservation holds. Text, not colour alone — never a hue-only signal.</summary>
+    private static Control NewBadge()
+    {
+        var l = new Label { Text = Loc.T("NEW"), SizeFlagsVertical = SizeFlags.ShrinkCenter };
+        l.AddThemeFontOverride("font", Fonts.UiBold);
+        l.AddThemeFontSizeOverride("font_size", 13);
+        l.AddThemeColorOverride("font_color", Palette.AccentGold);
         return l;
     }
 }

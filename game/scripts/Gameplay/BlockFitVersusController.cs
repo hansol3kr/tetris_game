@@ -256,16 +256,30 @@ public partial class BlockFitVersusController : Node2D
         }
     }
 
+    /// <summary>
+    /// Whole-SLOT pick-up, like solo — see <see cref="BlockFitController.Grab"/> for why grabbing
+    /// is wide while merging stays precise. This board is where a shared rect hurt most: the tray
+    /// cell here is 25px against solo's 33px (a smaller board plus a second one above it), so
+    /// piece-sized grabbing meant hunting a 50×50px = 26pt = 4.1mm patch — 8% of the 240×136px
+    /// slot it sits in — on the one screen where the clock is running and a fumbled pick-up is a
+    /// lost duel. (Layout at 720×1280: _pCell 46 → _pTrayCell 25, trayH 136.)
+    /// </summary>
     private void Grab(int id, Vector2 pos)
     {
-        if (_match.IsOver || _dragIndex != -1) return;
+        if (_match.IsOver || _dragIndex != -1 || _pTrayCell <= 0f) return;
+        bool inBand = false;
         for (int i = 0; i < 3; i++)
-            if (_match.PlayerGame.Tray[i] is not null && _pTraySlot[i].HasPoint(pos))
-            {
-                _dragIndex = i; _touchId = id; _finger = pos;
-                QueueRedraw();
-                return;
-            }
+        {
+            if (!_pTraySlot[i].HasPoint(pos)) continue;
+            inBand = true;                            // slots don't overlap — no other can match
+            if (_match.PlayerGame.Tray[i] is null) break;
+            _dragIndex = i; _touchId = id; _finger = pos;
+            QueueRedraw();
+            return;
+        }
+        // Aimed at the tray, came up empty: the same "nothing happened" click a rejected drop
+        // uses, so a missed grab never reads as a frozen game. Silent everywhere else.
+        if (inBand) Bootstrap.Instance.Audio.PlaySfx("move");
     }
 
     private void Release(int id, Vector2 pos)
@@ -292,7 +306,8 @@ public partial class BlockFitVersusController : Node2D
         {
             _match.PlayerGame.LinesClearedBy(piece, gr, gc, _pvRows, _pvCols); // capture before the clear
             int lines = _match.PlayerPlace(idx, gr, gc);
-            Bootstrap.Instance.Audio.PlaySfx("lock");
+            // Material voice, same as solo Block Fit: wood locks low, a glass tube locks high.
+            Bootstrap.Instance.Audio.PlaySfx("lock", Blockfall.Audio.AudioManager.MaterialPitch(Palette.EquippedMaterial));
             if (lines > 0)
             {
                 Bootstrap.Instance.Audio.PlaySfx(lines >= 2 ? "combo" : "line_clear");
@@ -306,12 +321,46 @@ public partial class BlockFitVersusController : Node2D
         QueueRedraw();
     }
 
+    /// <summary>Reach around a tray piece in the MERGE hit test, as a fraction of a tray cell.
+    /// Kept identical to BlockFitController.MergeReach — the two screens are the same control and
+    /// must not feel different; see that constant for the real pt/mm measurements (including the
+    /// honest note that this target sits under the platform minimum, and why) and for why
+    /// clipping to the slot is what makes a generous reach safe. Condition (3) over there — "the
+    /// accepted rect is outlined AND magnified while aiming" — only became true for this board
+    /// when <see cref="MergeLoupe"/> was shared into it; before that the screen with the smallest
+    /// target (50×50px = 4.1mm, 59% of the 44pt floor) was also the one with no magnifier.</summary>
+    private const float MergeReach = 0.5f;
+
+    /// <summary>Merge target rect of one tray piece — the single geometry source shared by the
+    /// merge hit test and the merge highlight. Pick-up uses the whole slot (see Grab).</summary>
+    private static Rect2 MergeHitRect(BlockPiece p, Vector2 origin, float cell, Rect2 slot)
+        => new Rect2(origin, new Vector2(p.Width * cell, p.Height * cell))
+            .Grow(cell * MergeReach).Intersection(slot);
+
+    /// <summary>The occupied tray slot whose PIECE the finger is over, or -1. Release and hover
+    /// preview share it, so the green preview and the actual fuse can never disagree.</summary>
     private int MergeTargetSlot(Vector2 pos, int dragIdx)
     {
+        if (_pTrayCell <= 0f) return -1;
         for (int i = 0; i < 3; i++)
-            if (i != dragIdx && _match.PlayerGame.Tray[i] is not null && _pTraySlot[i].HasPoint(pos))
+        {
+            if (i == dragIdx || _match.PlayerGame.Tray[i] is not { } p) continue;
+            if (MergeHitRect(p, TrayPieceOrigin(p, i), _pTrayCell, _pTraySlot[i]).HasPoint(pos))
                 return i;
+        }
         return -1;
+    }
+
+    /// <summary>Outlines the rect that accepts a merge drop, from the same geometry the hit test
+    /// uses. Dim/thin = "aimable", bright/thick = "locked on" — weight carries the state, not
+    /// hue alone. Static, so no Motion.Reduced gate is owed.</summary>
+    private void DrawMergeTarget(BlockPiece p, Vector2 origin, Rect2 slot, bool hot)
+    {
+        if (_pTrayCell <= 0f) return;
+        var col = hot
+            ? new Color(0.4f, 1f, 0.6f, 0.95f)
+            : new Color(Palette.Accent.R, Palette.Accent.G, Palette.Accent.B, 0.34f);
+        DrawRect(MergeHitRect(p, origin, _pTrayCell, slot), col, filled: false, width: hot ? 3f : 1.5f);
     }
 
     private void MergeOffset(BlockPiece src, int dstSlot, out int rowOff, out int colOff)
@@ -324,15 +373,23 @@ public partial class BlockFitVersusController : Node2D
         rowOff = Mathf.RoundToInt(fr);
     }
 
+    /// <summary>Grid origin the dragged piece snaps to, or FALSE when the finger is not really
+    /// over the board — an ambiguous release must do nothing rather than force-place the piece on
+    /// the clamped edge (which, for a finger down in the tray, always meant the bottom row).
+    /// Twin of BlockFitController.TargetCell; see there for the full reasoning.</summary>
     private bool TargetCell(BlockPiece p, Vector2 finger, out int gr, out int gc)
     {
+        gr = 0; gc = 0;
+        if (_pCell <= 0f) return false;
         float lift = _pCell * 0.6f;
         var topLeft = new Vector2(finger.X - p.Width * _pCell / 2f, finger.Y - lift - p.Height * _pCell);
         gc = Mathf.RoundToInt((topLeft.X - _pOrigin.X) / _pCell);
         gr = Mathf.RoundToInt((topLeft.Y - _pOrigin.Y) / _pCell);
-        gc = Mathf.Clamp(gc, 0, BlockFitGame.Size - p.Width);
-        gr = Mathf.Clamp(gr, 0, BlockFitGame.Size - p.Height);
-        return true;
+        int maxC = BlockFitGame.Size - p.Width, maxR = BlockFitGame.Size - p.Height;
+        bool on = gc >= 0 && gr >= 0 && gc <= maxC && gr <= maxR;
+        gc = Mathf.Clamp(gc, 0, maxC);
+        gr = Mathf.Clamp(gr, 0, maxR);
+        return on;
     }
 
     // ---- Match callbacks ---------------------------------------------------
@@ -425,7 +482,11 @@ public partial class BlockFitVersusController : Node2D
         {
             var p = _match.PlayerGame.Tray[i];
             if (p is null || i == _dragIndex || i == mergeHover) continue;
-            DrawPiece(p, TrayPieceOrigin(p, i), _pTrayCell, 1f, trayTex, glyph);
+            var porigin = TrayPieceOrigin(p, i);
+            DrawPiece(p, porigin, _pTrayCell, 1f, trayTex, glyph);
+            // Merge affordance while a piece is in hand: the fuse target is the piece's cells,
+            // not the slot, so show exactly those cells.
+            if (_dragIndex != -1) DrawMergeTarget(p, porigin, _pTraySlot[i], hot: false);
         }
 
         var tex = TextureFactory.Cell(Mathf.Clamp((int)_pCell, 8, 128));
@@ -438,32 +499,57 @@ public partial class BlockFitVersusController : Node2D
             MergeOffset(mdp, mergeHover, out int mr, out int mc);
             bool okMerge = _match.PlayerGame.CanMerge(_dragIndex, mergeHover, mr, mc);
             var borigin = TrayPieceOrigin(mdst, mergeHover);
-            DrawRect(_pTraySlot[mergeHover].Grow(-4f), new Color(0.55f, 0.85f, 1f, 0.4f), filled: false, width: 2f);
             DrawPiece(mdst, borigin, _pTrayCell, 0.5f, trayTex, glyph);
+            DrawMergeTarget(mdst, borigin, _pTraySlot[mergeHover], hot: true);
             var srcCol = okMerge ? new Color(0.4f, 1f, 0.6f) : Palette.AccentRed;
             foreach (var (dr, dc) in mdp.Cells)
             {
                 var rect = new Rect2(borigin + new Vector2((dc + mc) * _pTrayCell, (dr + mr) * _pTrayCell) + new Vector2(1, 1), new Vector2(_pTrayCell - 2, _pTrayCell - 2));
                 DrawTextureRect(trayTex, rect, false, new Color(srcCol.R, srcCol.G, srcCol.B, okMerge ? 0.95f : 0.6f));
             }
+
+            // The piece in hand still follows the finger while aiming at a fuse. It used to
+            // vanish the instant the drag entered another slot (this branch simply never drew
+            // it), which read as "I dropped it" on the one screen where a lost piece costs a
+            // duel. Board-cell sized and lifted off the fingertip, exactly as solo draws it.
+            float mlift = _pCell * 0.6f;
+            DrawPiece(mdp, new Vector2(_finger.X - mdp.Width * _pCell / 2f, _finger.Y - mlift - mdp.Height * _pCell),
+                      _pCell, 1f, tex, glyph);
+
+            // Merge magnifier — the SAME panel solo draws, from the same function, so the two
+            // Block Fit screens cannot drift apart. Drawn LAST so the floating piece can never
+            // cover it. This board carries the smallest merge rect in the game (50×50px = 4.1mm)
+            // AND a running clock, so it needs the confirmation-outside-the-thumb more than solo
+            // does. See MergeLoupe for why it parks over the lower board and nothing else.
+            MergeLoupe.Draw(this, mdp, mdst, mr, mc, okMerge,
+                            Bootstrap.Instance.SafeCanvasSize, _pOrigin.Y, _pTraySlot[0].Position.Y,
+                            _pTrayCell, _shimmer);
         }
-        else if (mergeHover < 0 && _dragIndex != -1 && _match.PlayerGame.Tray[_dragIndex] is { } dp && TargetCell(dp, _finger, out int gr, out int gc))
+        else if (mergeHover < 0 && _dragIndex != -1 && _match.PlayerGame.Tray[_dragIndex] is { } dp)
         {
-            bool ok = _match.PlayerGame.CanPlace(dp, gr, gc);
-            var origin = _pOrigin + new Vector2(gc * _pCell, gr * _pCell);
-            if (ok)
+            // The board ghost is drawn ONLY when the finger really points at the board. Off the
+            // board there is no ghost at all — matching the fact that a release there now does
+            // nothing — but the piece itself must still follow the finger, or it would vanish
+            // out of the player's hand the moment they drift off the grid.
+            bool onBoard = TargetCell(dp, _finger, out int gr, out int gc);
+            bool ok = onBoard && _match.PlayerGame.CanPlace(dp, gr, gc);
+            if (onBoard)
             {
-                _match.PlayerGame.LinesClearedBy(dp, gr, gc, _pvRows, _pvCols);
-                float boardPx = _pCell * BlockFitGame.Size;
-                var glow = new Color(0.15f, 1f, 0.45f, 0.32f);
-                foreach (int rr in _pvRows) DrawRect(new Rect2(_pOrigin + new Vector2(0, rr * _pCell), new Vector2(boardPx, _pCell)), glow, filled: true);
-                foreach (int cc in _pvCols) DrawRect(new Rect2(_pOrigin + new Vector2(cc * _pCell, 0), new Vector2(_pCell, boardPx)), glow, filled: true);
-            }
-            foreach (var (drr, dcc) in dp.Cells)
-            {
-                var gcell = new Rect2(origin + new Vector2(dcc * _pCell, drr * _pCell) + new Vector2(2, 2), new Vector2(_pCell - 4, _pCell - 4));
-                var col = ok ? Palette.ForPiece(dp.Color) : Palette.AccentRed;
-                DrawRect(gcell, new Color(col.R, col.G, col.B, 0.9f), filled: false, width: 2.5f);
+                var origin = _pOrigin + new Vector2(gc * _pCell, gr * _pCell);
+                if (ok)
+                {
+                    _match.PlayerGame.LinesClearedBy(dp, gr, gc, _pvRows, _pvCols);
+                    float boardPx = _pCell * BlockFitGame.Size;
+                    var glow = new Color(0.15f, 1f, 0.45f, 0.32f);
+                    foreach (int rr in _pvRows) DrawRect(new Rect2(_pOrigin + new Vector2(0, rr * _pCell), new Vector2(boardPx, _pCell)), glow, filled: true);
+                    foreach (int cc in _pvCols) DrawRect(new Rect2(_pOrigin + new Vector2(cc * _pCell, 0), new Vector2(_pCell, boardPx)), glow, filled: true);
+                }
+                foreach (var (drr, dcc) in dp.Cells)
+                {
+                    var gcell = new Rect2(origin + new Vector2(dcc * _pCell, drr * _pCell) + new Vector2(2, 2), new Vector2(_pCell - 4, _pCell - 4));
+                    var col = ok ? Palette.ForPiece(dp.Color) : Palette.AccentRed;
+                    DrawRect(gcell, new Color(col.R, col.G, col.B, 0.9f), filled: false, width: 2.5f);
+                }
             }
             float lift = _pCell * 0.6f;
             DrawPiece(dp, new Vector2(_finger.X - dp.Width * _pCell / 2f, _finger.Y - lift - dp.Height * _pCell), _pCell, ok ? 1f : 0.6f, tex, glyph);

@@ -37,18 +37,53 @@ public sealed class BurstEngine
     private struct FxRibbon { public Vector2 Base; public float Age, Life, Seed, Hue, Cell; }
     private struct FxBolt { public Vector2 A, B; public float Age, Life, Seed; }
 
+    /// <summary>An expanding displacement wave the BOARD samples — it moves cells that are
+    /// already being drawn, so the whole grid ripples for zero extra draw calls and zero
+    /// extra textures. Gated off entirely under reduced motion.</summary>
+    private struct FxShock { public Vector2 C; public float Age, Life, Amp, Sigma; }
+
     private const int MaxFx = 260;
+    private const int MaxShocks = 4;
     private const float FlutterFreq = 9f;
+    private const float ShockSpeed = 520f;     // px/s ring expansion
+    private const float ShockLife = 0.34f;
+    /// <summary>Minimum gap between full-screen bleaches — a photosensitivity floor. Without
+    /// it a fast multi-line combo could strobe the whole screen at frame rate.</summary>
+    private const float FlashCooldown = 0.40f;
+    /// <summary>Hard ceiling on any single frame's full-screen additive alpha. hdr_2d is baked
+    /// OFF, so an unclamped bleach saturates SDR to a flat white rectangle and the artifact
+    /// loses its colour identity.</summary>
+    private const float MaxScreenAdditive = 1.6f;
+    private const int BoltSegs = 8;            // hard cap — sizes the shared scratch buffer
 
     private readonly List<FxSpark> _fx = new();
     private readonly List<FxRing> _rings = new();
     private readonly List<FxRibbon> _ribbons = new();
     private readonly List<FxBolt> _bolts = new();
+    private readonly FxShock[] _shocks = new FxShock[MaxShocks];
+    private int _shockCount;
     private readonly RandomNumberGenerator _rng = new();
+
+    /// <summary>The rigid-chunk destruction pass. Pumped by this engine's Update/Draw, so a
+    /// host gets it just by calling <see cref="SetDebrisBounds"/> once.</summary>
+    public DebrisField Debris { get; } = new();
+
+    /// <summary>Opt debris out for hosts with no room for it (tiny preview cards).</summary>
+    public bool DebrisEnabled { get; set; } = true;
 
     // Screen-space envelope (Supernova bleach + vignette; Lightning short flash).
     private float _novaAge = 9f, _novaPeak;
     private bool _novaVignette;
+    private float _sinceFlash = 9f;
+
+    // Immediate-mode draw marshals these synchronously, so one shared scratch per shape is
+    // safe and removes ~260 array allocations per peak frame (pure GC-pressure win).
+    private static readonly Vector2[] S3 = new Vector2[3];
+    private static readonly Vector2[] S4 = new Vector2[4];
+    private static readonly Vector2[] S8 = new Vector2[8];
+    private static readonly Vector2[] S12 = new Vector2[12]; private static readonly Color[] S12C = new Color[12];
+    private static readonly Vector2[] S26 = new Vector2[26]; private static readonly Color[] S26C = new Color[26];
+    private static readonly Vector2[] SBolt = new Vector2[BoltSegs + 1];   // bolt polyline (segs hard-capped)
 
     private static readonly Color[] Party =
     {
@@ -56,19 +91,33 @@ public sealed class BurstEngine
         new(0.75f, 0.5f, 1f), new(1f, 0.55f, 0.85f), new(0.5f, 1f, 0.9f),
     };
 
-    public bool Active => _fx.Count > 0 || _rings.Count > 0 || _ribbons.Count > 0 || _bolts.Count > 0 || _novaAge < 0.6f;
+    public bool Active => _fx.Count > 0 || _rings.Count > 0 || _ribbons.Count > 0 || _bolts.Count > 0
+                          || _shockCount > 0 || Debris.Active || _novaAge < 0.6f;
 
     public void Clear()
     {
         _fx.Clear(); _rings.Clear(); _ribbons.Clear(); _bolts.Clear();
+        _shockCount = 0;
+        Debris.Clear();
         _novaAge = 9f; _novaPeak = 0f;
     }
+
+    /// <summary>Arm the debris pass: the wall box and the shelf chunks come to rest on. Pass a
+    /// floor ABOVE the tray/exit strip so settled debris can never sit on a drag target.</summary>
+    public void SetDebrisBounds(Rect2 walls, float floorY) => Debris.SetBounds(walls, floorY);
 
     // ---- Integration --------------------------------------------------------
 
     public void Update(float dt)
     {
         if (_novaAge < 2f) _novaAge += dt;
+        if (_sinceFlash < 4f) _sinceFlash += dt;
+        Debris.Integrate(dt);
+        for (int i = _shockCount - 1; i >= 0; i--)
+        {
+            _shocks[i].Age += dt;
+            if (_shocks[i].Age >= _shocks[i].Life) _shocks[i] = _shocks[--_shockCount];
+        }
 
         for (int i = _fx.Count - 1; i >= 0; i--)
         {
@@ -111,6 +160,16 @@ public sealed class BurstEngine
             ? origin + new Vector2(n * 0.5f * cell, (index + 0.5f) * cell)
             : origin + new Vector2((index + 0.5f) * cell, n * 0.5f * cell);
         Color Gold = new(1f, 0.95f, 0.6f);
+
+        // Physical destruction first: the cleared cells crack and break apart underneath the
+        // artifact's celebration. Inert until a host arms SetDebrisBounds, and refused outright
+        // under reduced motion (single gate inside DebrisField).
+        if (DebrisEnabled)
+            Debris.EmitLine(rowLine, index, origin, cell, n, budget, preClear, Palette.EquippedMaterial);
+
+        // The board's own recoil — one wave per cleared line, sampled by the cell draw loop.
+        // Amplitude rides the combo: `budget` already encodes how many lines went at once.
+        EmitShock(lineCenter, Mathf.Min(1f, 0.55f + (1f - budget)), cell);
 
         switch (art)
         {
@@ -262,7 +321,57 @@ public sealed class BurstEngine
     private void Streak(Vector2 pos, float ang, float len, float life, Color col)
         => Add(FxKind.Streak, pos, new Vector2(Mathf.Cos(ang), Mathf.Sin(ang)) * (len / Mathf.Max(0.01f, life)), life, len * 0.12f, 0, 0.5f, 0, 0, 0.05f, 0, true, col);
 
-    private void TriggerNova(float peak, bool vignette) { _novaAge = 0f; _novaPeak = peak; _novaVignette = vignette; }
+    private void TriggerNova(float peak, bool vignette)
+    {
+        // Photosensitivity floor: refuse a second full-screen bleach inside the cooldown.
+        // A five-line combo fires EmitLine five times in one frame — without this the screen
+        // would strobe at frame rate.
+        if (_sinceFlash < FlashCooldown) return;
+        _sinceFlash = 0f;
+        _novaAge = 0f; _novaPeak = peak; _novaVignette = vignette;
+    }
+
+    // ---- Board shock (the "it hit hard" displacement wave) ------------------
+
+    /// <summary>Spawn an expanding displacement ring. Callers that draw a grid sample it with
+    /// <see cref="BoardShock"/>; hosts that don't simply ignore it (no draw cost either way).</summary>
+    public void EmitShock(Vector2 centre, float amp, float cell)
+    {
+        if (Motion.Reduced || amp <= 0f) return;
+        if (_shockCount >= MaxShocks) _shockCount = MaxShocks - 1;   // newest wins
+        _shocks[_shockCount++] = new FxShock
+        {
+            C = centre, Age = 0f, Life = ShockLife, Amp = amp, Sigma = Mathf.Max(1f, cell * 1.1f),
+        };
+    }
+
+    /// <summary>
+    /// Sample the active shock waves at a point. Returns false when nothing is displacing it —
+    /// including ALWAYS under reduced motion, so callers need no second gate.
+    /// <paramref name="amp"/> is a 0..1 scalar the caller multiplies by its own cell size.
+    /// </summary>
+    public bool BoardShock(Vector2 p, out Vector2 dir, out float amp)
+    {
+        dir = Vector2.Zero; amp = 0f;
+        if (_shockCount == 0 || Motion.Reduced) return false;
+        for (int i = 0; i < _shockCount; i++)
+        {
+            ref readonly var s = ref _shocks[i];
+            if (s.Age < 0f) continue;
+            var d = p - s.C;
+            float dist = d.Length();
+            float band = (dist - ShockSpeed * s.Age) / s.Sigma;
+            float g = Mathf.Exp(-band * band);
+            float a = s.Amp * g * (1f - s.Age / s.Life);
+            if (a <= 0.002f) continue;
+            amp += a;
+            if (dist > 0.001f) dir += d / dist * a;
+        }
+        if (amp <= 0.002f) { amp = 0f; return false; }
+        dir = dir.Normalized();
+        amp = Mathf.Min(amp, 1f);
+        return true;
+    }
 
     private void Add(FxKind kind, Vector2 pos, Vector2 vel, float life, float size, float grav, float drag,
                      float spin, float flutter, float trail, float delay, bool additive, Color col)
@@ -320,8 +429,34 @@ public sealed class BurstEngine
 
     // ---- Draw: normal-alpha surface (paper, glass — no glow) ----------------
 
-    public void DrawNormal(CanvasItem ci, float cell, Rect2 screen)
+    /// <summary>
+    /// The rigid-chunk pass on its own, so a host can choose its OWN z-order for it. Block Fit
+    /// draws this UNDER the board cells: debris is the biggest, longest-lived, most opaque thing
+    /// the engine makes, and folded into <see cref="DrawNormal"/> (which a host naturally calls
+    /// last) it covered the cells, the line-clear preview and the piece in the player's hand.
+    /// Hosts that don't care keep calling <see cref="DrawNormal"/> with its default.
+    /// </summary>
+    public void DrawDebrisNormal(CanvasItem ci) => Debris.DrawNormal(ci);
+
+    /// <summary>
+    /// The GLOWING half of the same chunk pass, split out for exactly the same reason as
+    /// <see cref="DrawDebrisNormal"/>. Without it the z-order fix was only half a fix: a
+    /// material whose chunks are additive (NeonTube — the VAPOR TUBE skin) is skipped by
+    /// <see cref="DebrisField.DrawNormal"/> and appears ONLY on the additive surface, which is
+    /// a child node and therefore draws after its host's own <c>_Draw</c>. So on that one skin
+    /// the debris still covered the board and the piece in hand while every other skin was
+    /// fixed. A host that wants debris under its cells now routes BOTH halves below them:
+    /// this one onto an additive layer of its own, and passes <c>includeDebris: false</c> to
+    /// <see cref="DrawAdditive"/> so the top layer doesn't draw the chunks a second time.
+    /// "Don't cover the board" is a promise about debris, not about a material.
+    /// </summary>
+    public void DrawDebrisAdditive(CanvasItem ci) => Debris.DrawAdditive(ci);
+
+    /// <param name="includeDebris">False when the host already drew the chunk pass itself via
+    /// <see cref="DrawDebrisNormal"/> at a lower z-order.</param>
+    public void DrawNormal(CanvasItem ci, float cell, Rect2 screen, bool includeDebris = true)
     {
+        if (includeDebris) Debris.DrawNormal(ci);
         foreach (var s in _fx)
         {
             if (s.Age < 0f || s.Additive) continue;
@@ -343,14 +478,19 @@ public sealed class BurstEngine
 
     // ---- Draw: additive surface (glow, stars, rings, flash) -----------------
 
-    public void DrawAdditive(CanvasItem ci, float cell, Rect2 screen)
+    /// <param name="includeDebris">False when the host already drew the glowing chunk pass
+    /// itself via <see cref="DrawDebrisAdditive"/> at a lower z-order.</param>
+    public void DrawAdditive(CanvasItem ci, float cell, Rect2 screen, bool includeDebris = true)
     {
         // Screen bleach (Supernova / Lightning).
         if (_novaPeak > 0f && _novaAge < 0.6f && screen.Size.X > 0f)
         {
             float fa = _novaPeak * Mathf.Min(1f, _novaAge / 0.06f) * Mathf.Exp(-Mathf.Max(0f, _novaAge - 0.06f) / 0.12f);
+            fa = Mathf.Min(fa, MaxScreenAdditive);
             if (fa > 0.003f) ci.DrawRect(screen, new Color(1f, 0.98f, 0.9f, fa));
         }
+
+        if (includeDebris) Debris.DrawAdditive(ci);
 
         foreach (var rg in _rings)
         {
@@ -366,18 +506,24 @@ public sealed class BurstEngine
             }
             else if (rg.Rainbow)
             {
-                var pts = new Vector2[26]; var cols = new Color[26];
+                // Kept as a polyline on purpose: the travelling hue cycle IS this artifact's
+                // identity and a baked ring can't express it. Only the allocation is gone.
                 for (int i = 0; i < 26; i++)
                 {
                     float ang = Mathf.Tau * i / 25f;
-                    pts[i] = rg.Pos + new Vector2(Mathf.Cos(ang), Mathf.Sin(ang)) * rad;
-                    cols[i] = Color.FromHsv((i / 25f + rg.Age * 0.1f) % 1f, 0.85f, 1f, a);
+                    S26[i] = rg.Pos + new Vector2(Mathf.Cos(ang), Mathf.Sin(ang)) * rad;
+                    S26C[i] = Color.FromHsv((i / 25f + rg.Age * 0.1f) % 1f, 0.85f, 1f, a);
                 }
-                ci.DrawPolylineColors(pts, cols, Mathf.Max(2f, rg.Width * (1f - t)));
+                ci.DrawPolylineColors(S26, S26C, Mathf.Max(2f, rg.Width * (1f - t)));
             }
             else
             {
-                ci.DrawArc(rg.Pos, rad, 0f, Mathf.Tau, 48, new Color(rg.Col.R, rg.Col.G, rg.Col.B, a * 0.9f), Mathf.Max(2f, rg.Width * (1f - t)));
+                // One baked quad instead of a 48-segment polyline — and the bake carries a
+                // chromatic R/G/B split the DrawArc version could never afford.
+                float side = 2f * rad / TextureFactory.ShockRingCrest;
+                var rect = new Rect2(rg.Pos - new Vector2(side / 2f, side / 2f), new Vector2(side, side));
+                ci.DrawTextureRect(ShockRingTex, rect, false,
+                                   new Color(rg.Col.R, rg.Col.G, rg.Col.B, a * 0.9f));
             }
         }
 
@@ -399,7 +545,14 @@ public sealed class BurstEngine
         }
     }
 
-    private static readonly ImageTexture Glow = TextureFactory.GlowDisc(48);
+    /// <summary>The particle bloom kernel. A 4-point anisotropic star (tight core + wide skirt
+    /// + diffraction streaks) rather than a plain disc — a lens-flare read for the same single
+    /// draw call, so this is a pure quality win at zero runtime cost.</summary>
+    private static readonly ImageTexture Glow = TextureFactory.BloomStar(128, 4);
+
+    /// <summary>The baked shockwave annulus (chromatic R/G/B split). Held here so the ring
+    /// draw doesn't rebuild TextureFactory's interpolated cache key every frame.</summary>
+    private static readonly ImageTexture ShockRingTex = TextureFactory.ShockRing(128);
 
     private void DrawGlowDot(CanvasItem ci, FxSpark s, float a)
     {
@@ -415,14 +568,13 @@ public sealed class BurstEngine
         float rp = s.Size * (0.8f + 0.2f * Mathf.Sin(s.Age * 18f + s.Seed));
         float tw = 0.6f + 0.4f * Mathf.Sin(s.Age * 22f + s.Seed);
         float a = (1f - t) * Mathf.Clamp(tw, 0f, 1f);
-        var pts = new Vector2[8];
         for (int i = 0; i < 8; i++)
         {
             float rr = (i % 2 == 0) ? rp : rp * 0.34f;
             float ang = s.Rot + i * Mathf.Pi / 4f;
-            pts[i] = s.Pos + new Vector2(Mathf.Cos(ang), Mathf.Sin(ang)) * rr;
+            S8[i] = s.Pos + new Vector2(Mathf.Cos(ang), Mathf.Sin(ang)) * rr;
         }
-        ci.DrawColoredPolygon(pts, new Color(s.Col.R, s.Col.G, s.Col.B, a));
+        ci.DrawColoredPolygon(S8, new Color(s.Col.R, s.Col.G, s.Col.B, a));
         var ax = new Vector2(Mathf.Cos(s.Rot), Mathf.Sin(s.Rot));
         var ay = new Vector2(-ax.Y, ax.X);
         var w = new Color(1, 1, 1, a * 0.8f);
@@ -439,8 +591,8 @@ public sealed class BurstEngine
         var tail = s.Pos - dir * tlen;
         var perp = new Vector2(-dir.Y, dir.X);
         float wH = s.Size, wT = s.Size * 0.15f;
-        var quad = new[] { s.Pos + perp * wH, s.Pos - perp * wH, tail - perp * wT, tail + perp * wT };
-        ci.DrawColoredPolygon(quad, new Color(s.Col.R, s.Col.G, s.Col.B, a));
+        S4[0] = s.Pos + perp * wH; S4[1] = s.Pos - perp * wH; S4[2] = tail - perp * wT; S4[3] = tail + perp * wT;
+        ci.DrawColoredPolygon(S4, new Color(s.Col.R, s.Col.G, s.Col.B, a));
         float side = wH * 3f;
         ci.DrawTextureRect(Glow, new Rect2(s.Pos - new Vector2(side / 2f, side / 2f), new Vector2(side, side)), false,
             new Color(Mathf.Min(1, s.Col.R + 0.4f), Mathf.Min(1, s.Col.G + 0.4f), Mathf.Min(1, s.Col.B + 0.4f), a));
@@ -453,7 +605,8 @@ public sealed class BurstEngine
         float cr = Mathf.Cos(s.Rot), sr = Mathf.Sin(s.Rot);
         Vector2 R(float x, float y) => s.Pos + new Vector2(x * cr - y * sr, x * sr + y * cr);
         var face = e > 0.5f ? s.Col : new Color(s.Col.R * 0.55f, s.Col.G * 0.55f, s.Col.B * 0.55f);
-        ci.DrawColoredPolygon(new[] { R(-w, -hgt), R(w, -hgt), R(w, hgt), R(-w, hgt) }, new Color(face.R, face.G, face.B, a));
+        S4[0] = R(-w, -hgt); S4[1] = R(w, -hgt); S4[2] = R(w, hgt); S4[3] = R(-w, hgt);
+        ci.DrawColoredPolygon(S4, new Color(face.R, face.G, face.B, a));
     }
 
     private void DrawShard(CanvasItem ci, FxSpark s, float a)
@@ -464,7 +617,8 @@ public sealed class BurstEngine
         var A = s.Pos + dir * L * 0.65f;
         var B = s.Pos - dir * L * 0.35f + perp * W;
         var C = s.Pos - dir * L * 0.35f - perp * W;
-        ci.DrawColoredPolygon(new[] { A, B, C }, new Color(s.Col.R, s.Col.G, s.Col.B, a));
+        S3[0] = A; S3[1] = B; S3[2] = C;
+        ci.DrawColoredPolygon(S3, new Color(s.Col.R, s.Col.G, s.Col.B, a));
         ci.DrawLine(A, B, new Color(1, 1, 1, a * 0.8f), 1.5f);
     }
 
@@ -492,21 +646,19 @@ public sealed class BurstEngine
     {
         float t = rb.Age / rb.Life;
         float baseA = (0.4f + 0.3f * Mathf.Sin(rb.Age * 4f)) * (1f - t);
-        var pts = new Vector2[12]; var cols = new Color[12];
         for (int i = 0; i < 12; i++)
         {
-            pts[i] = rb.Base + new Vector2(Mathf.Sin(rb.Age * 2f + i * 0.6f + rb.Seed) * rb.Cell * 0.6f, -i * rb.Cell * 0.7f);
+            S12[i] = rb.Base + new Vector2(Mathf.Sin(rb.Age * 2f + i * 0.6f + rb.Seed) * rb.Cell * 0.6f, -i * rb.Cell * 0.7f);
             float hue = (rb.Hue + i * 0.03f + rb.Age * 0.1f) % 1f;
-            cols[i] = Color.FromHsv(hue, 0.7f, 1f, baseA * (1f - i / 12f));
+            S12C[i] = Color.FromHsv(hue, 0.7f, 1f, baseA * (1f - i / 12f));
         }
-        ci.DrawPolylineColors(pts, cols, Mathf.Max(2f, rb.Cell * 0.35f));
+        ci.DrawPolylineColors(S12, S12C, Mathf.Max(2f, rb.Cell * 0.35f));
     }
 
     private void DrawBolt(CanvasItem ci, FxBolt b)
     {
         float a = 1f - b.Age / b.Life;
-        int segs = 8;
-        var pts = new Vector2[segs + 1];
+        const int segs = BoltSegs;
         int jitter = (int)(b.Age * 40f);                          // re-jitter a few times → buzz
         var dir = b.B - b.A;
         var perp = new Vector2(-dir.Y, dir.X).Normalized();
@@ -515,10 +667,10 @@ public sealed class BurstEngine
         {
             float f = i / (float)segs;
             float off = (i == 0 || i == segs) ? 0f : (Hash01(b.Seed + i * 7 + jitter) - 0.5f) * cell * 0.8f;
-            pts[i] = b.A + dir * f + perp * off;
+            SBolt[i] = b.A + dir * f + perp * off;
         }
-        ci.DrawPolyline(pts, new Color(0.3f, 0.85f, 1f, a * 0.35f), cell * 0.30f);
-        ci.DrawPolyline(pts, new Color(1f, 1f, 1f, a), cell * 0.10f);
+        ci.DrawPolyline(SBolt, new Color(0.3f, 0.85f, 1f, a * 0.35f), cell * 0.30f);
+        ci.DrawPolyline(SBolt, new Color(1f, 1f, 1f, a), cell * 0.10f);
     }
 
     private static float Hash01(float x)
@@ -530,18 +682,43 @@ public sealed class BurstEngine
 
 /// <summary>A Node2D whose only job is to draw a <see cref="BurstEngine"/>'s additive (glow)
 /// half with a BlendMode.Add material, so bright particles sum toward white (SDR bloom without
-/// HDR). Shared by the Block Fit board and the store's ArtifactPreview.</summary>
+/// HDR). Shared by the Block Fit board and the store's ArtifactPreview.
+///
+/// Blending is a property of a CANVAS ITEM, never of a draw call, so "some glow under the board
+/// cells and the rest over them" cannot be expressed on one node — it needs two layers at two
+/// z-orders. <see cref="Pass"/> is how a host says which half this instance carries; a host that
+/// doesn't care keeps the default and gets everything.</summary>
 public sealed partial class AdditiveFxLayer : Node2D
 {
+    /// <summary>Which slice of the additive surface this layer draws.</summary>
+    public enum Pass : byte
+    {
+        /// <summary>Everything (the default — one layer, drawn over the host).</summary>
+        Full,
+        /// <summary>Only the glowing rigid chunks, for a layer placed UNDER the board cells.</summary>
+        DebrisOnly,
+        /// <summary>Everything except the chunks, for the layer that stays on top.</summary>
+        NoDebris,
+    }
+
     private readonly BurstEngine _engine;
     private readonly Func<float> _cell;
     private readonly Func<Rect2> _screen;
+    private readonly Pass _pass;
 
-    public AdditiveFxLayer(BurstEngine engine, Func<float> cell, Func<Rect2> screen)
+    public AdditiveFxLayer(BurstEngine engine, Func<float> cell, Func<Rect2> screen, Pass pass = Pass.Full)
     {
-        _engine = engine; _cell = cell; _screen = screen;
+        _engine = engine; _cell = cell; _screen = screen; _pass = pass;
         Material = new CanvasItemMaterial { BlendMode = CanvasItemMaterial.BlendModeEnum.Add };
     }
 
-    public override void _Draw() => _engine.DrawAdditive(this, _cell(), _screen());
+    public override void _Draw()
+    {
+        switch (_pass)
+        {
+            case Pass.DebrisOnly: _engine.DrawDebrisAdditive(this); break;
+            case Pass.NoDebris: _engine.DrawAdditive(this, _cell(), _screen(), includeDebris: false); break;
+            default: _engine.DrawAdditive(this, _cell(), _screen()); break;
+        }
+    }
 }

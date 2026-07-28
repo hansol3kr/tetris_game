@@ -53,16 +53,38 @@ public partial class AudioManager : Node
         else if (!_muted && wasMuted && _currentMusic.Length > 0) PlayMusic(_currentMusic);
     }
 
-    public void PlaySfx(string name)
+    public void PlaySfx(string name) => PlaySfx(name, 1f);
+
+    /// <summary>
+    /// Play a cue re-pitched at playback time. This is how a block skin's MATERIAL gets a
+    /// voice — wood locks lower, glass tube higher — without touching the synth: one cached
+    /// waveform, only <c>PitchScale</c> changes, so <c>core/Audio/AudioSynth.cs</c> and its
+    /// determinism-adjacent render path stay untouched. Pitch is clamped to a musical range
+    /// so a bad caller can't produce a click or a sub-bass thud.
+    /// </summary>
+    public void PlaySfx(string name, float pitch, float dbOffset = 0f)
     {
         if (_muted) return;
         var stream = SfxStream(name);
         var player = _sfxPool[_poolIndex];
         _poolIndex = (_poolIndex + 1) % _sfxPool.Count;
         player.Stream = stream;
-        player.VolumeDb = _sfxVolumeDb;
+        player.PitchScale = Mathf.Clamp(pitch, 0.5f, 2f);
+        player.VolumeDb = _sfxVolumeDb + dbOffset;
         player.Play();
     }
+
+    /// <summary>The lock-sound pitch a block finish speaks at — the audio half of the material
+    /// axis. Callers: <c>PlaySfx("lock", AudioManager.MaterialPitch(Palette.EquippedMaterial))</c>.</summary>
+    public static float MaterialPitch(Blockfall.Theme.CellMaterial m) => m switch
+    {
+        Blockfall.Theme.CellMaterial.Wood => 0.78f,
+        Blockfall.Theme.CellMaterial.Frosted => 1.10f,
+        Blockfall.Theme.CellMaterial.Metallic => 1.18f,
+        Blockfall.Theme.CellMaterial.Gemstone => 1.22f,
+        Blockfall.Theme.CellMaterial.NeonTube => 1.30f,
+        _ => 1.00f,
+    };
 
     private AudioStream SfxStream(string name)
     {

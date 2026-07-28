@@ -162,7 +162,7 @@ public partial class AutoPlay : Node
         await CheckPauseOverlay();
 
         // ── 5) 스킨(테마) 장착 라이브 적용 ──────────────────────────
-        CheckSkins();
+        await CheckSkins();
 
         // ── 리포트 ─────────────────────────────────────────────────
         GD.Print("[autoplay] ===== 리포트 =====");
@@ -279,23 +279,60 @@ public partial class AutoPlay : Node
         return best;
     }
 
-    private void CheckSkins()
+    /// <summary>
+    /// Equip and exercise EVERY skin in the catalog — owned or not.
+    ///
+    /// This used to skip anything <c>OwnsItem</c> said no to, which in a fresh save is all but the
+    /// three free themes. So 28 paid skins had never once been equipped by the smoke, including
+    /// <c>theme_dichroic</c> — the catalog's ONLY BoardGradient plan, i.e. the only skin whose
+    /// cell colour is a function of board POSITION. The one code path with positional maths in it
+    /// was the one path with zero coverage. Ownership is a purchase gate, not a rendering gate;
+    /// gating a smoke test on it means the harness only ever tests what a new player already has.
+    ///
+    /// Runs on a LIVE Block Fit board (the mode the menu actually launches, and the only screen
+    /// that draws a ColorPlan) so each skin is checked for a 0×0 collapse as well. The original
+    /// equip is restored at the end — this is a local cosmetic write and it grants nothing.
+    /// </summary>
+    private async Task CheckSkins()
     {
         var save = Bootstrap.Instance.Save;
+        string original = save.EquippedThemeId;
+        await Nav("BlockFit(skins)", () => R.StartBlockFit());
+
+        int swept = 0;
         foreach (var item in StoreCatalog.Items)
         {
-            if (item.Kind != StoreItemKind.Theme || !save.OwnsItem(item.Id)) continue;
+            if (item.Kind != StoreItemKind.Theme) continue;
+            if (item.Theme is not { } theme) { Fail($"스킨 {item.Id}: Kind=Theme 인데 Theme 데이터가 없음"); continue; }
             try
             {
                 save.EquipTheme(item.Id);
-                Palette.ApplyTheme(item.Theme);
+                Palette.ApplyTheme(theme);
                 Bootstrap.Instance.Bg.ApplyThemeColors();
-                Ok($"스킨 장착: {item.Id}");
+                // Resolve the plan over the whole board diagonal and every piece type — the exact
+                // call the cell draw makes (FitFill) and the one the store card makes (PlanFill),
+                // which is the only place a positional plan can go wrong.
+                float range = Palette.DiagRange(Palette.BoardSpan);
+                for (int d = 0; d <= (int)range; d++)
+                    for (var t = PieceType.Empty; t <= PieceType.Garbage; t++)
+                    {
+                        _ = Palette.FitFill(t, d);
+                        _ = Palette.PlanFill(theme, t, d, 0, range);
+                    }
+                swept++;
             }
             catch (Exception e)
             {
                 Fail($"스킨 {item.Id} 장착 예외 {e.GetType().Name}: {e.Message}");
             }
         }
+        await Wait(0.2);                       // let the board redraw under the last equip
+        CheckLayout($"스킨 스윕 {swept}종 (소유 무관)");
+
+        save.EquipTheme(original);
+        Palette.ApplyTheme(StoreCatalog.ById(original)?.Theme);
+        Bootstrap.Instance.Bg.ApplyThemeColors();
+        Ok($"스킨 복원: {original}");
+        await Nav("→Menu", () => R.GoToMainMenu(), typeof(MainMenu));
     }
 }
