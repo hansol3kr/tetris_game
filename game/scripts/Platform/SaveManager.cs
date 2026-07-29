@@ -26,6 +26,11 @@ public sealed class GameSettings
     /// <summary>Line-clear effect style — index into JuiceLayer.ClearFxNames.</summary>
     public int ClearFxStyle { get; set; }
 
+    /// <summary>Placement sound pack — index into AudioManager.PackNames. 0 = NEON,
+    /// the cue this game always shipped, so an existing save (and a save written by
+    /// an older build, where this key is simply absent) sounds unchanged.</summary>
+    public int SfxPack { get; set; }
+
     /// <summary>Show the finesse (input-economy) readout during play and on the results screen.</summary>
     public bool ShowFinesse { get; set; } = true;
 
@@ -288,8 +293,9 @@ public partial class SaveManager : Node
     {
         if (itemId == StoreCatalog.DefaultThemeId || _data.OwnedItems.Contains(itemId)) return true;
         var item = StoreCatalog.ById(itemId);
-        // Free cosmetics (themes AND burst-FX artifacts with no store product) are always owned.
-        return item is { Kind: StoreItemKind.Theme or StoreItemKind.Artifact }
+        // Free cosmetics (themes, burst-FX artifacts, sound packs with no store product)
+        // are always owned.
+        return item is { Kind: StoreItemKind.Theme or StoreItemKind.Artifact or StoreItemKind.SoundPack }
             && string.IsNullOrEmpty(item.ProductId);
     }
 

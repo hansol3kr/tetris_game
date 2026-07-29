@@ -322,6 +322,184 @@ public class BlockFitGameTests
         }
     }
 
+    // ---- Fuse budget -----------------------------------------------------------------
+    // Regression: merging was UNLIMITED. BuildMerge only ever refused a result whose bounding
+    // box exceeded the 10-wide board, and TryMerge refilled the emptied source slot at once, so
+    // "fuse, get a free fresh piece, fuse again" was an infinite loop — an unbounded score
+    // exploit (Score is 1/cell) and, worse, the end of the puzzle, since any board could be
+    // answered by fabricating the exact shape it needed. Reported as "무한정 조합이 된다".
+
+    [Fact]
+    public void FreshGame_StartsWithTheInitialMergeBudget()
+    {
+        Assert.Equal(BlockFitGame.InitialMerges, new BlockFitGame(seed: 42).Merges);
+        Assert.Equal(BlockFitGame.InitialMerges,
+            new BlockFitGame(EmptyGrid(), new BlockPiece?[] { null, null, null }).Merges);
+    }
+
+    [Fact]
+    public void TryMerge_SpendsOneChargePerFuse()
+    {
+        var g = FusableGame();
+        Assert.True(g.TryMerge(1, 0, 0, g.Tray[0]!.Width));
+        Assert.Equal(BlockFitGame.InitialMerges - 1, g.Merges);
+    }
+
+    [Fact]
+    public void TryMerge_WhenBudgetIsSpent_IsRefused_AndTheTrayIsUntouched()
+    {
+        var g = FusableGame();
+        DrainMerges(g);
+        Assert.Equal(0, g.Merges);
+
+        var before = new[] { g.Tray[0], g.Tray[1], g.Tray[2] };
+        Assert.False(g.TryMerge(1, 0, 0, g.Tray[0]!.Width));
+        Assert.False(g.TryMerge(1, 0));                       // the back-compat overload too
+        Assert.Equal(0, g.Merges);                            // never goes negative
+        for (int i = 0; i < 3; i++) Assert.Same(before[i], g.Tray[i]);   // no fuse, no free refill
+    }
+
+    [Fact]
+    public void CanMerge_WhenBudgetIsSpent_IsFalse_SoThePreviewNeverPromisesAFuseTheReleaseRefuses()
+    {
+        // The drag preview paints green from CanMerge and the release commits through TryMerge.
+        // If only TryMerge enforced the budget, a spent player would see "legal" and get nothing —
+        // strictly worse than the unlimited bug it replaced.
+        var g = FusableGame();
+        int w = g.Tray[0]!.Width;
+        Assert.True(g.CanMerge(1, 0, 0, w));
+        DrainMerges(g);
+        Assert.False(g.CanMerge(1, 0, 0, g.Tray[0]!.Width));
+    }
+
+    [Fact]
+    public void ClearingAPlacement_RefundsOneCharge_SoFusingSurvivesALongRun()
+    {
+        // Without income the verb would simply vanish from the back half of every long run.
+        var g = FusableGame(preFilledRows: 1);
+        DrainMerges(g);
+        Assert.Equal(0, g.Merges);
+
+        ClearRow(g, 0);
+        Assert.Equal(BlockFitGame.MergesPerClear, g.Merges);
+    }
+
+    [Fact]
+    public void ClearingAPlacement_RefundIsCappedAtMaxMerges()
+    {
+        // Income is flat per clearing placement AND capped, so a long clean stretch cannot bank a
+        // stock to dump late — that would be the unlimited endgame by another route.
+        var g = FusableGame(preFilledRows: 8);
+        for (int r = 0; r < 8; r++) ClearRow(g, r);        // 8 clears > InitialMerges + cap headroom
+        Assert.Equal(BlockFitGame.MaxMerges, g.Merges);
+    }
+
+    [Fact]
+    public void MergeBudget_IsNotToppedUpByPlacementsThatClearNothing()
+    {
+        var g = FusableGame();
+        DrainMerges(g);
+        g.Tray[0] = new BlockPiece(new[] { (0, 0) }, PieceType.T);
+        Assert.True(g.TryPlace(0, 5, 5));                  // empty board → clears nothing
+        Assert.Equal(0, g.LastClearedRows + g.LastClearedCols);
+        Assert.Equal(0, g.Merges);
+    }
+
+    /// <summary>A board+tray rigged so slot 1 can always fuse into slot 0 (singles on a mostly
+    /// empty board), with the default starting budget. <paramref name="preFilledRows"/> rows are
+    /// filled except their last column, so placing a single at (row, N-1) clears exactly that row;
+    /// it stays ≤8 so no COLUMN is ever full and clears stay one-at-a-time.</summary>
+    private static BlockFitGame FusableGame(int preFilledRows = 0)
+    {
+        var grid = EmptyGrid();
+        for (int r = 0; r < preFilledRows; r++)
+            for (int c = 0; c < N - 1; c++) grid[Idx(r, c)] = PieceType.O;
+        var a = new BlockPiece(new[] { (0, 0) }, PieceType.I);
+        var b = new BlockPiece(new[] { (0, 0) }, PieceType.O);
+        var c2 = new BlockPiece(new[] { (0, 0) }, PieceType.T);
+        return new BlockFitGame(grid, new BlockPiece?[] { a, b, c2 });
+    }
+
+    /// <summary>Fuse until the budget hits zero. The refill keeps slot 1 occupied and slot 0's
+    /// fused piece only grows a few cells wide, so every iteration stays legal.</summary>
+    private static void DrainMerges(BlockFitGame g)
+    {
+        for (int i = 0; i < BlockFitGame.InitialMerges; i++)
+            Assert.True(g.TryMerge(1, 0, 0, g.Tray[0]!.Width));
+    }
+
+    /// <summary>One clearing placement: drop a single into the hole at (row, N-1).</summary>
+    private static void ClearRow(BlockFitGame g, int row)
+    {
+        g.Tray[0] = new BlockPiece(new[] { (0, 0) }, PieceType.T);
+        Assert.True(g.TryPlace(0, row, N - 1));
+        Assert.Equal(1, g.LastClearedRows);
+    }
+
+    // ---- Fuse verdict ----------------------------------------------------------------
+    // Regression: the budget check sat inside the shared preview/commit gate, so CanMerge
+    // returned a bare false when the budget was spent. The drag preview painted the SAME red
+    // as "these two shapes overlap" and the release played the SAME snap-back click, so a
+    // depleted budget was indistinguishable from a bad aim — the player kept re-aiming a fuse
+    // that could never fire. CheckMerge keeps the one shared gate and adds the reason.
+
+    [Fact]
+    public void CheckMerge_WhenBudgetIsSpent_SaysNoCharges_NotWontFit()
+    {
+        var g = FusableGame();
+        int w = g.Tray[0]!.Width;
+        Assert.Equal(MergeVerdict.Ok, g.CheckMerge(1, 0, 0, w));
+
+        DrainMerges(g);
+        // The offset is still a perfectly legal join — only the budget is gone, and that is
+        // exactly what the player must be told: no finger movement can fix this one.
+        Assert.Equal(MergeVerdict.NoCharges, g.CheckMerge(1, 0, 0, g.Tray[0]!.Width));
+    }
+
+    [Fact]
+    public void CheckMerge_OverlappingShapes_SayWontFit_WhileChargesRemain()
+    {
+        var g = FusableGame();
+        Assert.True(g.Merges > 0);
+        Assert.Equal(MergeVerdict.WontFit, g.CheckMerge(1, 0, 0, 0));   // source lands on the destination
+    }
+
+    [Fact]
+    public void CheckMerge_NonPairs_SayNoTarget_EvenWithNoChargesLeft()
+    {
+        var g = FusableGame();
+        Assert.Equal(MergeVerdict.NoTarget, g.CheckMerge(0, 0, 0, 1));   // same slot
+        Assert.Equal(MergeVerdict.NoTarget, g.CheckMerge(0, 5, 0, 1));   // out of range
+        g.Tray[1] = null;
+        Assert.Equal(MergeVerdict.NoTarget, g.CheckMerge(1, 0, 0, 1));   // empty source slot
+
+        // "There is nothing here to fuse" outranks "you have no charges": a gesture aimed at an
+        // empty slot must not accuse the budget.
+        var spent = FusableGame();
+        DrainMerges(spent);
+        Assert.Equal(MergeVerdict.NoTarget, spent.CheckMerge(0, 0, 0, 1));
+    }
+
+    [Fact]
+    public void CanMerge_AndTryMerge_AgreeWithCheckMerge_OnEveryVerdict()
+    {
+        // The whole point of the enum is that it did not FORK the gate. Both old entry points
+        // stay defined as "verdict == Ok", in both directions.
+        var g = FusableGame();
+        int w = g.Tray[0]!.Width;
+        foreach (var (src, dst, ro, co) in new[] { (1, 0, 0, w), (1, 0, 0, 0), (0, 0, 0, 1), (0, 5, 0, 1) })
+        {
+            bool ok = g.CheckMerge(src, dst, ro, co) == MergeVerdict.Ok;
+            Assert.Equal(ok, g.CanMerge(src, dst, ro, co));
+        }
+
+        DrainMerges(g);
+        Assert.Equal(MergeVerdict.NoCharges, g.CheckMerge(1, 0, 0, g.Tray[0]!.Width));
+        Assert.False(g.CanMerge(1, 0, 0, g.Tray[0]!.Width));
+        Assert.False(g.TryMerge(1, 0, 0, g.Tray[0]!.Width));
+        Assert.Equal(0, g.Merges);                                        // never goes negative
+    }
+
     [Fact]
     public void TryMerge_RefusesInvalidIndicesOrEmptySlots()
     {

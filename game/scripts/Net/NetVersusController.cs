@@ -194,7 +194,7 @@ public partial class NetVersusController : Node2D
                 _juice.OnLineClear(ev.ClearedRows, ev.Result, ev.Piece.Type);
                 audio.PlayLineClear(ev.Result);
             }
-            else audio.PlaySfx("lock");
+            else audio.PlayPlace();   // the player's pack + material pitch (see GameController)
 
             // The lock is the authoritative sync point: mirror board + scoreboard.
             _net.Send(NetMessage.BoardSnapshot(_game.Board));

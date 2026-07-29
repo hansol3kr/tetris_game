@@ -4,7 +4,7 @@ namespace Blockfall.Theme;
 
 /// <summary>The cute face/emblem a "glyph" skin stamps on every block. None = plain block.
 /// Append-only — values persist implicitly via the equipped <see cref="BlockTheme"/>.</summary>
-public enum SkinGlyph { None, Smile, Star, Heart, Sparkle, Flower, Ghost, Bolt, Gem, Crown, Moon, Cat, Skull, Rainbow, Clover, Paw }
+public enum SkinGlyph { None, Smile, Star, Heart, Sparkle, Flower, Ghost, Bolt, Gem, Crown, Moon, Cat, Skull, Rainbow, Clover, Paw, Fin, Elytra }
 
 /// <summary>
 /// Draws the emoji-like glyph a skin stamps on each block, using only vector primitives
@@ -58,7 +58,7 @@ public static class GlyphArt
             Paint(ci, kind, c + up * hd, h * 0.96f, new Color(1, 1, 1, 0.55f));              // top lip
         }
 
-        if (withDetails) Details(ci, kind, c, h, size);
+        if (withDetails) Details(ci, kind, c, h, size, ink);
     }
 
     // ---- Silhouettes (the embossable ink shape, re-drawn per pass) --------------
@@ -139,15 +139,44 @@ public static class GlyphArt
                 ci.DrawCircle(P(c, h, 0.13f, -0.34f), 0.16f * h, col);
                 ci.DrawCircle(P(c, h, 0.36f, -0.20f), 0.15f * h, col);
                 break;
+            // ---- Animal-set marks: anatomical shapes, deliberately FACELESS ----------
+            // No eyes, no mouth, no expression. A face is what turns a mark into a character,
+            // and a character is what starts looking like someone else's property. A dorsal
+            // fin and a pair of wing cases are anatomy — the same public-domain vocabulary a
+            // field guide uses — and neither names a species.
+            case SkinGlyph.Fin:
+                ci.DrawColoredPolygon(new[] { P(c, h, 0f, -0.62f), P(c, h, 0.40f, 0.34f), P(c, h, -0.40f, 0.34f) }, col);
+                break;
+            case SkinGlyph.Elytra:
+                ci.DrawColoredPolygon(EllipsePoints(c, h, 0.52f, 0.68f), col);
+                break;
         }
+    }
+
+    // Wing-case outline (an ellipse; 20 segments is smooth at every cell size we stamp at).
+    private static Vector2[] EllipsePoints(Vector2 c, float h, float rx, float ry)
+    {
+        var pts = new Vector2[20];
+        for (int i = 0; i < 20; i++)
+        {
+            float a = i * Mathf.Tau / 20f;
+            pts[i] = P(c, h, Mathf.Cos(a) * rx, Mathf.Sin(a) * ry);
+        }
+        return pts;
     }
 
     // ---- Fixed-hue personality marks (drawn once, on top, never embossed) -------
 
-    private static void Details(CanvasItem ci, SkinGlyph k, Vector2 c, float h, float size)
+    private static void Details(CanvasItem ci, SkinGlyph k, Vector2 c, float h, float size, Color ink)
     {
         var white = new Color(1, 1, 1, 0.9f);
         var pink = new Color(1f, 0.45f, 0.55f, 0.36f);
+        // Etch colour for the animal marks: the OPPOSITE end of the ink's luminance, so a
+        // seam stays visible whether the stamp landed dark-on-bright or light-on-dark.
+        float inkL = 0.299f * ink.R + 0.587f * ink.G + 0.114f * ink.B;
+        var etch = inkL > 0.5f
+            ? new Color(0.05f, 0.06f, 0.10f, 0.55f * ink.A)
+            : new Color(0.96f, 0.97f, 1.00f, 0.50f * ink.A);
         switch (k)
         {
             case SkinGlyph.Smile:
@@ -215,6 +244,27 @@ public static class GlyphArt
                 break;
             case SkinGlyph.Paw:
                 ci.DrawCircle(P(c, h, -0.08f, 0.16f), 0.06f * h, new Color(1, 1, 1, 0.6f));
+                break;
+            case SkinGlyph.Fin:
+            {
+                // A two-period wake under the fin — motion implied by a line, not by animation
+                // (nothing here reads a clock, so reduced motion has nothing to switch off).
+                const int Segs = 16;
+                var prev = P(c, h, -0.52f, 0.55f);
+                for (int i = 1; i <= Segs; i++)
+                {
+                    float u = i / (float)Segs;
+                    var next = P(c, h, Mathf.Lerp(-0.52f, 0.52f, u), 0.55f + 0.10f * Mathf.Sin(u * Mathf.Tau * 2f));
+                    ci.DrawLine(prev, next, etch, Mathf.Max(1f, size * 0.055f));
+                    prev = next;
+                }
+                break;
+            }
+            case SkinGlyph.Elytra:
+                // The seam where the two wing cases meet, plus one engraved stria per case.
+                ci.DrawLine(P(c, h, 0f, -0.66f), P(c, h, 0f, 0.66f), etch, Mathf.Max(1f, size * 0.05f));
+                ci.DrawLine(P(c, h, -0.26f, -0.25f), P(c, h, -0.26f, 0.25f), etch, Mathf.Max(1f, size * 0.035f));
+                ci.DrawLine(P(c, h, 0.26f, -0.25f), P(c, h, 0.26f, 0.25f), etch, Mathf.Max(1f, size * 0.035f));
                 break;
         }
     }

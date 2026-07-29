@@ -32,7 +32,8 @@ public partial class BlockFitController : Node2D
     private BlockFitGame _game = new();
     private Control _uiHost = null!;
     private Button _back = null!;
-    private Label _score = null!, _best = null!, _combo = null!, _streak = null!;
+    private Label _score = null!, _best = null!, _combo = null!, _streak = null!, _fuse = null!;
+    private FuseMeter _fuseMeter = null!;   // text/colour/announce policy for _fuse (shared with the duel)
     private Label _holdLabel = null!;
     private Control _overlay = null!;
     private Label _overScore = null!, _overBest = null!, _overStreak = null!, _overBadge = null!;
@@ -158,6 +159,30 @@ public partial class BlockFitController : Node2D
         _streak.AddThemeFontSizeOverride("font_size", 16);
         _streak.AddThemeColorOverride("font_color", Palette.Accent);
         _uiHost.AddChild(_streak);
+
+        // Fuse budget read-out. Merging is a finite resource, and a resource the player cannot see
+        // is a resource that just looks broken ("why is the fuse red now?").
+        //
+        // It used to sit at font 16 (≈8.3pt) in the thin band above the BOARD — 731px (≈59mm) above
+        // the tray, which is the only place a fuse ever happens. Two separate defects: 16 is below
+        // the size this codebase already rejected once for the HOLD caption ("15 ≈ 8pt is too small
+        // on a phone", which is why that one is 18), and the information sat at the top of the
+        // screen while the thumb and the act both live at the bottom.
+        //
+        // It now sits in the EXIT STRIP, immediately under the tray band and beside the exit button
+        // — the same strip that was carved out precisely because it covers neither a board cell nor
+        // a tray slot (both are drag targets). Measured at 720×1280: strip y 1190→1274, tray band
+        // ends 1184, board ends 810.8, exit button x 25→109 and this label starts at 121. No
+        // overlap with the board, the tray or the button on any portrait canvas we ship.
+        _fuse = new Label
+        {
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Center,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        _fuse.AddThemeFontSizeOverride("font_size", 22);   // ≈11.5pt — readable at a glance mid-drag
+        _uiHost.AddChild(_fuse);
+        _fuseMeter = new FuseMeter(_fuse);
 
         // "HOLD" caption over the reserve slot (positioned in Layout). Drawn on _uiHost so it
         // sits above the slot panel painted in _Draw.
@@ -336,6 +361,16 @@ public partial class BlockFitController : Node2D
         _back.Size = new Vector2(exitW, exitH);
         _back.Position = new Vector2(pad, safe.Y - exitH - 6f);
 
+        // FUSE: the rest of that same strip, starting one gutter right of the exit button and
+        // vertically centred on it. Derived from the button's MEASURED rect, so a taller/wider
+        // button (a longer glyph, a bigger font) pushes the read-out instead of colliding with it.
+        // It inherits the exit button's own guarantee: the strip starts at safe.Y - exitBand,
+        // which is exactly where the tray band is told to stop, so the read-out covers no board
+        // cell and no tray slot (both are drag targets and a cover would steal the grab).
+        float fuseX = _back.Position.X + exitW + 12f;
+        _fuse.Position = new Vector2(fuseX, _back.Position.Y);
+        _fuse.Size = new Vector2(Mathf.Max(40f, safe.X - fuseX - pad), exitH);
+
         // Arm the debris play box. Nobody armed it before, so the field fell back to its
         // conservative derived box — walls hugging the board and a floor 6px under the board's
         // bottom lip — which meant every chunk bounced INSIDE the playfield and settled on the
@@ -368,6 +403,10 @@ public partial class BlockFitController : Node2D
         _streak.Visible = showStreak;
 
         float dt = (float)delta;
+        // Fuse budget. Always on, and it ANNOUNCES every change (see FuseMeter) — a run sits at
+        // 5/5 most of its length, so a silent counter is one the player only ever reads too late.
+        _fuseMeter.Sync(_game.Merges, dt);
+
         for (int i = _bands.Count - 1; i >= 0; i--)
         {
             var b = _bands[i]; b.Age += dt;
@@ -491,6 +530,10 @@ public partial class BlockFitController : Node2D
         if (_game.Held is not null && inBand)
         {
             _dragIndex = HoldSlot; _touchId = id; _finger = pos;
+            // The pickup (upstroke) cue — the other half of PlayPlace. A successful grab used to be
+            // SILENT while a failed one clicked, so the tray only ever spoke to say "no". Quieter
+            // and higher than the placement, like a real key coming back up.
+            Bootstrap.Instance.Audio.PlayPlace(lift: true);
             // Sweep settled debris so nothing shares the screen with the piece in hand. The
             // tray branch has always done this; the hold branch silently didn't.
             _burst.Debris.ClearResting();
@@ -505,6 +548,7 @@ public partial class BlockFitController : Node2D
                 inBand = true;
                 if (_game.Tray[i] is null) break;      // slots don't overlap — no other can match
                 _dragIndex = i; _touchId = id; _finger = pos;
+                Bootstrap.Instance.Audio.PlayPlace(lift: true);   // pickup upstroke — see the hold branch
                 _burst.Debris.ClearResting();
                 // Only a SUCCESSFUL grab retires the idle hint. Resetting it up front meant a
                 // fumbled grab wiped the merge outlines and the "put it here" pulse — deleting
@@ -573,12 +617,24 @@ public partial class BlockFitController : Node2D
         if (mergeInto >= 0 && _game.Tray[idx] is { } msrc)
         {
             MergeOffset(msrc, mergeInto, out int mr, out int mc);   // where the finger says to join
-            if (_game.TryMerge(idx, mergeInto, mr, mc))
+            // Three outcomes, three answers. "You are out of fuses" used to make the SAME "move"
+            // click as "these two don't fit", so the player kept re-aiming a fuse that could never
+            // fire; the counter is what explains it, so the counter is what blinks.
+            switch (_game.CheckMerge(idx, mergeInto, mr, mc))
             {
-                Bootstrap.Instance.Audio.PlaySfx("hold");   // fuse cue
-                if (_game.GameOver) ShowGameOver();
+                case MergeVerdict.Ok:
+                    _game.TryMerge(idx, mergeInto, mr, mc);
+                    Bootstrap.Instance.Audio.PlayFuse();        // the verb's own voice, not the stash cue
+                    if (_game.GameOver) ShowGameOver();
+                    break;
+                case MergeVerdict.NoCharges:
+                    Bootstrap.Instance.Audio.PlayFuseDenied();  // the fuse cue sagging, not a snap-back
+                    _fuseMeter.Alert();
+                    break;
+                default:
+                    Bootstrap.Instance.Audio.PlaySfx("move");   // overlap or too big to fit — re-aim
+                    break;
             }
-            else Bootstrap.Instance.Audio.PlaySfx("move");  // overlap or too big to fit
             QueueRedraw();
             return;
         }
@@ -615,9 +671,11 @@ public partial class BlockFitController : Node2D
         // here instead of from the middle of the line, so a corner placement reads as a corner hit.
         _strike = _boardOrigin + new Vector2((gc + piece.Width * 0.5f) * _cell, (gr + piece.Height * 0.5f) * _cell);
         if (fromHold) _game.TryPlaceHeld(gr, gc); else _game.TryPlace(trayIdx, gr, gc);
-        // The material axis finally speaks: wood locks low, a glass tube locks high. One cached
-        // waveform, PitchScale only — the synth and its render path stay untouched.
-        Bootstrap.Instance.Audio.PlaySfx("lock", AudioManager.MaterialPitch(Palette.EquippedMaterial));
+        // The placement voice: the player's chosen SOUND PACK, transposed by the equipped skin's
+        // material and walked through the detune rotation — all of that lives in PlayPlace, which
+        // is the point. Calling PlaySfx("lock", MaterialPitch(...)) straight from here is what
+        // made the five packs audible in the settings preview and nowhere else in the game.
+        Bootstrap.Instance.Audio.PlayPlace();
         if (_game.LastClearedRows + _game.LastClearedCols > 0)
         {
             Bootstrap.Instance.Audio.PlaySfx(_game.LastClearedRows + _game.LastClearedCols >= 2 ? "combo" : "line_clear");
@@ -992,23 +1050,35 @@ public partial class BlockFitController : Node2D
         // LIVE in that slot — the source snaps to the finger cell-by-cell so the pieces join
         // EXACTLY where the player wants (green = legal, red = overlap / too big to fit).
         int mergeRow = 0, mergeCol = 0;
-        bool mergeOk = false;
+        var mergeVerdict = MergeVerdict.NoTarget;
         if (mergeHover >= 0 && _game.Tray[_dragIndex] is { } mdp)
         {
             var mdst = _game.Tray[mergeHover]!;
             MergeOffset(mdp, mergeHover, out mergeRow, out mergeCol);
-            mergeOk = _game.CanMerge(_dragIndex, mergeHover, mergeRow, mergeCol);
+            mergeVerdict = _game.CheckMerge(_dragIndex, mergeHover, mergeRow, mergeCol);
+            bool mergeOk = mergeVerdict == MergeVerdict.Ok;
+            bool spent = mergeVerdict == MergeVerdict.NoCharges;
             var borigin = TrayPieceOrigin(mdst, mergeHover);
             DrawPiece(mdst, borigin, _trayCell, 0.5f, trayTex);   // destination, dimmed
             // Bright version of the same outline the other slots wear — the hit area is
             // confirmed in place, so the player learns where the accepted zone actually is.
-            DrawMergeTarget(mdst, borigin, _traySlot[mergeHover], hot: true);
-            var srcCol = mergeOk ? new Color(0.4f, 1f, 0.6f) : Palette.AccentRed;
+            var hitRect = MergeHitRect(mdst, borigin, _trayCell, _traySlot[mergeHover]);
+            DrawMergeTarget(mdst, borigin, _traySlot[mergeHover], hot: true, spent: spent);
+            // Amber, not red, when the budget is spent: red here means "these two shapes can't
+            // join, try another offset", and that advice is useless — and misleading — when the
+            // real answer is "clear a line first".
+            var srcCol = mergeOk ? new Color(0.4f, 1f, 0.6f) : spent ? Palette.AccentGold : Palette.AccentRed;
             foreach (var (dr, dc) in mdp.Cells)
             {
                 var rect = new Rect2(borigin + new Vector2((dc + mergeCol) * _trayCell, (dr + mergeRow) * _trayCell) + new Vector2(1, 1), new Vector2(_trayCell - 2, _trayCell - 2));
                 DrawTextureRect(trayTex, rect, false, new Color(srcCol.R, srcCol.G, srcCol.B, mergeOk ? 0.95f : 0.6f));
             }
+            // Shape channel for "spent": the target is struck through. Colour alone would put the
+            // whole distinction on hue, and the loupe above draws the same slash so the two
+            // pictures of the same fuse always agree.
+            if (spent)
+                DrawLine(hitRect.Position, hitRect.Position + hitRect.Size,
+                         new Color(Palette.AccentGold.R, Palette.AccentGold.G, Palette.AccentGold.B, 0.9f), width: 3f);
         }
 
         // Dragged piece (a tray piece OR the held piece). While aiming at the board the piece
@@ -1084,7 +1154,7 @@ public partial class BlockFitController : Node2D
             // Merge magnifier — drawn LAST so the floating piece can never cover it. The drawing
             // itself lives in the shared MergeLoupe so the duel screen shows the SAME panel.
             if (mergeHover >= 0 && _game.Tray[mergeHover] is { } mdst2)
-                MergeLoupe.Draw(this, dp, mdst2, mergeRow, mergeCol, mergeOk,
+                MergeLoupe.Draw(this, dp, mdst2, mergeRow, mergeCol, mergeVerdict,
                                 Bootstrap.Instance.SafeCanvasSize, _boardOrigin.Y, _holdSlot.Position.Y,
                                 _trayCell, _shimmer);
         }
@@ -1100,13 +1170,15 @@ public partial class BlockFitController : Node2D
     /// <summary>Outlines the rect that actually accepts a merge drop — the very rect the hit test
     /// and the grab test use. Dim + thin while the finger is elsewhere (an affordance), bright +
     /// thick while it is over it (a confirmation) — the state reads from line weight as much as
-    /// from hue, so it survives a colour-blind palette. Static (no pulse), so no Motion.Reduced
-    /// gate is owed.</summary>
-    private void DrawMergeTarget(BlockPiece p, Vector2 origin, Rect2 slot, bool hot)
+    /// from hue, so it survives a colour-blind palette. <paramref name="spent"/> paints the hot
+    /// outline amber instead of green: the rect is still the right target, it just cannot fire.
+    /// Static (no pulse), so no Motion.Reduced gate is owed.</summary>
+    private void DrawMergeTarget(BlockPiece p, Vector2 origin, Rect2 slot, bool hot, bool spent = false)
     {
         if (_trayCell <= 0f) return;
         var col = hot
-            ? new Color(0.4f, 1f, 0.6f, 0.95f)
+            ? (spent ? new Color(Palette.AccentGold.R, Palette.AccentGold.G, Palette.AccentGold.B, 0.95f)
+                     : new Color(0.4f, 1f, 0.6f, 0.95f))
             : new Color(Palette.Accent.R, Palette.Accent.G, Palette.Accent.B, 0.34f);
         DrawRect(MergeHitRect(p, origin, _trayCell, slot), col, filled: false, width: hot ? 3f : 1.5f);
     }
@@ -1270,7 +1342,9 @@ public partial class BlockFitController : Node2D
                      // Fusing and stashing were both fully built and mentioned NOWHERE: the odds
                      // of discovering "let go on top of another tray piece" by accident are ~0,
                      // and HOLD was a 15px caption. Two lines is the whole fix.
-                     Loc.T("3  ·  DROP a piece on ANOTHER TRAY PIECE to fuse them."),
+                     // The fuse budget has to be taught here too: a player who only meets it as a
+                     // preview that suddenly refuses reads it as a bug, not a rule.
+                     Loc.T("3  ·  DROP a piece on ANOTHER TRAY PIECE to fuse them — fuses are limited, and clearing a line earns one back."),
                      Loc.T("4  ·  DROP a piece on the HOLD slot to save it for later."),
                      Loc.T("5  ·  It ends when none of the three pieces fit."),
                  })

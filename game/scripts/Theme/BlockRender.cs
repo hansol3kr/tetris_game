@@ -41,6 +41,13 @@ public static class BlockRender
         CellMaterial.Wood        => new MatSpec(0.06f, 0.18f, 0.85f),
         // NeonTube: hollow glass. Strong bloom, a little sheen, zero overlay (one draw).
         CellMaterial.NeonTube    => new MatSpec(0.46f, 0.30f, 0.00f),
+        // Pelt: the only board in the game that does not glow. Matte coat, almost no specular —
+        // the absence IS the identity next to nine emissive skins.
+        CellMaterial.Pelt        => new MatSpec(0.08f, 0.10f, 0.75f),
+        // Scale: a wet surface. Highest gloss in the set; the overlay carries the shape channel.
+        CellMaterial.Scale       => new MatSpec(0.18f, 0.68f, 0.55f),
+        // Chitin: lacquered shell. Narrow, hot specular over a hard dome.
+        CellMaterial.Chitin      => new MatSpec(0.24f, 0.72f, 0.40f),
         _                        => new MatSpec(0.32f, 0.50f, 0f), // Gel
     };
 
@@ -51,6 +58,9 @@ public static class BlockRender
         CellMaterial.Gemstone => TextureFactory.CellGem(px),
         CellMaterial.Wood     => TextureFactory.CellWood(px),
         CellMaterial.NeonTube => TextureFactory.CellTube(px),
+        CellMaterial.Pelt     => TextureFactory.CellPelt(px),
+        CellMaterial.Scale    => TextureFactory.CellScale(px),
+        CellMaterial.Chitin   => TextureFactory.CellChitin(px),
         _                     => TextureFactory.Cell(px),
     };
 
@@ -139,6 +149,22 @@ public static class BlockRender
                     // Alpha-only dark grain: laid OVER the tint (not multiplied) so the rings
                     // read as timber on a pale oak and a deep walnut alike.
                     ci.DrawTextureRect(TextureFactory.CellWoodGrain(px), rect, false, new Color(1, 1, 1, spec.OverlayA * alpha));
+                    break;
+                // The three animal finishes share Wood's budget exactly: ONE baked quad each,
+                // no immediate-mode shapes, no time term. A static overlay is also why they need
+                // no reduced-motion branch — there is nothing here that moves.
+                case CellMaterial.Pelt:
+                    // Alpha-only bright strands, laid diagonally: direction is the identity, so it
+                    // is baked in rather than derived from the cell.
+                    ci.DrawTextureRect(TextureFactory.CellFur(px), rect, false, new Color(1, 1, 1, spec.OverlayA * alpha));
+                    break;
+                case CellMaterial.Scale:
+                    // The crescent highlights along each lobe's lower arc — the ONLY channel that
+                    // carries "overlapping scales" once the hue is stripped (colorblind / grayscale).
+                    ci.DrawTextureRect(TextureFactory.CellScaleEdge(px), rect, false, new Color(1, 1, 1, spec.OverlayA * alpha));
+                    break;
+                case CellMaterial.Chitin:
+                    ci.DrawTextureRect(TextureFactory.CellFacet(px), rect, false, new Color(1, 1, 1, spec.OverlayA * alpha));
                     break;
             }
         }

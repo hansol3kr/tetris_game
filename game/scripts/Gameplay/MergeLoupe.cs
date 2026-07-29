@@ -59,17 +59,21 @@ internal static class MergeLoupe
     /// <param name="dst">Piece being fused into, anchored at (0,0).</param>
     /// <param name="mr">Row offset of <paramref name="src"/> relative to <paramref name="dst"/>.</param>
     /// <param name="mc">Column offset of <paramref name="src"/> relative to <paramref name="dst"/>.</param>
-    /// <param name="ok">Whether the fuse is legal — carried by border colour AND by cell fill
-    /// opacity, so it is never a hue-only signal.</param>
+    /// <param name="verdict">Why the fuse is (not) legal. Three states, not two: OK is green,
+    /// WontFit is red ("move your finger"), and NoCharges is amber PLUS a slash struck across the
+    /// panel ("no finger movement will help — the budget is spent"). The state is carried by
+    /// colour, by cell-fill opacity AND by that slash, so it is never a hue-only signal.</param>
     /// <param name="safe">Safe canvas size (the panel is centred in it).</param>
     /// <param name="boardTop">Top edge of the player's board — the ceiling the panel may not cross.</param>
     /// <param name="trayTop">Top edge of the tray band — the panel's floor.</param>
     /// <param name="trayCell">Tray mini-cell size, the thing being magnified.</param>
     /// <param name="shimmer">Accumulated dt driving the shared material breathe.</param>
-    internal static void Draw(CanvasItem ci, BlockPiece src, BlockPiece dst, int mr, int mc, bool ok,
+    internal static void Draw(CanvasItem ci, BlockPiece src, BlockPiece dst, int mr, int mc, MergeVerdict verdict,
                               Vector2 safe, float boardTop, float trayTop, float trayCell, float shimmer)
     {
         if (trayCell <= 0f) return;
+        bool ok = verdict == MergeVerdict.Ok;
+        bool spent = verdict == MergeVerdict.NoCharges;
 
         // Union bounding box of dst (at 0,0) + src (at the finger-chosen offset), padded by Margin.
         int r0 = Mathf.Min(0, mr) - Margin, c0 = Mathf.Min(0, mc) - Margin;
@@ -94,7 +98,9 @@ internal static class MergeLoupe
         // stay legible, while the board behind still shows through enough to judge the fit.
         var pad = new Vector2(10, 10);
         var panel = new Rect2(origin - pad, new Vector2(w, h) + pad * 2f);
-        var accent = ok ? new Color(0.35f, 1f, 0.60f) : Palette.AccentRed;
+        var accent = ok ? new Color(0.35f, 1f, 0.60f)
+                   : spent ? Palette.AccentGold
+                   : Palette.AccentRed;
         ci.DrawRect(panel, new Color(0.04f, 0.05f, 0.10f, 0.62f), filled: true);
         ci.DrawRect(panel, new Color(accent.R, accent.G, accent.B, 0.75f), filled: false, width: 2.5f);
 
@@ -121,6 +127,17 @@ internal static class MergeLoupe
             var rect = new Rect2(origin + new Vector2((dc + mc - c0) * lc, (dr + mr - r0) * lc) + new Vector2(1, 1), new Vector2(lc - 2, lc - 2));
             ci.DrawRect(rect, new Color(accent.R, accent.G, accent.B, ok ? 0.90f : 0.45f), filled: true);
             ci.DrawRect(rect, accent, filled: false, width: 2f);
+        }
+
+        // Budget spent: strike the whole panel through. This is the SHAPE channel of the "no
+        // charges" answer — the one refusal the player cannot fix by aiming better, so it has to
+        // look categorically different from the red "won't fit" and not merely a different hue.
+        // Static geometry, no Motion.Reduced gate owed.
+        if (spent)
+        {
+            var a = panel.Position + new Vector2(6f, 6f);
+            var b = panel.Position + panel.Size - new Vector2(6f, 6f);
+            ci.DrawLine(a, b, new Color(accent.R, accent.G, accent.B, 0.85f), width: 4f);
         }
     }
 }

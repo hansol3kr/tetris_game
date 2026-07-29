@@ -59,30 +59,46 @@ public sealed class DebrisField
     private readonly struct MatPhys
     {
         public readonly float Restitution, Spin;
-        public readonly byte VarLo, VarHi;
+        /// <summary>The silhouettes this material is allowed to shed — an explicit SET, not a
+        /// lo..hi range. The range encoding this replaces silently swallowed whatever shape
+        /// happened to sit between its ends, which is exactly how the fur board ended up
+        /// throwing hard scale crescents (variant 11 sat inside Pelt's 10..11).</summary>
+        public readonly byte[] Vars;
         public readonly bool Additive, Glint;
-        public MatPhys(float e, float spin, byte lo, byte hi, bool additive = false, bool glint = false)
-        { Restitution = e; Spin = spin; VarLo = lo; VarHi = hi; Additive = additive; Glint = glint; }
+        public MatPhys(float e, float spin, byte[] vars, bool additive = false, bool glint = false)
+        { Restitution = e; Spin = spin; Vars = vars; Additive = additive; Glint = glint; }
     }
+
+    // Shared silhouette sets (see TextureFactory.CellShard for the shapes). Static, so the
+    // emit path indexes an existing array and never allocates.
+    private static readonly byte[] VarWedges = { 0, 1, 2, 3 };     // generic broken solid
+    private static readonly byte[] VarSplinters = { 4, 5, 6, 7 };  // long grain fibres
+    private static readonly byte[] VarArcs = { 8, 9 };             // hollow glass tube
+    private static readonly byte[] VarFur = { 10, 12 };            // soft clump + soft wisp
+    private static readonly byte[] VarScales = { 11 };             // one crescent plate
+    private static readonly byte[] VarShell = { 13, 14 };          // ridged scute + sliver
 
     // Indexed by (int)CellMaterial — keep in lockstep with the enum (append-only).
     private static readonly MatPhys[] Phys =
     {
-        new(0.28f, 6f, 0, 3),                        // Gel
-        new(0.30f, 7f, 0, 3),                        // Pearl
-        new(0.42f, 12f, 0, 3, glint: true),          // Metallic
-        new(0.35f, 9f, 0, 3),                        // Holographic
-        new(0.18f, 4f, 4, 7),                        // Frosted
-        new(0.50f, 14f, 0, 3, glint: true),          // Gemstone
-        new(0.30f, 7f, 0, 3),                        // Starfield
-        new(0.22f, 5f, 4, 7),                        // Wood
-        new(0.45f, 10f, 8, 9, additive: true),       // NeonTube
+        new(0.28f, 6f, VarWedges),                       // Gel
+        new(0.30f, 7f, VarWedges),                       // Pearl
+        new(0.42f, 12f, VarWedges, glint: true),         // Metallic
+        new(0.35f, 9f, VarWedges),                       // Holographic
+        new(0.18f, 4f, VarSplinters),                    // Frosted
+        new(0.50f, 14f, VarWedges, glint: true),         // Gemstone
+        new(0.30f, 7f, VarWedges),                       // Starfield
+        new(0.22f, 5f, VarSplinters),                    // Wood
+        new(0.45f, 10f, VarArcs, additive: true),        // NeonTube
+        new(0.10f, 3f, VarFur),                          // Pelt   — barely bounces, it lies down
+        new(0.55f, 11f, VarScales),                      // Scale  — flat plates skid off the walls
+        new(0.62f, 14f, VarShell, glint: true),          // Chitin — hard shell, it pings away
     };
 
     // Resolved once per variant. TextureFactory's cache is keyed by an interpolated string,
     // so calling it per chunk per frame would allocate ~96 strings a frame — exactly the GC
     // pressure this pass was built to avoid.
-    private static readonly ImageTexture[] ShardTex = new ImageTexture[10];
+    private static readonly ImageTexture[] ShardTex = new ImageTexture[15];
     private static ImageTexture Shard(int variant)
         => ShardTex[variant] ??= TextureFactory.CellShard(ShardPx, variant);
 
@@ -254,7 +270,7 @@ public sealed class DebrisField
                     CellSize = cell,
                     Bounce = ph.Restitution,
                     Col = col,
-                    Variant = (byte)_rng.RandiRange(ph.VarLo, ph.VarHi),
+                    Variant = ph.Vars[_rng.RandiRange(0, ph.Vars.Length - 1)],
                     Additive = ph.Additive,
                     Glint = ph.Glint,
                     Lead = s == 0,

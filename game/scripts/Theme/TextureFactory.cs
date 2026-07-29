@@ -538,6 +538,225 @@ public static class TextureFactory
         });
     }
 
+    // ---- Animal-set finishes (Pelt / Scale / Chitin) -----------------------
+    // Three anatomical SURFACES, never a creature: coat strands, overlapping scales, a hex
+    // carapace. No eyes, no mouth, no species marking — a face is what would turn a texture
+    // into a character, and a character is what carries someone else's IP. Each finish is one
+    // grayscale body bake + one alpha-only overlay bake, so a set costs the same two draws a
+    // Wood cell already costs, and none of them has a time term (nothing to gate under
+    // reduced motion).
+
+    /// <summary>Matte coat body (replaces Cell for the Pelt material): a soft vertical
+    /// brightness ramp with a warm top-left bevel and a dark bottom-right chamfer, and a
+    /// notably ROUNDER corner than timber — fur has no hard arris. Grayscale; tinted per
+    /// piece via modulate.</summary>
+    public static ImageTexture CellPelt(int px)
+    {
+        px = Math.Clamp(px, 8, 128);
+        string key = $"pelt:{px}";
+        float radius = px * 0.20f;                               // fur has no square corner
+        var half = new Vector2(px / 2f, px / 2f);
+        return Bake(key, px, px, (x, y) =>
+        {
+            var p = new Vector2(x + 0.5f, y + 0.5f) - half;
+            float sdf = RoundedBoxSdf(p, half, radius);
+            float body = Feather(sdf, 1.2f);
+            if (body <= 0f) return new Color(0, 0, 0, 0);
+            float t = (y + 0.5f) / px;
+            float v = Mathf.Lerp(0.88f, 1.00f, t);
+            float dEdge = -sdf;
+            if (dEdge < 2f && (p.X > 0f || p.Y > 0f) && Mathf.Abs(p.X) + Mathf.Abs(p.Y) > px * 0.18f)
+                v *= Mathf.Lerp(0.74f, 1f, dEdge / 2f);
+            if (dEdge < 2f && p.X <= 0f && p.Y <= 0f)
+                v *= Mathf.Lerp(1.12f, 1f, dEdge / 2f);
+            v = Mathf.Clamp(v, 0f, 1f);
+            return new Color(v, v, v, body);
+        });
+    }
+
+    /// <summary>Coat strands for the Pelt finish: WHITE alpha-only streaks running at a fixed
+    /// 45°, so the grain has a direction the eye can name ("brushed one way") instead of the
+    /// concentric rings that make Wood read as timber. Drawn as a normal-alpha overlay, so the
+    /// strands stay light on a cream coat and a cocoa one alike.</summary>
+    public static ImageTexture CellFur(int px)
+    {
+        px = Math.Clamp(px, 8, 128);
+        string key = $"fur:{px}";
+        float radius = px * 0.20f;
+        var half = new Vector2(px / 2f, px / 2f);
+        float period = Mathf.Max(1.5f, px * 0.085f);
+        const float Diag = 0.70710678f;
+        return Bake(key, px, px, (x, y) =>
+        {
+            var p = new Vector2(x + 0.5f, y + 0.5f) - half;
+            float mask = Feather(RoundedBoxSdf(p, half, radius), 1.2f);
+            if (mask <= 0f) return new Color(0, 0, 0, 0);
+            float phase = ((x + 0.5f) * Diag + (y + 0.5f) * Diag) / period;
+            phase -= Mathf.Floor(phase);
+            float s = Mathf.Abs(phase - 0.5f) * 2f;
+            s = Mathf.Clamp((s - 0.55f) / 0.40f, 0f, 1f);
+            s = s * s * (3f - 2f * s);                            // smoothstep(0.55, 0.95)
+            return new Color(1f, 1f, 1f, 0.34f * s * mask);
+        });
+    }
+
+    // One scale lobe grid, shared by the body and the edge overlay so the highlight lands on
+    // the arc it is highlighting. Two lobes across, ~three rows down, odd rows offset by half
+    // a step. The ROW pitch is deliberately far shorter than the lobe diameter (0.34 vs 0.60):
+    // at an even pitch the lobes tile as packed spheres — bubble wrap, not skin. Only a heavy
+    // vertical overlap leaves each lobe showing as a CRESCENT of its lower arc, which is the
+    // read the finish is named for.
+    private const float ScaleLobeR = 0.30f;      // × px
+    private const float ScaleStepX = 0.50f;      // × px
+    private const float ScaleStepY = 0.34f;      // × px — the overlap, hence the crescent
+
+    private static Vector2 ScaleLobeCentre(int i, int j, float px)
+        => new((i + ((j & 1) == 0 ? 0f : 0.5f)) * ScaleStepX * px, j * ScaleStepY * px);
+
+    /// <summary>Overlapping-scale body (replaces Cell for the Scale material): a 2×2 lobe
+    /// tessellation where each lobe is the lower crescent of a disc and the UPPER lobe wins the
+    /// overlap, so the free edge the eye follows is always a downward arc. Shape, not hue —
+    /// this is what still says "reptile skin" once colorblind mode has folded the palette.</summary>
+    public static ImageTexture CellScale(int px)
+    {
+        px = Math.Clamp(px, 8, 128);
+        string key = $"scale:{px}";
+        float radius = px * 0.14f;
+        var half = new Vector2(px / 2f, px / 2f);
+        float R = px * ScaleLobeR;
+        return Bake(key, px, px, (x, y) =>
+        {
+            var p = new Vector2(x + 0.5f, y + 0.5f) - half;
+            float mask = Feather(RoundedBoxSdf(p, half, radius), 1.2f);
+            if (mask <= 0f) return new Color(0, 0, 0, 0);
+            var q = new Vector2(x + 0.5f, y + 0.5f);
+            float v = 0.62f;                                       // gap between lobes = the seam
+            // Bottom rows first, top rows last: the last write wins, so an upper lobe overlaps
+            // the one below it and every visible boundary is a lobe's LOWER arc.
+            for (int j = 4; j >= -1; j--)
+                for (int i = -1; i <= 2; i++)
+                {
+                    var c = ScaleLobeCentre(i, j, px);
+                    float d = (q - c).Length();
+                    if (d > R) continue;
+                    float dn = d / R;
+                    float u = (q.Y - c.Y) / R;                     // -1 top … +1 bottom
+                    float dome = 0.70f + 0.36f * (1f - dn * dn);
+                    dome *= Mathf.Lerp(1.08f, 0.78f, Mathf.Clamp((u + 1f) * 0.5f, 0f, 1f));
+                    if (R - d < 1.1f) dome *= 0.72f;               // crisp lobe rim
+                    v = dome;
+                }
+            v = Mathf.Clamp(v, 0f, 1f);
+            return new Color(v, v, v, mask);
+        });
+    }
+
+    /// <summary>Wet crescent highlights for the Scale finish: a white alpha-only band hugging
+    /// the lower arc of every lobe. This is the finish's SHAPE channel — with hue stripped the
+    /// body ramp alone reads as a blur, and these arcs are what keep the overlap legible.</summary>
+    public static ImageTexture CellScaleEdge(int px)
+    {
+        px = Math.Clamp(px, 8, 128);
+        string key = $"scaleedge:{px}";
+        float radius = px * 0.14f;
+        var half = new Vector2(px / 2f, px / 2f);
+        float R = px * ScaleLobeR;
+        float w = Mathf.Max(1.2f, px * 0.06f);
+        return Bake(key, px, px, (x, y) =>
+        {
+            var p = new Vector2(x + 0.5f, y + 0.5f) - half;
+            float mask = Feather(RoundedBoxSdf(p, half, radius), 1.2f);
+            if (mask <= 0f) return new Color(0, 0, 0, 0);
+            var q = new Vector2(x + 0.5f, y + 0.5f);
+            float best = 0f;
+            for (int j = -1; j <= 4; j++)
+                for (int i = -1; i <= 2; i++)
+                {
+                    var c = ScaleLobeCentre(i, j, px);
+                    var d = q - c;
+                    if (d.Y <= 0f) continue;                       // lower arc only
+                    float band = Mathf.Abs(d.Length() - R);
+                    if (band > w) continue;
+                    float s = 1f - band / w;
+                    s *= Mathf.Clamp(d.Y / Mathf.Max(1f, R * 0.55f), 0f, 1f);  // fade toward the sides
+                    if (s > best) best = s;
+                }
+            if (best <= 0f) return new Color(0, 0, 0, 0);
+            return new Color(1f, 1f, 1f, 0.50f * best * mask);
+        });
+    }
+
+    /// <summary>Lacquered carapace body (replaces Cell for the Chitin material): a hard dome
+    /// (curve exponent 1.6 — a stiffer shoulder than the gemstone cut) with a tight dark rim.
+    /// Grayscale; tinted per piece via modulate.</summary>
+    public static ImageTexture CellChitin(int px)
+    {
+        px = Math.Clamp(px, 8, 128);
+        string key = $"chitin:{px}";
+        float radius = px * 0.10f;
+        var half = new Vector2(px / 2f, px / 2f);
+        return Bake(key, px, px, (x, y) =>
+        {
+            var p = new Vector2(x + 0.5f, y + 0.5f) - half;
+            float sdf = RoundedBoxSdf(p, half, radius);
+            float body = Feather(sdf, 1.2f);
+            if (body <= 0f) return new Color(0, 0, 0, 0);
+            // Dome driven by the rounded-box SDF, not by a Chebyshev radius: max(|x|,|y|)
+            // switches axis along the diagonals, which bakes a bright X across every cell.
+            float inside = Mathf.Clamp(-sdf / (px * 0.44f), 0f, 1f);
+            float dome = Mathf.Pow(inside, 1.6f);                  // hard shoulder, stiffer than a gem
+            float v = 0.50f + 0.48f * dome;
+            v *= Mathf.Lerp(1.06f, 0.90f, (y + 0.5f) / px);        // lit from above
+            float dEdge = -sdf;
+            if (dEdge < 1.6f) v *= Mathf.Lerp(0.64f, 1f, dEdge / 1.6f);
+            v = Mathf.Clamp(v, 0f, 1f);
+            return new Color(v, v, v, body);
+        });
+    }
+
+    /// <summary>Carapace facets for the Chitin finish: a 3×3 hexagonal seam grid (dark,
+    /// alpha-only, so it survives any tint) plus one tight upper-left specular hotspot. The
+    /// hex lattice is a natural/geometric pattern in the public domain — deliberately NOT a
+    /// species marking.</summary>
+    public static ImageTexture CellFacet(int px)
+    {
+        px = Math.Clamp(px, 8, 128);
+        string key = $"facet:{px}";
+        float radius = px * 0.10f;
+        var half = new Vector2(px / 2f, px / 2f);
+        float step = Mathf.Max(3f, px * 0.329f);                   // ≈3 hexes across the cell
+        float lineW = 1.2f / step;                                 // seam width in lattice units
+        float sig = px * 0.10f;
+        return Bake(key, px, px, (x, y) =>
+        {
+            var p = new Vector2(x + 0.5f, y + 0.5f) - half;
+            float mask = Feather(RoundedBoxSdf(p, half, radius), 1.2f);
+            if (mask <= 0f) return new Color(0, 0, 0, 0);
+
+            // Hex lattice: nearest of two half-offset rectangular lattices, then the hexagonal
+            // distance (0 at a cell centre, 0.5 at an edge).
+            var uv = new Vector2((x + 0.5f) / step, (y + 0.5f) / step);
+            var r = new Vector2(1f, 1.7320508f);
+            var hh = r * 0.5f;
+            var a = new Vector2(Mathf.PosMod(uv.X, r.X), Mathf.PosMod(uv.Y, r.Y)) - hh;
+            var b = new Vector2(Mathf.PosMod(uv.X - hh.X, r.X), Mathf.PosMod(uv.Y - hh.Y, r.Y)) - hh;
+            var gv = a.LengthSquared() < b.LengthSquared() ? a : b;
+            var ag = new Vector2(Mathf.Abs(gv.X), Mathf.Abs(gv.Y));
+            float hd = Mathf.Max(ag.Dot(new Vector2(0.5f, 0.8660254f)), ag.X);
+            float seam = Mathf.Clamp((hd - (0.5f - lineW)) / Mathf.Max(0.0001f, lineW), 0f, 1f);
+            seam = seam * seam * (3f - 2f * seam);
+
+            float gx = x + 0.5f - 0.34f * px, gy = y + 0.5f - 0.28f * px;
+            float hot = Mathf.Exp(-(gx * gx + gy * gy) / (2f * sig * sig));
+
+            // Alphas are set against the 0.40 OverlayA this material draws at: at the nominal
+            // 0.18 the seams land at 0.07 on screen and the lattice is simply not there.
+            var col = Over(new Color(0f, 0f, 0f, 0.45f * seam), new Color(1f, 1f, 1f, 0.80f * hot));
+            if (col.A <= 0.002f) return new Color(0, 0, 0, 0);
+            return new Color(col.R, col.G, col.B, col.A * mask);
+        });
+    }
+
     /// <summary>Bright inner-edge ring (white; tinted per skin) hugging the cell contour —
     /// the iridescent rim on Obsidian/holographic skins.</summary>
     public static ImageTexture CellRim(int px)
@@ -574,10 +793,13 @@ public static class TextureFactory
     }
 
     // ---- Debris atlas (the line-clear "physical destruction" pass) ----------
-    // Ten silhouettes, baked once at 40px and drawn rotated+tinted. Grayscale RGB is a
+    // Fifteen silhouettes, baked once at 40px and drawn rotated+tinted. Grayscale RGB is a
     // BEVEL luminance ramp (lit from up-left) — so a chunk still reads as a broken solid
     // when the hue is stripped (grayscale/colorblind check), and the shape channel carries
     // the "this shattered" information rather than colour.
+    //
+    // The atlas is APPEND-ONLY by convention: a shipped skin's debris must not change shape
+    // under an owner, so a new material takes new indices rather than re-cutting an old one.
 
     // Deterministic wedge radii — a constant table, so a variant always bakes identically.
     private static readonly float[] ShardWedgeR =
@@ -590,15 +812,49 @@ public static class TextureFactory
 
     private static readonly Vector2 ShardLight = new Vector2(-0.55f, -0.83f).Normalized();
 
+    /// <summary>Deterministic hex radii for the soft fur tuft (variant 10) — a constant table
+    /// for the same reason <see cref="ShardWedgeR"/> is one: a variant must bake identically
+    /// every run, so the shape channel cannot drift between sessions.</summary>
+    private static readonly float[] ShardTuftR = { 0.42f, 0.33f, 0.39f, 0.30f, 0.40f, 0.35f };
+
+    /// <summary>Deterministic radii for the second fur silhouette (variant 12) — a WISP, i.e.
+    /// a flat lens of guard hairs rather than the round clump of variant 10. Squashed on the
+    /// short axis at bake time, so under random rotation the two fur shapes never read as the
+    /// same stamp twice. Exists because Pelt used to borrow the scale crescent for its second
+    /// shape: a coat that sheds must never throw a hard plate.</summary>
+    private static readonly float[] ShardWispR = { 0.40f, 0.22f, 0.29f, 0.37f, 0.21f, 0.31f, 0.26f };
+
+    /// <summary>
+    /// Carapace scute (variant 13): a broken shell PLATE — a domed outer rim on one side, a
+    /// straight fracture chord on the other. Convex (so <see cref="PolySdf"/> stays exact) and
+    /// deliberately chunkier than the generic wedges: a shell breaks into plates, not gravel.
+    /// </summary>
+    private static readonly Vector2[] ShardScute =
+    {
+        new(-0.46f,  0.06f), new(-0.34f, -0.24f), new(-0.06f, -0.38f), new(0.24f, -0.30f),
+        new( 0.45f, -0.05f), new( 0.38f,  0.20f), new(-0.18f,  0.26f),
+    };
+
+    /// <summary>Carapace shell shard (variant 14): the scute's thin sibling — a ~3:1 sliver
+    /// snapped off a rim. Same growth-ridge treatment, different proportion, so a Chitin burst
+    /// throws plates AND slivers instead of one repeated stamp.</summary>
+    private static readonly Vector2[] ShardShell =
+    {
+        new(-0.47f, -0.02f), new(-0.12f, -0.20f), new(0.30f, -0.16f),
+        new( 0.47f,  0.04f), new( 0.02f,  0.16f),
+    };
+
     /// <summary>
     /// One debris silhouette. <paramref name="variant"/> 0–3 = blobby wedges (gel/metal/gem
-    /// chunks), 4–7 = splinters (wood/frost), 8–9 = ring arcs (NeonTube glass). Baked at
-    /// px=40; drawn white-modulated so it takes any piece hue.
+    /// chunks), 4–7 = splinters (wood/frost), 8–9 = ring arcs (NeonTube glass), 10 = a soft fur
+    /// tuft and 12 = a fur wisp (Pelt — blurred edges, it does not shatter), 11 = a scale
+    /// crescent (Scale ONLY), 13–14 = carapace plates, ridged and hard-edged (Chitin ONLY).
+    /// Baked at px=40; drawn white-modulated so it takes any piece hue.
     /// </summary>
     public static ImageTexture CellShard(int px, int variant)
     {
         px = Math.Clamp(px, 8, 64);
-        variant = ((variant % 10) + 10) % 10;
+        variant = ((variant % 15) + 15) % 15;
         string key = $"shard:{px}:{variant}";
         var half = new Vector2(px / 2f, px / 2f);
 
@@ -621,7 +877,43 @@ public static class TextureFactory
             Vector2 R(float lx, float ly) => new(lx * ca - ly * sa, lx * sa + ly * ca);
             poly = new[] { R(0.46f, 0f), R(-0.30f, 0.155f), R(-0.30f, -0.155f) };
         }
-        float arcSpan = variant == 8 ? Mathf.DegToRad(110f) * 0.5f : Mathf.DegToRad(150f) * 0.5f;
+        else if (variant == 10)
+        {
+            // Fur tuft: a jittered hexagon, feathered wide below so it reads as a soft clump
+            // rather than a broken solid. Fur sheds; it does not fracture.
+            poly = new Vector2[6];
+            for (int i = 0; i < 6; i++)
+            {
+                float ang = i * Mathf.Tau / 6f + 0.3f;
+                poly[i] = new Vector2(Mathf.Cos(ang), Mathf.Sin(ang)) * ShardTuftR[i];
+            }
+        }
+        else if (variant == 12)
+        {
+            // Fur wisp: the same soft treatment squashed to a lens, so the clump and the wisp
+            // stay distinguishable after the random draw-time rotation.
+            poly = new Vector2[7];
+            for (int i = 0; i < 7; i++)
+            {
+                float ang = i * Mathf.Tau / 7f + 0.42f;
+                poly[i] = new Vector2(Mathf.Cos(ang) * 1.18f, Mathf.Sin(ang) * 0.70f) * ShardWispR[i];
+            }
+        }
+        else if (variant == 13) poly = ShardScute;
+        else if (variant == 14) poly = ShardShell;
+
+        float arcSpan = variant switch
+        {
+            8 => Mathf.DegToRad(110f) * 0.5f,
+            11 => Mathf.DegToRad(90f) * 0.5f,     // a short, deep crescent — one scale
+            _ => Mathf.DegToRad(150f) * 0.5f,
+        };
+        float featherPx = variant switch { 10 => 3.0f, 12 => 3.4f, _ => 1.5f };
+        // Carapace plates carry concentric GROWTH RIDGES. The iso-contours of a convex polygon
+        // SDF are inset outlines, so banding on the SDF gives ridges that follow the broken
+        // rim for free — a second shape-channel cue (survives grayscale) that the generic
+        // wedges do not have, which is what separates the paid shell from the free gem.
+        bool ridged = variant is 13 or 14;
 
         Vector2 centre = Vector2.Zero;
         if (poly is not null) { foreach (var v in poly) centre += v; centre /= poly.Length; }
@@ -633,9 +925,10 @@ public static class TextureFactory
             if (poly is not null) PolySdf(p, poly, centre, out sdf, out n);
             else ArcSdf(p, arcSpan, out sdf, out n);
 
-            float a = Feather(sdf * px, 1.5f);
+            float a = Feather(sdf * px, featherPx);
             if (a <= 0f) return new Color(0, 0, 0, 0);
             float lum = 0.52f + 0.48f * Mathf.Clamp(n.Dot(ShardLight), 0f, 1f);
+            if (ridged) lum *= 0.82f + 0.18f * Mathf.Cos(sdf * px * 0.9f);
             float u = (p.X + p.Y + 1f) * 0.5f;                       // 0 at top-left corner
             if (u < 0.22f) lum = 1f;                                 // gloss band
             return new Color(lum, lum, lum, a);

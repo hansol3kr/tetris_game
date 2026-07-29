@@ -75,7 +75,10 @@ public partial class AudioManager : Node
     }
 
     /// <summary>The lock-sound pitch a block finish speaks at — the audio half of the material
-    /// axis. Callers: <c>PlaySfx("lock", AudioManager.MaterialPitch(Palette.EquippedMaterial))</c>.</summary>
+    /// axis. Composed with the player's pack inside <see cref="PlayPlace"/>, which is the only
+    /// caller: the two axes are orthogonal (the PACK picks the waveform, the MATERIAL transposes
+    /// it), and routing every placement through one method is what stopped the packs from being
+    /// audible in the settings screen and nowhere else.</summary>
     public static float MaterialPitch(Blockfall.Theme.CellMaterial m) => m switch
     {
         Blockfall.Theme.CellMaterial.Wood => 0.78f,
@@ -83,8 +86,77 @@ public partial class AudioManager : Node
         Blockfall.Theme.CellMaterial.Metallic => 1.18f,
         Blockfall.Theme.CellMaterial.Gemstone => 1.22f,
         Blockfall.Theme.CellMaterial.NeonTube => 1.30f,
+        Blockfall.Theme.CellMaterial.Pelt => 0.86f,      // muffled, absorbent
+        Blockfall.Theme.CellMaterial.Scale => 1.16f,     // wet click
+        Blockfall.Theme.CellMaterial.Chitin => 1.26f,    // dry shell tick
         _ => 1.00f,
     };
+
+    // ---- Placement sound packs ------------------------------------------------
+    // A pack changes only the TIMBRE of "a piece landed". It never changes the
+    // game's meaning map: merge still speaks with "hold", a snap-back with "move",
+    // a clear with "line_clear"/"combo". Mechanical layer = player taste, musical
+    // layer = the game's own voice. Index 0 is the shipped "lock" cue, so an
+    // untouched save sounds exactly as it did before this feature existed.
+
+    /// <summary>Display names for the placement packs, indexed by <c>GameSettings.SfxPack</c>.</summary>
+    public static readonly string[] PackNames = { "NEON", "TAP", "CLICK", "TYPEBAR", "WOOD" };
+
+    /// <summary>Synth cue behind each pack — same order as <see cref="PackNames"/>.</summary>
+    private static readonly string[] PackCues = { "lock", "place_tap", "place_click", "place_typebar", "place_wood" };
+
+    // Deterministic 4-step detune rotation (0, +18, -22, +9 cents). Repeating one
+    // sample verbatim several times a second sounds like a machine gun; a tiny
+    // pitch walk sounds like a hand. A counter, not RNG and not wall-clock, so the
+    // determinism firewall (XorShiftRandom + fixed tick) is untouched — this state
+    // is view-local and never reaches the sim.
+    private static readonly float[] Detune = { 1.000f, 1.0105f, 0.9874f, 1.0052f };
+    private int _detune;
+
+    private float DetuneNext()
+    {
+        var v = Detune[_detune];
+        _detune = (_detune + 1) % Detune.Length;
+        return v;
+    }
+
+    /// <summary>
+    /// The one call every "piece went into the field" moment should make. Picks the
+    /// player's pack, composes its timbre with the equipped skin's material pitch
+    /// (wood skin + WOOD pack = the thickest knock), and walks the detune rotation.
+    /// <paramref name="lift"/> is the pickup (upstroke) cue: real keys sound quieter
+    /// and higher going up than coming down, and today pickup and snap-back are both
+    /// "move", so the player can't hear the difference between grabbing a piece and
+    /// being refused one.
+    /// </summary>
+    public void PlayPlace(bool lift = false)
+    {
+        int idx = Mathf.Clamp(Bootstrap.Instance.Save.Settings.SfxPack, 0, PackCues.Length - 1);
+        if (lift)
+        {
+            // Deliberately NOT multiplied by MaterialPitch. NeonTube (1.30) x 1.5 = 1.95
+            // would push the CLICK pack's 2.1kHz square edge to 4.1kHz — the exact band a
+            // phone speaker turns into an ice pick. Making this "consistent" with the
+            // placement branch later is the realistic regression path; don't.
+            PlaySfx(PackCues[idx], 1.5f, -7f);
+            return;
+        }
+        PlaySfx(PackCues[idx], MaterialPitch(Blockfall.Theme.Palette.EquippedMaterial) * DetuneNext());
+    }
+
+    // ---- Block Fit: the fuse verb ------------------------------------------------
+    // Both Block Fit screens route through these two so the meaning map can't drift between
+    // solo and the duel. Deliberately NOT pack-dependent: a pack is the mechanical layer
+    // ("a piece landed"), and fusing is a rule event — it speaks with the game's own voice.
+
+    /// <summary>A fuse committed. Its own cue, not the "hold" stash cue it used to borrow:
+    /// stashing is free and reversible, fusing spends a finite charge and consumes two pieces.</summary>
+    public void PlayFuse() => PlaySfx("fuse");
+
+    /// <summary>A fuse refused because the budget is spent — the same cue an octave down and
+    /// quieter, i.e. the verb itself sagging. It must NOT be the generic "move" snap-back: that
+    /// is what made "you are out of fuses" sound exactly like "these two pieces don't fit".</summary>
+    public void PlayFuseDenied() => PlaySfx("fuse", 0.55f, -4f);
 
     private AudioStream SfxStream(string name)
     {

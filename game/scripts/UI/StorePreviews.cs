@@ -225,6 +225,9 @@ public partial class ArtifactPreview : Control
             BurstArtifact.PrismBloom => Palette.AccentViolet,
             BurstArtifact.Starfall => new Color(0.9f, 0.85f, 1f),
             BurstArtifact.Fireworks => Palette.AccentGold,
+            BurstArtifact.Fluff => new Color(1.00f, 0.86f, 0.70f),
+            BurstArtifact.Splash => new Color(0.55f, 0.95f, 1.00f),
+            BurstArtifact.Swarm => new Color(0.75f, 1.00f, 0.90f),
             _ => new Color(1f, 0.95f, 0.6f),
         };
         DrawArc(c, Cell * 1.6f, 0f, Mathf.Tau, 32, new Color(accent.R, accent.G, accent.B, 0.7f), 2f);
@@ -234,4 +237,115 @@ public partial class ArtifactPreview : Control
             DrawCircle(c + new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * Cell * 1.1f, 2.5f, accent);
         }
     }
+}
+
+/// <summary>
+/// The shelf card for a placement sound pack: a bar-graph envelope of what that pack's lock cue
+/// actually does over time (attack, decay, and whether it speaks once or twice), so five rows
+/// that differ ONLY in timbre still look like five different things before you tap one.
+///
+/// Shape is the whole identity channel here — every card draws in the same colour, and the only
+/// colour difference in the section is the equipped halo, which is also stated in text
+/// ("EQUIPPED"). Nothing on this card needs hue to be read, which is the rule the palette work
+/// is built on and the reason a "coloured waveform per pack" was not the design.
+///
+/// The envelopes are hand-drawn caricatures of AudioSynth's cues, not a render of them: reading
+/// real samples would drag the synth (core/) into a view file for a 132×58 thumbnail. They are
+/// honest about the two things a player can actually hear at a glance — how sharp the attack is
+/// and how many hits there are — and <see cref="Ping"/> makes the card twitch on the same tap
+/// that plays the sound, which is what ties the picture to the noise.
+/// </summary>
+public partial class SoundPreview : Control
+{
+    private const int Bars = 26;
+    private const float PingSeconds = 0.45f;
+
+    private readonly int _pack;
+    /// <summary>1 → 0 after a preview tap. Accumulated dt only — view code never reads a clock.</summary>
+    private float _ping;
+
+    /// <summary>When set, frames the card with an accent halo (the pack now in Settings).</summary>
+    public bool Selected { get; init; }
+
+    public SoundPreview(int pack)
+    {
+        _pack = pack;
+        MouseFilter = MouseFilterEnum.Ignore;
+        CustomMinimumSize = new Vector2(132, 58);
+    }
+
+    public override void _Ready() => SetProcess(false); // idle until something actually plays
+
+    /// <summary>Kick the "it just spoke" envelope. A no-op under reduced motion: the card is
+    /// already drawn at full amplitude, so the still frame loses nothing.</summary>
+    public void Ping()
+    {
+        if (Motion.Reduced) return;
+        _ping = 1f;
+        SetProcess(true);
+        QueueRedraw();
+    }
+
+    public override void _Process(double delta)
+    {
+        _ping -= (float)delta / PingSeconds;
+        if (_ping <= 0f) { _ping = 0f; SetProcess(false); }
+        QueueRedraw();
+    }
+
+    public override void _Draw()
+    {
+        if (Size.X <= 4f || Size.Y <= 4f) return;
+
+        var pad = new Vector2(6f, 6f);
+        float w = Size.X - pad.X * 2f;
+        float h = Size.Y - pad.Y * 2f;
+        float mid = pad.Y + h * 0.5f;
+        float half = h * 0.5f;
+
+        // Backdrop + baseline: the same dark plate the artifact card uses, so the two kinds of
+        // cosmetic read as one shelf.
+        DrawRect(new Rect2(pad, new Vector2(w, h)), new Color(0.05f, 0.06f, 0.11f, 0.7f));
+        DrawLine(new Vector2(pad.X, mid), new Vector2(pad.X + w, mid), new Color(1, 1, 1, 0.10f), 1f);
+
+        var tint = Selected ? Palette.Accent : Palette.TextSecondary;
+        // The ping swells the bars ~30% and lifts the ink; a 0.45s decay is under Motion's
+        // "one beat" budget and the card is static again before a second tap can land.
+        float swell = 1f + 0.30f * _ping;
+        float ink = Mathf.Lerp(0.62f, 1f, _ping);
+
+        float step = w / Bars;
+        float barW = Mathf.Max(2f, step - 2f);
+        for (int i = 0; i < Bars; i++)
+        {
+            float t = (i + 0.5f) / Bars;
+            float a = Mathf.Clamp(Mathf.Abs(Envelope(_pack, t)) * swell, 0f, 1f);
+            float bh = Mathf.Max(2f, a * (half - 2f));
+            DrawRect(new Rect2(pad.X + i * step + 1f, mid - bh, barW, bh * 2f),
+                     new Color(tint.R, tint.G, tint.B, ink));
+        }
+
+        if (Selected) ThemePreview.DrawSelectionHalo(this, Size);
+    }
+
+    /// <summary>Signed amplitude of pack <paramref name="pack"/> at normalised time
+    /// <paramref name="t"/> ∈ [0,1]. Index order matches <c>AudioManager.PackNames</c> /
+    /// <c>StoreItem.SoundPackIndex</c>; an out-of-range pack falls back to the default cue
+    /// rather than drawing an empty card.</summary>
+    private static float Envelope(int pack, float t) => pack switch
+    {
+        // TAP — soft rubber dome: one low, quick, rounded hump, no ring at all.
+        1 => Mathf.Exp(-9f * t) * Mathf.Sin(Mathf.Tau * 2.0f * t) * 1.05f,
+        // CLICK — two snaps per place: the second hit is the whole point of the pack.
+        2 => (Spike(t, 0.05f, 30f) + 0.85f * Spike(t, 0.34f, 30f)) * Mathf.Sin(Mathf.Tau * 18f * t),
+        // TYPEBAR — steel on a platen: one hard strike plus a long thin ring-out.
+        3 => (Mathf.Exp(-15f * t) + 0.20f * Mathf.Exp(-2.5f * t)) * Mathf.Sin(Mathf.Tau * 9f * t),
+        // WOOD — mallet on a bar: warm, dry, mid decay, no top end.
+        4 => Mathf.Exp(-5.5f * t) * Mathf.Sin(Mathf.Tau * 3.2f * t) * 1.1f,
+        // NEON (0, the default) — a lit tone that rings a while.
+        _ => Mathf.Exp(-3.2f * t) * Mathf.Sin(Mathf.Tau * 5.5f * t),
+    };
+
+    private static float Spike(float t, float at, float sharpness)
+        => t < at ? Mathf.Exp(-sharpness * 3f * (at - t)) : Mathf.Exp(-sharpness * (t - at));
 }

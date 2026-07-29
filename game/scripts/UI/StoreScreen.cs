@@ -7,12 +7,16 @@ using Blockfall.Core.Localization;
 namespace Blockfall.UI;
 
 /// <summary>
-/// The store: cosmetic themes (buy → equip, with live piece-color swatches),
-/// the Second Chance booster pack, and remove-ads. Payment runs through
-/// <see cref="IPlatformServices.PurchaseItem"/>; on success THIS screen grants
-/// the item via SaveManager (platforms only handle money). Equipping applies
+/// The store: cosmetic themes (buy → equip, with live piece-color swatches), burst-FX
+/// artifacts, placement sound packs, the Second Chance booster pack, and remove-ads.
+/// Payment runs through <see cref="IPlatformServices.PurchaseItem"/>; on success THIS screen
+/// grants the item via SaveManager (platforms only handle money). Equipping applies
 /// instantly — only the piece colors retint; the game-screen backdrop stays fixed
 /// (see Palette.ApplyTheme).
+/// <para>Section contract: EVERY cosmetic kind in <see cref="StoreCatalog"/> must have a
+/// section here. A kind with rows in the catalog and no loop on this screen is invisible
+/// merchandise — which is exactly what happened to <see cref="StoreItemKind.SoundPack"/>
+/// between its catalog landing and this one. Adding a kind is two edits, not one.</para>
 /// </summary>
 public partial class StoreScreen : Control
 {
@@ -62,7 +66,7 @@ public partial class StoreScreen : Control
         _list.AddThemeConstantOverride("separation", 12);
         col.AddChild(_list);
 
-        var back = new Button { Text = Loc.T("BACK"), ThemeTypeVariation = "PrimaryButton", CustomMinimumSize = new Vector2(0, 54) };
+        var back = new Button { Text = Loc.T("BACK"), ThemeTypeVariation = "PrimaryButton", CustomMinimumSize = new Vector2(0, TouchTarget) };
         Motion.BindButtonFeel(back);
         back.Pressed += () => BackRequested?.Invoke();
         col.AddChild(back);
@@ -98,10 +102,25 @@ public partial class StoreScreen : Control
                     _list.AddChild(ThemeRow(item));
 
         // Burst-FX artifacts (all free ⇒ always shown, even on a mobile build without billing).
+        // Same two-pass NEW-first order as THEMES: this list is 14 rows deep, so appended the
+        // three signature bursts of the newest wave landed at 12/13/14 — behind a scroll of
+        // effects the player already owns and has already seen fire.
         _list.AddChild(Section(Loc.T("BURST FX")));
-        foreach (var item in StoreCatalog.Items)
-            if (item.Kind == StoreItemKind.Artifact && (paidOk || save.OwnsItem(item.Id)))
-                _list.AddChild(ArtifactRow(item));
+        foreach (bool fresh in NewFirst)
+            foreach (var item in StoreCatalog.Items)
+                if (item.Kind == StoreItemKind.Artifact && item.IsNew == fresh && (paidOk || save.OwnsItem(item.Id)))
+                    _list.AddChild(ArtifactRow(item));
+
+        // Placement sound packs. Free by catalog design (empty ProductId ⇒ owned), so there is
+        // no price and no buy button on these rows — printing "FREE" on a button that cannot
+        // charge is the kind of half-truth that teaches players to distrust the rest of the
+        // shelf. The section says it once, in words, and the rows only offer HEAR / EQUIP.
+        _list.AddChild(Section(Loc.T("SOUND")));
+        _list.AddChild(Note(Loc.T("EVERY PACK IS FREE AND ALREADY YOURS. TAP A WAVEFORM TO HEAR IT, EQUIP TO KEEP IT — IT CHANGES ONLY HOW A PLACED PIECE SOUNDS.")));
+        foreach (bool fresh in NewFirst)
+            foreach (var item in StoreCatalog.Items)
+                if (item.Kind == StoreItemKind.SoundPack && item.IsNew == fresh)
+                    _list.AddChild(SoundRow(item));
 
         if (paidOk)
         {
@@ -122,7 +141,7 @@ public partial class StoreScreen : Control
 
         if (platform.SupportsIap)
         {
-            var restore = new Button { Text = Loc.T("RESTORE PURCHASES"), ThemeTypeVariation = "GhostButton", CustomMinimumSize = new Vector2(0, 44) };
+            var restore = new Button { Text = Loc.T("RESTORE PURCHASES"), ThemeTypeVariation = "GhostButton", CustomMinimumSize = new Vector2(0, TouchTarget) };
             Motion.BindButtonFeel(restore);
             restore.Pressed += () => platform.RestorePurchases();
             _list.AddChild(restore);
@@ -142,26 +161,24 @@ public partial class StoreScreen : Control
 
         var info = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ShrinkCenter };
         info.AddThemeConstantOverride("separation", 4);
-        var name = new Label { Text = item.Name, SizeFlagsVertical = SizeFlags.ShrinkCenter };
-        name.AddThemeFontOverride("font", Fonts.UiBold);
-        name.AddThemeFontSizeOverride("font_size", 20);
-        if (equipped) name.AddThemeColorOverride("font_color", Palette.Accent);
-        if (item.IsNew)
-        {
-            // Name + tag on one line: the badge is what makes a floated-up row legible as a
-            // fresh drop rather than an arbitrary reordering of a list the player knows.
-            var nameRow = new HBoxContainer();
-            nameRow.AddThemeConstantOverride("separation", 8);
-            nameRow.AddChild(name);
-            nameRow.AddChild(NewBadge());
-            info.AddChild(nameRow);
-        }
-        else info.AddChild(name);
+        info.AddChild(NameLine(item, equipped));
         if (item.Theme is { } theme)
             info.AddChild(new ThemePreview(theme) { Selected = equipped });
-        var blurb = new Label { Text = item.Blurb, ThemeTypeVariation = "DimLabel" };
+        var blurb = new Label
+        {
+            Text = Loc.T(item.Blurb),
+            ThemeTypeVariation = "DimLabel",
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+        };
         blurb.AddThemeFontSizeOverride("font_size", 13);
         info.AddChild(blurb);
+        // A set skin says what it brings with it, BEFORE the tap — equipping it also swaps the
+        // line-clear burst, and a silent change to something the player picked reads as a bug.
+        if (item.Theme?.Signature is { } sig)
+        {
+            var pack = StoreCatalog.ById(BurstArtifacts.ToId(sig));
+            if (pack is not null) info.AddChild(Note(Loc.T("INCLUDES THE {0} BURST", Loc.T(pack.Name))));
+        }
         row.AddChild(info);
 
         if (equipped)
@@ -199,12 +216,8 @@ public partial class StoreScreen : Control
 
         var info = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ShrinkCenter };
         info.AddThemeConstantOverride("separation", 4);
-        var name = new Label { Text = item.Name };
-        name.AddThemeFontOverride("font", Fonts.UiBold);
-        name.AddThemeFontSizeOverride("font_size", 20);
-        if (equipped) name.AddThemeColorOverride("font_color", Palette.Accent);
-        info.AddChild(name);
-        var blurb = new Label { Text = item.Blurb, ThemeTypeVariation = "DimLabel", AutowrapMode = TextServer.AutowrapMode.WordSmart };
+        info.AddChild(NameLine(item, equipped));
+        var blurb = new Label { Text = Loc.T(item.Blurb), ThemeTypeVariation = "DimLabel", AutowrapMode = TextServer.AutowrapMode.WordSmart };
         blurb.AddThemeFontSizeOverride("font_size", 13);
         info.AddChild(blurb);
         row.AddChild(info);
@@ -232,6 +245,60 @@ public partial class StoreScreen : Control
         return card;
     }
 
+    /// <summary>
+    /// A placement sound pack. Two targets, both at the 84px (44pt) touch floor: the waveform
+    /// card AUDITIONS the pack without changing anything, and EQUIP commits it.
+    /// <para>Equipping writes <c>GameSettings.SfxPack</c> — the same value the Settings › AUDIO
+    /// picker owns. One setting, two front doors; the store deliberately does NOT keep its own
+    /// "equipped sound" key, because two keys for one audible thing is how a player ends up
+    /// hearing something neither screen claims to have selected.</para>
+    /// </summary>
+    private Control SoundRow(StoreItem item)
+    {
+        int current = Mathf.Clamp(Bootstrap.Instance.Save.Settings.SfxPack,
+                                  0, Blockfall.Audio.AudioManager.PackNames.Length - 1);
+        bool equipped = current == item.SoundPackIndex;
+
+        var card = Card();
+        var row = CardRow(card);
+
+        // The waveform IS the audition button: a separate ▶ next to a picture of a sound would
+        // spend 120px of a 520px row saying the same thing twice.
+        var preview = new SoundPreview(item.SoundPackIndex) { Selected = equipped };
+        preview.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        var hear = new Button
+        {
+            ThemeTypeVariation = "CardButton",
+            CustomMinimumSize = new Vector2(132, TouchTarget),
+            SizeFlagsVertical = SizeFlags.ShrinkCenter,
+            TooltipText = Loc.T("HEAR"),
+        };
+        hear.AddChild(preview);
+        Motion.BindButtonFeel(hear);
+        hear.Pressed += () => { PlayPack(item.SoundPackIndex); preview.Ping(); };
+        row.AddChild(hear);
+
+        var info = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ShrinkCenter };
+        info.AddThemeConstantOverride("separation", 4);
+        info.AddChild(NameLine(item, equipped));
+        var blurb = new Label { Text = Loc.T(item.Blurb), ThemeTypeVariation = "DimLabel", AutowrapMode = TextServer.AutowrapMode.WordSmart };
+        blurb.AddThemeFontSizeOverride("font_size", 13);
+        info.AddChild(blurb);
+        row.AddChild(info);
+
+        if (equipped)
+        {
+            row.AddChild(StateChip(Loc.T("EQUIPPED"), Palette.Accent));
+        }
+        else
+        {
+            var equip = ActionBtn(Loc.T("EQUIP"), "GhostButton");
+            equip.Pressed += () => EquipSound(item);
+            row.AddChild(equip);
+        }
+        return card;
+    }
+
     private Control BoosterRow(StoreItem item)
     {
         int owned = Bootstrap.Instance.Save.BoosterCount(item.BoosterId);
@@ -243,13 +310,13 @@ public partial class StoreScreen : Control
 
         var info = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ShrinkCenter };
         info.AddThemeConstantOverride("separation", 2);
-        var name = new Label { Text = Loc.T("{0}   ·   OWNED: {1}", item.Name, owned) };
+        var name = new Label { Text = Loc.T("{0}   ·   OWNED: {1}", Loc.T(item.Name), owned) };
         name.AddThemeFontOverride("font", Fonts.UiBold);
         name.AddThemeFontSizeOverride("font_size", 19);
         info.AddChild(name);
         var blurb = new Label
         {
-            Text = item.Blurb,
+            Text = Loc.T(item.Blurb),
             ThemeTypeVariation = "DimLabel",
             AutowrapMode = TextServer.AutowrapMode.WordSmart,
         };
@@ -270,11 +337,11 @@ public partial class StoreScreen : Control
         var row = CardRow(card);
 
         var info = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ShrinkCenter };
-        var name = new Label { Text = item.Name };
+        var name = new Label { Text = Loc.T(item.Name) };
         name.AddThemeFontOverride("font", Fonts.UiBold);
         name.AddThemeFontSizeOverride("font_size", 19);
         info.AddChild(name);
-        var blurb = new Label { Text = item.Blurb, ThemeTypeVariation = "DimLabel" };
+        var blurb = new Label { Text = Loc.T(item.Blurb), ThemeTypeVariation = "DimLabel" };
         blurb.AddThemeFontSizeOverride("font_size", 13);
         info.AddChild(blurb);
         row.AddChild(info);
@@ -301,8 +368,38 @@ public partial class StoreScreen : Control
     {
         var save = Bootstrap.Instance.Save;
         save.EquipTheme(item.Id);
+        // A themed SET lands whole: a skin that was designed with a celebration equips it too,
+        // so the player gets the thing that was on the card instead of last week's burst on a
+        // new surface. Not a lock — the burst is still its own free row they can change back.
+        if (item.Theme?.Signature is { } sig) save.EquipArtifact(BurstArtifacts.ToId(sig));
         Palette.ApplyTheme(item.Theme); // retints blocks only — the backdrop stays fixed (see Palette.ApplyTheme)
         Bootstrap.Instance.Bg.Pulse(Palette.Accent, 0.30f); // equip flourish (Motion.Reduced-gated)
+        Rebuild();
+    }
+
+    /// <summary>
+    /// Audition a pack WITHOUT committing it. <c>AudioManager.PlayPlace</c> reads
+    /// <c>SfxPack</c>, picks the cue and starts a pooled player, all inside the call — nothing
+    /// is deferred — so borrowing the field across that one line and handing it straight back
+    /// is airtight. <c>SetSettings</c> is never called, so the save is not marked dirty and
+    /// nothing reaches disk; the player hears the pack and the setting is untouched.
+    /// </summary>
+    private static void PlayPack(int index)
+    {
+        var s = Bootstrap.Instance.Save.Settings;
+        int keep = s.SfxPack;
+        s.SfxPack = index;
+        Bootstrap.Instance.Audio.PlayPlace();
+        s.SfxPack = keep;
+    }
+
+    private void EquipSound(StoreItem item)
+    {
+        var save = Bootstrap.Instance.Save;
+        var s = save.Settings;
+        s.SfxPack = item.SoundPackIndex;
+        save.SetSettings(s);                    // persists, exactly as the Settings picker does
+        Bootstrap.Instance.Audio.PlayPlace();   // confirm in the pack that was just chosen
         Rebuild();
     }
 
@@ -321,6 +418,9 @@ public partial class StoreScreen : Control
         "artifact_shards" or "artifact_lightning" or "artifact_bubblepop" => Palette.Accent,
         "artifact_aurora" => new Color(0.3f, 0.9f, 0.8f),
         "artifact_starfall" => new Color(0.9f, 0.85f, 1f),
+        "artifact_fluff" => new Color(1f, 0.86f, 0.70f),
+        "artifact_splash" => new Color(0.55f, 0.95f, 1f),
+        "artifact_swarm" => new Color(0.75f, 1f, 0.90f),
         _ => Palette.AccentGold,
     };
 
@@ -336,13 +436,41 @@ public partial class StoreScreen : Control
         return row;
     }
 
+    /// <summary>
+    /// Name + the NEW tag on one line, shared by every equippable row (theme / burst / sound).
+    /// The badge is what makes a floated-up row legible as a fresh drop rather than an arbitrary
+    /// reordering of a list the player knows — so it belongs to the SORT, and any section that
+    /// sorts NEW-first has to draw it. BURST FX sorted without one for a release; three new
+    /// bursts sat at the top of the list with nothing saying why.
+    /// </summary>
+    private static Control NameLine(StoreItem item, bool equipped)
+    {
+        var name = new Label { Text = Loc.T(item.Name), SizeFlagsVertical = SizeFlags.ShrinkCenter };
+        name.AddThemeFontOverride("font", Fonts.UiBold);
+        name.AddThemeFontSizeOverride("font_size", 20);
+        if (equipped) name.AddThemeColorOverride("font_color", Palette.Accent);
+        if (!item.IsNew) return name;
+
+        var line = new HBoxContainer();
+        line.AddThemeConstantOverride("separation", 8);
+        line.AddChild(name);
+        line.AddChild(NewBadge());
+        return line;
+    }
+
+    /// <summary>44pt at this project's 0.521pt-per-design-px scale — the repo-wide minimum
+    /// touch target (<c>SettingsScreen.TouchTarget</c> holds the same number).</summary>
+    private const int TouchTarget = 84;
+
     private static Button ActionBtn(string text, string variation)
     {
         var b = new Button
         {
             Text = text,
             ThemeTypeVariation = variation,
-            CustomMinimumSize = new Vector2(120, 46),
+            // Was 46 (24pt) — every buy/equip control in the shop sat at just over half the
+            // touch floor, on the one screen where a mis-tap can spend money.
+            CustomMinimumSize = new Vector2(120, TouchTarget),
             SizeFlagsVertical = SizeFlags.ShrinkCenter,
         };
         b.AddThemeFontSizeOverride("font_size", 16);

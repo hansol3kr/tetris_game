@@ -22,6 +22,30 @@ public sealed class BlockPiece
     }
 }
 
+/// <summary>
+/// WHY a fuse is (or is not) available, for the drag preview and the release cue.
+///
+/// A plain bool collapsed two completely different refusals into one red silhouette: "these two
+/// shapes cannot join" (try a different offset) and "you are out of fuse charges" (nothing you do
+/// with your finger will ever help). The player could only ever be told the first, so a depleted
+/// budget looked exactly like a bad aim — the single most confusing state in the mode. The view
+/// paints and sounds each case differently; the ENGINE still answers with one shared gate, so the
+/// preview and the commit can never disagree (see <see cref="BlockFitGame.CheckMerge"/>).
+/// </summary>
+public enum MergeVerdict
+{
+    /// <summary>The gesture is not a fuse at all: same slot, out of range, or an empty slot.</summary>
+    NoTarget,
+    /// <summary>A real pair, but the fuse budget is spent. Checked BEFORE the shape so the answer
+    /// is the truth the player needs: with no charges left the offset is irrelevant.</summary>
+    NoCharges,
+    /// <summary>Charges left, but these two shapes overlap or their union could never fit the
+    /// board — the one refusal the player can actually fix by moving their finger.</summary>
+    WontFit,
+    /// <summary>Legal: the release will commit this fuse.</summary>
+    Ok,
+}
+
 /// <summary>The fixed-orientation polyomino set the tray draws from (Block Blast-style variety).</summary>
 public static class BlockShapes
 {
@@ -78,6 +102,17 @@ public sealed class BlockFitGame
     public long Score { get; private set; }
     public int Streak { get; private set; }          // consecutive placements that cleared ≥1 line
     public bool GameOver { get; private set; }
+
+    /// <summary>
+    /// Fuse charges left. Merging is a SPENDABLE resource, not a free verb: every merge empties a
+    /// tray slot that <see cref="Deal"/> immediately refills, so an unlimited merge let the player
+    /// pull unlimited fresh pieces out of the tray and hand-build whatever shape the board needed.
+    /// Score is 1/cell, so that loop was an unbounded score exploit AND it removed the puzzle
+    /// (there is no wrong board when you can fabricate the answer). One charge per fuse; the only
+    /// income is clearing lines (see <see cref="ClearFullLines"/>), which is exactly the skill the
+    /// mode is supposed to reward.
+    /// </summary>
+    public int Merges { get; private set; }
     public int LastClearedRows { get; private set; } // for the clear animation / feedback
     public int LastClearedCols { get; private set; }
 
@@ -94,12 +129,31 @@ public sealed class BlockFitGame
     private const long DifficultyScoreSpan = 2400;   // score at which difficulty saturates to 1
     private const double SafetyNetBelow = 0.5;       // guarantee a move while difficulty < this
 
+    /// <summary>Fuse charges a run starts with. Three is enough for the tool to be worth learning
+    /// (the tutorial card teaches it, and a first-timer can try it and still have two left) and far
+    /// too few to build a run around.</summary>
+    public const int InitialMerges = 3;
+
+    /// <summary>Ceiling on banked charges. Without a cap, a long clean stretch would bank a stock
+    /// the player could dump all at once late — the same unlimited-fuse endgame by another route.
+    /// Set ABOVE <see cref="InitialMerges"/> so clearing well genuinely deepens the reserve.</summary>
+    public const int MaxMerges = 5;
+
+    /// <summary>Charges refunded by a placement that clears at least one line. Deliberately PER
+    /// CLEARING PLACEMENT, not per line: a per-line refund would pay 2–4 for one combo, so a fuse
+    /// that builds a multi-clear would earn back more than it cost and the exploit loop reopens.
+    /// At +1 a fuse can at best break even, which caps the economy while still keeping fusing
+    /// alive deep into a long run — where the board is crowded, clears are frequent, and a run
+    /// with no income would have lost the verb entirely.</summary>
+    public const int MergesPerClear = 1;
+
     public static double DifficultyFor(long score) =>
         Math.Min(1.0, Math.Max(0.0, score / (double)DifficultyScoreSpan));
 
     public BlockFitGame(int seed = 0)
     {
         _rng = seed == 0 ? new Random() : new Random(seed);
+        Merges = InitialMerges;
         Deal();
     }
 
@@ -107,6 +161,7 @@ public sealed class BlockFitGame
     public BlockFitGame(PieceType[] grid, IReadOnlyList<BlockPiece?> tray)
     {
         _rng = new Random(1);
+        Merges = InitialMerges;
         if (grid.Length == _grid.Length) Array.Copy(grid, _grid, grid.Length);
         for (int i = 0; i < Tray.Length && i < tray.Count; i++) Tray[i] = tray[i];
     }
@@ -252,13 +307,16 @@ public sealed class BlockFitGame
     /// continuous stream, so fusing two pieces must cost a slot's worth of shape, never a slot.
     /// (It used to leave the source slot empty until the next placement, which silently starved
     /// the tray and made merging feel punitive.)
+    /// Costs one <see cref="Merges"/> charge — because of that free refill, an uncapped merge was
+    /// an unlimited supply of fresh pieces. Refuses with the tray untouched when the budget is 0.
     /// </summary>
     public bool TryMerge(int srcIndex, int dstIndex, int srcRowOffset, int srcColOffset)
     {
-        if (!ResolveMerge(srcIndex, dstIndex, out var src, out var dst)) return false;
-        var merged = BuildMerge(src!, dst!, srcRowOffset, srcColOffset);
-        if (merged is null) return false;
+        if (CheckMerge(srcIndex, dstIndex, srcRowOffset, srcColOffset) != MergeVerdict.Ok) return false;
+        ResolveMerge(srcIndex, dstIndex, out var src, out var dst);
+        var merged = BuildMerge(src!, dst!, srcRowOffset, srcColOffset)!;
 
+        Merges--;   // spent only once the fuse is certain to commit
         Tray[dstIndex] = new BlockPiece(merged, dst!.Color);
         Tray[srcIndex] = null;
         Deal();   // the emptied source slot refills at once — see the summary
@@ -273,14 +331,36 @@ public sealed class BlockFitGame
         return TryMerge(srcIndex, dstIndex, 0, Tray[dstIndex]!.Width);
     }
 
-    /// <summary>Would a merge at this offset be legal (no overlap, fits the board)? Pure —
-    /// drives the drag-time merge preview so the player sees the shape before releasing.</summary>
+    /// <summary>Would a merge at this offset be legal (budget left, no overlap, fits the board)?
+    /// Pure — drives the drag-time merge preview so the player sees the shape before releasing.
+    /// Thin wrapper over <see cref="CheckMerge"/>, which <see cref="TryMerge(int,int,int,int)"/>
+    /// also gates on, so the preview and the release can never disagree ("it was green and then
+    /// nothing happened").</summary>
     public bool CanMerge(int srcIndex, int dstIndex, int srcRowOffset, int srcColOffset)
+        => CheckMerge(srcIndex, dstIndex, srcRowOffset, srcColOffset) == MergeVerdict.Ok;
+
+    /// <summary>
+    /// The single fuse gate — same answer for the drag preview and for the commit — but reporting
+    /// WHY, not just yes/no. <see cref="CanMerge"/> and <see cref="TryMerge(int,int,int,int)"/> are
+    /// both defined in terms of it, so a preview can never promise a fuse the release refuses.
+    ///
+    /// Order matters: the budget is tested before the shape, because with no charges left the join
+    /// offset is not the player's problem and telling them "these shapes don't fit" would be a lie
+    /// that sends them hunting for a better aim they can never find. Pure — allocates only through
+    /// <c>BuildMerge</c> on the shape branch.
+    /// </summary>
+    public MergeVerdict CheckMerge(int srcIndex, int dstIndex, int srcRowOffset, int srcColOffset)
     {
-        if (!ResolveMerge(srcIndex, dstIndex, out var src, out var dst)) return false;
-        return BuildMerge(src!, dst!, srcRowOffset, srcColOffset) is not null;
+        if (!ResolveMerge(srcIndex, dstIndex, out var src, out var dst)) return MergeVerdict.NoTarget;
+        if (Merges <= 0) return MergeVerdict.NoCharges;
+        return BuildMerge(src!, dst!, srcRowOffset, srcColOffset) is not null
+            ? MergeVerdict.Ok
+            : MergeVerdict.WontFit;
     }
 
+    /// <summary>Is this pair of indices a fuse at all — two distinct, in-range, OCCUPIED slots?
+    /// Budget and shape are judged by <see cref="CheckMerge"/>; keeping them out of here is what
+    /// lets a caller tell "not a target" from "no charges" from "won't fit".</summary>
     private bool ResolveMerge(int srcIndex, int dstIndex, out BlockPiece? src, out BlockPiece? dst)
     {
         src = null; dst = null;
@@ -343,6 +423,9 @@ public sealed class BlockFitGame
             Streak++;
             // Reward multi-line combos superlinearly, plus a streak bonus (Block Blast feel).
             Score += 10L * lines * (lines + 1) + 5L * (Streak - 1);
+            // Fuse income. Flat per clearing placement (never per line) and capped — see the
+            // MergesPerClear / MaxMerges notes for why either alternative reopens the exploit.
+            if (Merges < MaxMerges) Merges = Math.Min(MaxMerges, Merges + MergesPerClear);
         }
         else
         {

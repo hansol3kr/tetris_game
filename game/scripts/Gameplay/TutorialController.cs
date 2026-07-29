@@ -103,7 +103,7 @@ public partial class TutorialController : Node2D
         {
             if (ev.Result.Spin != SpinType.None) _tSpun = true;
             if (ev.ClearedRows.Count > 0) { _clearedLine = true; _view.FlashRows(ev.ClearedRows); audio.PlayLineClear(ev.Result); }
-            else audio.PlaySfx("lock");
+            else audio.PlayPlace();   // the player's pack + material pitch (see GameController)
             if (_stepIndex >= 0 && _stepIndex < _steps.Count) _steps[_stepIndex].OnLock?.Invoke(this);
         };
     }

@@ -92,6 +92,10 @@ public partial class SettingsScreen : Control
         AddRow(audio, Slider("SFX VOLUME", 0, 1, 0.05, _s.SfxVolume, v => { _s.SfxVolume = (float)v; ApplyAudio(); }, Pct));
         AddRow(audio, Slider("MUSIC VOLUME", 0, 1, 0.05, _s.MusicVolume, v => { _s.MusicVolume = (float)v; ApplyAudio(); }, Pct));
         AddRow(audio, Check("MUTE", _s.Muted, on => { _s.Muted = on; ApplyAudio(); }));
+        // Placement timbre. Audition on every tap — a sound picker you cycle in silence
+        // is unusable, and the packs differ only in timbre, so a name tells you nothing.
+        AddRow(audio, CycleRow(Loc.T("PLACE SOUND"), Blockfall.Audio.AudioManager.PackNames, _s.SfxPack,
+            i => { _s.SfxPack = i; Bootstrap.Instance.Audio.PlayPlace(); }));
 
         // ---- VISUAL -----------------------------------------------------------
         var visual = SectionCard(col, "VISUAL");
@@ -543,9 +547,11 @@ public partial class SettingsScreen : Control
         int idx = Mathf.Clamp(current, 0, names.Length - 1);
         // Full 44pt tall: this segment picker cycles on every tap, so a mis-tap on a 40px
         // strip meant scrolling past the value you wanted.
+        // The VALUE is localized too, not just the caption — this was why CLEAR EFFECT
+        // showed SPARKS/BURST/... in English on a Korean UI while its label was translated.
         var btn = new Button
         {
-            Text = names[idx],
+            Text = Loc.T(names[idx]),
             CustomMinimumSize = new Vector2(168, TouchTarget),
             SizeFlagsVertical = SizeFlags.ShrinkCenter,
         };
@@ -553,7 +559,7 @@ public partial class SettingsScreen : Control
         btn.Pressed += () =>
         {
             idx = (idx + 1) % names.Length;
-            btn.Text = names[idx];
+            btn.Text = Loc.T(names[idx]);
             onChanged(idx);
         };
         row.AddChild(btn);

@@ -192,7 +192,7 @@ public partial class VersusController : Node2D
                 _juice.OnLineClear(ev.ClearedRows, ev.Result, ev.Piece.Type);
                 audio.PlayLineClear(ev.Result);
             }
-            else audio.PlaySfx("lock");
+            else audio.PlayPlace();   // the player's pack + material pitch (see GameController)
         };
         pg.HardDropped += dist => { if (dist > 0) { audio.PlaySfx("hard_drop"); _juice.OnHardDrop(dist); } };
         pg.PieceRotated += r => { if (r.Success) audio.PlaySfx("rotate"); };

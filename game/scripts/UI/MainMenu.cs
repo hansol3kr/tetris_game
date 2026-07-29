@@ -30,7 +30,15 @@ public partial class MainMenu : Control
     public event Action? DescentChosen;
 
     private readonly HashSet<GameModifier> _mods = new();
-    private static bool _introPlayed; // full entrance choreography only once per session
+    /// <summary>First arrival of the session gets the extra lead-in beat; later returns
+    /// still re-run the stagger (it used to gate the WHOLE choreography, so coming back
+    /// from a run landed on a dead-still screen that read as "the app froze").</summary>
+    private static bool _introPlayed;
+
+    /// <summary>Accumulated dt for the hero card's specular sweep — the ONE idle motion on
+    /// this screen. Never wall-clock (view code must stay off any real-time source).</summary>
+    private float _sweepT;
+    private Control? _sweep;
 
     private static readonly GameModeId[] SoloModes =
     {
@@ -95,19 +103,25 @@ public partial class MainMenu : Control
 
         BuildFooter();
 
-        // Entrance: staggered on first arrival, instant-ish afterwards.
+        // Entrance: the stagger runs on EVERY arrival, only the lead-in beat is
+        // first-time-only. Motion.EnterStagger already caps the total stagger at 200ms
+        // (Motion.cs:40) and degrades to a single fade under reduced motion, so a
+        // re-entry still feels immediate — but the screen is never frozen on arrival.
         var items = new List<Control>();
         foreach (var child in col.GetChildren())
             if (child is Control c) items.Add(c);
-        if (_introPlayed || Motion.Reduced)
-        {
-            // The router already fades the whole screen in; nothing extra.
-        }
-        else
-        {
-            _introPlayed = true;
-            Motion.EnterStagger(items.ToArray(), initialDelay: 0.05f);
-        }
+        Motion.EnterStagger(items.ToArray(), initialDelay: _introPlayed ? 0f : 0.05f);
+        _introPlayed = true;
+
+        // Only the hero sweep needs a per-frame tick; reduced motion parks it statically.
+        SetProcess(!Motion.Reduced && _sweep != null);
+    }
+
+    public override void _Process(double delta)
+    {
+        if (_sweep == null || !IsInstanceValid(_sweep)) { SetProcess(false); return; }
+        _sweepT += (float)delta;
+        _sweep.QueueRedraw();
     }
 
     // ---- Logo ----------------------------------------------------------------
@@ -171,6 +185,7 @@ public partial class MainMenu : Control
     private Control BuildHeroCard()
     {
         var b = Card(Palette.Accent, 96);
+        AttachSpecularSweep(b);
         var content = CardContent(b);
 
         content.AddChild(AccentBar(Palette.Accent, 60));
@@ -411,33 +426,79 @@ public partial class MainMenu : Control
         };
     }
 
+    /// <summary>44pt at this project's 0.521pt-per-design-px scale (44 / 0.521 ≈ 84.4). The
+    /// repo-wide minimum touch target; <c>SettingsScreen</c> and <c>StoreScreen</c> hold the
+    /// same constant.</summary>
+    private const int TouchTarget = 84;
+
+    /// <summary>
+    /// The five secondary entry points. A FIXED two-column grid, not a wrapping flow of
+    /// fixed-width pills: the flow's 168px pills fell 3+2 across a 340-600px column, so the
+    /// row structure changed with device width and the last row was a ragged pair of pills
+    /// floating under three. Two columns are two columns on every phone, each pill is half a
+    /// column wide (170-292px) instead of a constant 168, and the reading order — the order
+    /// the arguments appear below — is unchanged: HOW TO PLAY, PROFILE, REPLAYS, STORE,
+    /// SETTINGS, with SETTINGS alone in the last row.
+    /// Separation is 16 design px ≈ 8.3pt, the HIG gap for adjacent 44pt targets (it was 8px
+    /// vertical ≈ 4.2pt, i.e. two 56px-tall pills a thumb-width apart with almost no gutter).
+    /// </summary>
     private Control BuildBottomButtons()
     {
-        // HFlow wraps to a second line if the icons don't all fit one row.
-        var row = new HFlowContainer { SizeFlagsHorizontal = SizeFlags.ShrinkCenter };
-        row.AddThemeConstantOverride("h_separation", 10);
-        row.AddThemeConstantOverride("v_separation", 8);
-        row.AddChild(GhostIconButton(IconKind.Blocks, Loc.T("HOW TO PLAY"), () => TutorialChosen?.Invoke()));
-        row.AddChild(GhostIconButton(IconKind.Trophy, Loc.T("PROFILE"), () => ProfileChosen?.Invoke()));
-        row.AddChild(GhostIconButton(IconKind.Refresh, Loc.T("REPLAYS"), () => ReplaysChosen?.Invoke()));
-        row.AddChild(GhostIconButton(IconKind.Diamond, Loc.T("STORE"), () => StoreChosen?.Invoke()));
-        row.AddChild(GhostIconButton(IconKind.Gear, Loc.T("SETTINGS"), () => SettingsChosen?.Invoke()));
-        return row;
+        var grid = new GridContainer { Columns = 2, SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        grid.AddThemeConstantOverride("h_separation", 16);
+        grid.AddThemeConstantOverride("v_separation", 16);
+        // Accents follow meaning, not decoration: cyan = the standard UI accent, violet =
+        // the store/cosmetics identity, gold = the records surface (PROFILE is the stats
+        // and personal-best screen, so it is the one sanctioned reading of gold outside
+        // daily/new-best; demote it to cyan if that rule is ever tightened).
+        grid.AddChild(GhostIconButton(IconKind.Blocks, Loc.T("HOW TO PLAY"), Palette.Accent, () => TutorialChosen?.Invoke()));
+        grid.AddChild(GhostIconButton(IconKind.Trophy, Loc.T("PROFILE"), Palette.AccentGold, () => ProfileChosen?.Invoke()));
+        grid.AddChild(GhostIconButton(IconKind.Refresh, Loc.T("REPLAYS"), Palette.Accent, () => ReplaysChosen?.Invoke()));
+        grid.AddChild(GhostIconButton(IconKind.Diamond, Loc.T("STORE"), Palette.AccentViolet, () => StoreChosen?.Invoke()));
+        grid.AddChild(GhostIconButton(IconKind.Gear, Loc.T("SETTINGS"), Palette.TextSecondary.Lerp(Palette.Accent, 0.6f), () => SettingsChosen?.Invoke()));
+        return grid;
     }
 
-    private static Button GhostIconButton(IconKind icon, string text, Action onPressed)
+    /// <summary>
+    /// A bottom-row pill. Styled per INSTANCE, not on the "GhostButton" variation: that
+    /// variation is the quiet secondary-nav style on all twelve screens, and colouring it
+    /// here would tint every ghost button in the game.
+    /// </summary>
+    private static Button GhostIconButton(IconKind icon, string text, Color accent, Action onPressed)
     {
         var b = new Button
         {
             ThemeTypeVariation = "GhostButton",
-            // Uniform width so all five pills are the SAME size (they looked
-            // mismatched when each hugged its own label / stretched to fill).
-            // Sized to fit the longest label ("HOW TO PLAY") snugly.
-            CustomMinimumSize = new Vector2(168, 50),
+            // 84 design px = 44pt = 6.9mm — the actual mobile touch-target floor. The previous
+            // value was 56px and the comment above it claimed 56 "clears the mobile
+            // touch-target floor"; 56px is 29.2pt / 4.55mm, 66% of the floor, so the note
+            // stopped the next reviewer from checking a control that had never passed. If this
+            // number is ever lowered again, the conversion is 1 design px = 0.521pt.
+            // Width comes from the grid (half a column, ExpandFill) rather than a fixed 168,
+            // so all five pills stay identical in size at any column width.
+            CustomMinimumSize = new Vector2(0, TouchTarget),
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
         };
+        // The stock ghost pill is transparent fill + white α0.14 border (1.487:1) with a
+        // gray icon — five of them made the bottom quarter of the screen fully achromatic.
+        // A faint accent wash + accent-mixed border gives each pill an identity while the
+        // LABEL stays TextSecondary, so text contrast is unchanged.
+        // Border alpha 0.38, not 0.30: at 0.30 the boundary measures 2.32:1 (cyan) — still
+        // under the 3:1 non-text bar it is supposed to clear. 0.38 lands cyan/gold at
+        // ~3.0:1; violet tops out at 2.60:1 because the mixed hue is the darkest of the
+        // set, and it stays there rather than shouting — the pill is also identified by
+        // its icon AND its label, so the outline is not the only affordance.
+        b.AddThemeStyleboxOverride("normal",
+            TextureFactory.GlassStyle(Palette.RadiusM,
+                new Color(accent.R, accent.G, accent.B, 0.05f), new Color(accent.R, accent.G, accent.B, 0.02f),
+                TintRgb(Colors.White, accent, 0.45f, 0.38f), 1f, 0f, 24, 12));
+        b.AddThemeStyleboxOverride("hover",
+            TextureFactory.GlassStyle(Palette.RadiusM,
+                new Color(accent.R, accent.G, accent.B, 0.12f), new Color(accent.R, accent.G, accent.B, 0.05f),
+                new Color(accent.R, accent.G, accent.B, 0.55f), 1.2f, 0f, 24, 12));
         var content = CardContent(b, marginH: 0);
         content.Alignment = BoxContainer.AlignmentMode.Center;
-        content.AddChild(new Theme.Icon(icon, Palette.TextSecondary, 20) { SizeFlagsVertical = SizeFlags.ShrinkCenter });
+        content.AddChild(new Theme.Icon(icon, new Color(accent.R, accent.G, accent.B, 0.85f), 20) { SizeFlagsVertical = SizeFlags.ShrinkCenter });
         var l = new Label { Text = text, ThemeTypeVariation = "DimLabel" };
         l.AddThemeFontSizeOverride("font_size", 18);
         content.AddChild(l);
@@ -450,7 +511,12 @@ public partial class MainMenu : Control
     {
         var footer = new Label
         {
-            Text = Loc.T("Original brand — not affiliated with Tetris®."),
+            // Trademark rule (CLAUDE.md §8-1): no third-party mark may appear anywhere,
+            // and this label renders on the menu on every launch — it was the single
+            // highest-exposure violation in the build. The disclaimer SLOT is kept
+            // (BottomWide, TextTertiary 12px = 3.99:1 on the background, legible); only
+            // the wording changed. Final legal copy is publishing's call.
+            Text = Loc.T("ORIGINAL BRAND · ALL ART AND RULES ARE OUR OWN"),
             HorizontalAlignment = HorizontalAlignment.Center,
         };
         footer.AddThemeFontSizeOverride("font_size", 12);
@@ -459,23 +525,43 @@ public partial class MainMenu : Control
         footer.SetAnchorsAndOffsetsPreset(LayoutPreset.BottomWide);
         footer.OffsetTop = -34;
         footer.OffsetBottom = -10;
+        // The 24px slot is smaller than the label's own minimum height once the
+        // accessibility TEXT SIZE slider is raised, and Godot then grows the control
+        // past its offsets. Measured headless: the footer ran 2px BELOW the screen
+        // bottom (rect end 1282 in a 1280 canvas) — i.e. straight into the home
+        // indicator. Growing toward the top pins the bottom edge at -10 instead.
+        footer.GrowVertical = GrowDirection.Begin;
     }
 
     // ---- Small builders -----------------------------------------------------
 
-    /// <summary>Glass card button with an accent-tinted hover/pressed treatment.</summary>
+    /// <summary>
+    /// "LIT GLASS" card button: the card's identity colour now tints the WHOLE surface
+    /// instead of only the 4px bar (which touched ~2% of the card's area, leaving three
+    /// near-identical gray slabs). Body/border contrast against the background midpoint:
+    /// cyan 1.711 / gold 1.770 / red 1.548 / violet 1.566 (was 1.168 flat), borders
+    /// 2.85–4.37:1. The tint is the FOURTH channel of identity, never the only one —
+    /// every card keeps its icon, its label and its fixed position in the column, so the
+    /// screen still parses with hue removed entirely.
+    /// </summary>
     private static Button Card(Color accent, float minHeight)
     {
         var b = new Button { CustomMinimumSize = new Vector2(0, minHeight) };
+        var top = TintRgb(UiTheme.SurfaceTop, accent, 0.45f, 0.24f);
+        var bottom = TintRgb(UiTheme.SurfaceBottom, accent, 0.25f, 0.07f);
+        var border = TintRgb(Colors.White, accent, 0.45f, 0.44f);
         b.AddThemeStyleboxOverride("normal",
-            TextureFactory.GlassStyle(Palette.RadiusM, Palette.GlassTop, Palette.GlassBottom, Palette.GlassBorder, 1f, 0.16f, 18, 12));
+            TextureFactory.GlassStyle(Palette.RadiusM, top, bottom, border, 1.2f, 0.22f, 18, 12));
+        // Hover/pressed keep the shipped recipe SHAPE but are re-based on the lit normal —
+        // the old literals (0.145 / 0.18 alpha) now sit BELOW the new normal, which would
+        // have made hovering a card visibly darken it.
         b.AddThemeStyleboxOverride("hover",
             TextureFactory.GlassStyle(Palette.RadiusM,
-                Mul(Palette.GlassTop, 1.7f), Mul(Palette.GlassBottom, 1.7f),
-                new Color(accent.R, accent.G, accent.B, 0.6f), 1.3f, 0.2f, 18, 12));
+                Mul(top, 1.5f), Mul(bottom, 1.5f),
+                new Color(accent.R, accent.G, accent.B, 0.6f), 1.4f, 0.26f, 18, 12));
         b.AddThemeStyleboxOverride("pressed",
             TextureFactory.GlassStyle(Palette.RadiusM,
-                new Color(accent.R, accent.G, accent.B, 0.18f), new Color(accent.R, accent.G, accent.B, 0.08f),
+                new Color(accent.R, accent.G, accent.B, 0.30f), new Color(accent.R, accent.G, accent.B, 0.14f),
                 new Color(accent.R, accent.G, accent.B, 0.9f), 1.4f, 0.12f, 18, 12));
         var focus = TextureFactory.GlassStyle(Palette.RadiusM,
             new Color(0, 0, 0, 0), new Color(0, 0, 0, 0),
@@ -484,6 +570,43 @@ public partial class MainMenu : Control
         b.AddThemeStyleboxOverride("focus", focus);
         Motion.BindButtonFeel(b);
         return b;
+    }
+
+    /// <summary>Lerp a base colour's RGB toward an accent, then pin an explicit alpha.</summary>
+    private static Color TintRgb(Color baseCol, Color accent, float mix, float alpha)
+        => new(Mathf.Lerp(baseCol.R, accent.R, mix),
+               Mathf.Lerp(baseCol.G, accent.G, mix),
+               Mathf.Lerp(baseCol.B, accent.B, mix),
+               alpha);
+
+    /// <summary>
+    /// The one idle motion on this screen: a slow iridescent sweep across the hero card,
+    /// 6s period. Exactly one moving element means nothing competes for the eye, and it
+    /// answers "is this thing running?" without a particle budget. Driven by accumulated
+    /// dt (never wall-clock); under reduced motion the phase is frozen mid-sweep so the
+    /// card keeps a static highlight instead of losing the treatment (same fallback the
+    /// Holographic block finish uses).
+    /// </summary>
+    private void AttachSpecularSweep(Control card)
+    {
+        var strip = TextureFactory.HoloStrip(64);
+        // Inset past the 14px corner radius (the arc bites ~4.1px in), so a rectangular
+        // overlay can never spill a square halo outside the rounded card.
+        var sweep = new Control { MouseFilter = MouseFilterEnum.Ignore };
+        sweep.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        sweep.OffsetLeft = 6; sweep.OffsetTop = 6;
+        sweep.OffsetRight = -6; sweep.OffsetBottom = -6;
+        sweep.Draw += () =>
+        {
+            var size = sweep.Size;
+            if (size.X <= 1f || size.Y <= 1f) return;
+            float px = strip.GetHeight() * 0.5f;           // the scrolling window height
+            float srcY = Motion.Reduced ? px * 0.5f : Mathf.PosMod(_sweepT * px / 6f, px);
+            sweep.DrawTextureRectRegion(strip, new Rect2(Vector2.Zero, size),
+                new Rect2(0, srcY, strip.GetWidth(), px), new Color(1, 1, 1, 0.06f));
+        };
+        card.AddChild(sweep);
+        _sweep = sweep;
     }
 
     /// <summary>Full-rect HBox inside a button for icon/label/chip content (input-transparent).</summary>
@@ -498,15 +621,63 @@ public partial class MainMenu : Control
         return box;
     }
 
+    /// <summary>
+    /// The card's identity edge: a 4px round-capped core with a 5px outward glow falloff,
+    /// so it reads as a lit neon strip rather than a flat paint chip. Baked once per
+    /// (width, height) and tinted with Modulate, so all four cards together add zero
+    /// per-frame draw work over the old ColorRect.
+    /// </summary>
     private static Control AccentBar(Color color, float height)
     {
-        return new ColorRect
+        int h = Mathf.Max(4, Mathf.RoundToInt(height));
+        return new TextureRect
         {
-            Color = color,
-            CustomMinimumSize = new Vector2(4, height),
+            Texture = AccentEdge(AccentEdgeWidth, h),
+            Modulate = color,
+            StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+            CustomMinimumSize = new Vector2(AccentEdgeWidth, h),
             SizeFlagsVertical = SizeFlags.ShrinkCenter,
             MouseFilter = MouseFilterEnum.Ignore,
         };
+    }
+
+    private const int AccentEdgeWidth = 10; // 4px visible core + 5px soft outward falloff
+    private const float AccentEdgeCore = 4f;
+    private const float AccentEdgeGlow = 5f;
+
+    private static readonly Dictionary<string, ImageTexture> EdgeCache = new();
+
+    /// <summary>
+    /// Code-baked neon edge strip, white so callers tint via Modulate. Asset-free by rule
+    /// (no imported images anywhere in the presentation layer).
+    /// </summary>
+    private static ImageTexture AccentEdge(int w, int h)
+    {
+        string key = $"accentedge:{w}:{h}";
+        if (EdgeCache.TryGetValue(key, out var hit)) return hit;
+
+        var img = Image.CreateEmpty(w, h, false, Image.Format.Rgba8);
+        float radius = AccentEdgeCore * 0.20f;                 // rounded caps on the core
+        var half = new Vector2(AccentEdgeCore * 0.5f, h * 0.5f);
+        var centre = new Vector2(AccentEdgeCore * 0.5f, h * 0.5f);
+        for (int y = 0; y < h; y++)
+        {
+            for (int x = 0; x < w; x++)
+            {
+                var p = new Vector2(x + 0.5f, y + 0.5f) - centre;
+                // Rounded-box SDF of the solid core.
+                var q = new Vector2(Mathf.Abs(p.X), Mathf.Abs(p.Y)) - half + new Vector2(radius, radius);
+                float sdf = new Vector2(Mathf.Max(q.X, 0f), Mathf.Max(q.Y, 0f)).Length()
+                            + Mathf.Min(Mathf.Max(q.X, q.Y), 0f) - radius;
+                float core = Mathf.Clamp(0.5f - sdf / 1.5f, 0f, 1f);
+                float t = Mathf.Clamp(sdf / AccentEdgeGlow, 0f, 1f);
+                float glow = 0.55f * (1f - t) * (1f - t);       // 0.55 → 0 over 5px
+                img.SetPixel(x, y, new Color(1f, 1f, 1f, Mathf.Max(core, glow)));
+            }
+        }
+        var tex = ImageTexture.CreateFromImage(img);
+        EdgeCache[key] = tex;
+        return tex;
     }
 
     private static Control ChipLabel(string text, Color color)

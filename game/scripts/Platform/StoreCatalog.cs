@@ -7,6 +7,7 @@ public enum StoreItemKind
 {
     Theme,       // permanent cosmetic (block palette + backdrop + optional glyph)
     Artifact,    // permanent cosmetic (Block Fit line-clear burst style)
+    SoundPack,   // permanent cosmetic (placement timbre) — always free, see below
     BoosterPack, // consumable bundle (adds N uses)
     RemoveAds,   // permanent entitlement (mobile)
 }
@@ -24,9 +25,17 @@ public sealed class StoreItem
     public BlockTheme? Theme { get; init; }
     public string BoosterId { get; init; } = "";
     public int BoosterCount { get; init; }
+    /// <summary>For <see cref="StoreItemKind.SoundPack"/>: the index a store row would write to
+    /// <c>GameSettings.SfxPack</c>. The setting stays the single source of truth for what the
+    /// player hears — the catalog only merchandises it, exactly like a free skin.</summary>
+    public int SoundPackIndex { get; init; }
     /// <summary>Marks a fresh drop: <see cref="UI.StoreScreen"/> floats these to the top of their
-    /// section and tags them. Purely a merchandising flag — never affects ownership or price.
-    /// Clear it on the previous wave whenever a new one lands, or "NEW" stops meaning anything.</summary>
+    /// section and tags them (THEMES, BURST FX and SOUND all honour it). Purely a merchandising
+    /// flag — never affects ownership or price.
+    /// <para>Clear it on the previous wave IN THE SAME EDIT that flags a new one. This was
+    /// missed once: four v1.6 skins kept the flag, so the next wave landed at NEW-block
+    /// positions 5-7 and the badge stopped meaning "look here". The rule of thumb is that
+    /// the flagged set should never exceed one screen of rows (≈3-4 per section).</para></summary>
     public bool IsNew { get; init; }
 }
 
@@ -397,11 +406,16 @@ public static class StoreCatalog
         // so they read as different objects from across the room. Legal only because Block Fit
         // attaches no rule meaning to a cell's hue — and colorblind mode overrides all of them
         // back to Okabe–Ito, where the MATERIAL becomes the identity channel instead.
+        //
+        // WAVE STATUS: shipped, no longer NEW. These four IsNew flags were cleared when the
+        // ANIMAL SETS below landed — left standing, they had pushed that wave to positions
+        // 5-7 of the NEW block, which is the exact failure the flag exists to prevent.
+        // Whoever adds the next wave clears the animal sets' flags in the same edit.
         new()
         {
             Id = "theme_oak", ProductId = "", Kind = StoreItemKind.Theme,
             Name = "OAK", Blurb = "THREE TIMBER TONES. MATTE GRAIN, NO GLOSS — IT BREAKS INTO SPLINTERS.",
-            PriceLabel = "FREE", IsNew = true,
+            PriceLabel = "FREE",
             Theme = new BlockTheme("theme_oak",
                 I: new Color(0.788f, 0.561f, 0.322f), O: new Color(0.890f, 0.729f, 0.522f),
                 T: new Color(0.549f, 0.353f, 0.200f), S: new Color(0.890f, 0.729f, 0.522f),
@@ -414,7 +428,7 @@ public static class StoreCatalog
         {
             Id = "theme_sumi", ProductId = "", Kind = StoreItemKind.Theme,
             Name = "SUMI", Blurb = "ONE INK, SEVEN SHADES. FROSTED STONE — THE QUIETEST BOARD IN THE GAME.",
-            PriceLabel = "FREE", IsNew = true,
+            PriceLabel = "FREE",
             Theme = new BlockTheme("theme_sumi",
                 I: new Color(0.847f, 0.863f, 0.902f), O: new Color(0.780f, 0.796f, 0.839f),
                 T: new Color(0.714f, 0.729f, 0.776f), S: new Color(0.647f, 0.663f, 0.714f),
@@ -427,7 +441,7 @@ public static class StoreCatalog
         {
             Id = "theme_vapor_tube", ProductId = "", Kind = StoreItemKind.Theme,
             Name = "VAPOR TUBE", Blurb = "TWO GASES IN HOLLOW GLASS. IT SHATTERS INTO GLOWING ARCS.",
-            PriceLabel = "FREE", IsNew = true,
+            PriceLabel = "FREE",
             Theme = new BlockTheme("theme_vapor_tube",
                 I: new Color(0.247f, 0.910f, 1.000f), O: new Color(1.000f, 0.337f, 0.784f),
                 T: new Color(0.247f, 0.910f, 1.000f), S: new Color(1.000f, 0.337f, 0.784f),
@@ -440,7 +454,7 @@ public static class StoreCatalog
         {
             Id = "theme_dichroic", ProductId = "com.blockfall.theme.dichroic", Kind = StoreItemKind.Theme,
             Name = "DICHROIC", Blurb = "THE BOARD ITSELF IS THE GRADIENT — CYAN AT ONE CORNER, VIOLET AT THE OTHER.",
-            PriceLabel = "US$2.99", IsNew = true,
+            PriceLabel = "US$2.99",
             Theme = new BlockTheme("theme_dichroic",
                 I: new Color(0.353f, 0.784f, 1.000f), O: new Color(0.620f, 0.640f, 1.000f),
                 T: new Color(0.780f, 0.482f, 1.000f), S: new Color(0.500f, 0.700f, 1.000f),
@@ -449,6 +463,78 @@ public static class StoreCatalog
                 BgTop: new Color(0.030f, 0.030f, 0.070f), BgBottom: new Color(0.070f, 0.055f, 0.145f),
                 Material: CellMaterial.Holographic, Plan: ColorPlan.BoardGradient,
                 EdgeTint: new Color(1.000f, 0.851f, 0.941f, 0.35f)),
+        },
+        // ---- The ANIMAL SETS: colour + material + glyph + burst, sold as one thing -------
+        // The previous wave proved the material axis; these three prove the SET. A skin here is
+        // not a palette with a sticker on it — it ships its own surface (CellMaterial), its own
+        // stamp (SkinGlyph), its own debris physics (DebrisField.Phys), its own lock pitch
+        // (AudioManager.MaterialPitch) and its own line-clear celebration (BlockTheme.Signature).
+        //
+        // Copyright posture, stated once for all three: every mark is ANATOMY or a natural
+        // surface — a coat, overlapping scales, a hex carapace, a paw pad, a dorsal fin, a pair
+        // of wing cases. No faces (see the faceless rule in GlyphArt), no species markings, no
+        // proper nouns, no mascots. And none of the three is a 7-hue rainbow plan, so none of
+        // them can collide with any official trade dress even by accident.
+        new()
+        {
+            Id = "theme_pelt", ProductId = "", Kind = StoreItemKind.Theme,
+            Name = "PELT", Blurb = "BONE, FOX AND CHARCOAL. MATTE STRAND GRAIN — IT SHEDS, IT DOESN'T SHATTER.",
+            PriceLabel = "FREE", IsNew = true,
+            // Anchors moved OUT of the timber band (hue ~30 deg, compressed mid-luma) that OAK
+            // already owns. At arm's length luma rhythm reads before hue: OAK runs 0.531/0.327/0.131
+            // (compressed mids), PELT now runs 0.776/0.138/0.073 (high-contrast three-step).
+            // Worst cross-pair against OAK's anchors: sRGB 0.083 / dE76 9.6  ->  0.210 / dE76 24.5.
+            // 9.6 is "only visible side by side"; 24.5 is a different object across the room.
+            // PELT moved rather than OAK because OAK already ships and sits in inventories —
+            // swapping a colour under an owner who bought it is an unannounced asset change.
+            // Only I/T/S render under ColorPlan.Trio; the rest are data-consistency filler.
+            Theme = new BlockTheme("theme_pelt",
+                I: new Color(0.949f, 0.886f, 0.804f), O: new Color(0.859f, 0.643f, 0.478f),
+                T: new Color(0.722f, 0.243f, 0.153f), S: new Color(0.310f, 0.290f, 0.345f),
+                Z: new Color(0.545f, 0.184f, 0.125f), J: new Color(0.353f, 0.208f, 0.180f),
+                L: new Color(0.867f, 0.412f, 0.239f),
+                BgTop: new Color(0.055f, 0.038f, 0.030f), BgBottom: new Color(0.118f, 0.082f, 0.062f),
+                Glyph: SkinGlyph.Paw, Material: CellMaterial.Pelt,
+                EdgeTint: new Color(1.000f, 0.780f, 0.500f, 0.30f),
+                Plan: ColorPlan.Trio, Signature: BurstArtifact.Fluff),
+        },
+        new()
+        {
+            // Named DORSAL, not for the snake it was first called: every other channel of this
+            // set is a FISH (dorsal-fin stamp, water-column + ripple burst, wet scales, a
+            // gradient that reads as one body under the surface), and a name that fought all
+            // four made the set read as two half-ideas. DORSAL also puts the trio on one
+            // naming axis — PELT / DORSAL / CARAPACE are all plain anatomy nouns, which is the
+            // same copyright posture the glyphs already hold (anatomy, never a species mark).
+            // The Id stays "theme_serpentine": it is the save-file key for everyone who
+            // already equipped it, and a display name is not worth orphaning that.
+            Id = "theme_serpentine", ProductId = "", Kind = StoreItemKind.Theme,
+            Name = "DORSAL", Blurb = "ONE BODY ACROSS THE WHOLE BOARD. WET OVERLAPPING SCALES.",
+            PriceLabel = "FREE", IsNew = true,
+            Theme = new BlockTheme("theme_serpentine",
+                I: new Color(0.267f, 0.855f, 0.788f), O: new Color(0.400f, 0.780f, 0.700f),
+                T: new Color(0.180f, 0.235f, 0.545f), S: new Color(0.290f, 0.640f, 0.760f),
+                Z: new Color(0.235f, 0.500f, 0.720f), J: new Color(0.200f, 0.380f, 0.640f),
+                L: new Color(0.520f, 0.880f, 0.820f),
+                BgTop: new Color(0.012f, 0.043f, 0.055f), BgBottom: new Color(0.027f, 0.086f, 0.110f),
+                Glyph: SkinGlyph.Fin, Material: CellMaterial.Scale,
+                EdgeTint: new Color(0.600f, 1.000f, 0.950f, 0.45f),
+                Plan: ColorPlan.BoardGradient, Signature: BurstArtifact.Splash),
+        },
+        new()
+        {
+            Id = "theme_carapace", ProductId = "com.blockfall.theme.carapace", Kind = StoreItemKind.Theme,
+            Name = "CARAPACE", Blurb = "ONE LACQUERED HUE, SEVEN RUNGS. THE HARDEST BOARD IN THE GAME.",
+            PriceLabel = "US$2.99", IsNew = true,
+            Theme = new BlockTheme("theme_carapace",
+                I: new Color(0.353f, 0.690f, 0.478f), O: new Color(0.500f, 0.750f, 0.400f),
+                T: new Color(0.250f, 0.560f, 0.420f), S: new Color(0.180f, 0.440f, 0.330f),
+                Z: new Color(0.600f, 0.700f, 0.250f), J: new Color(0.200f, 0.350f, 0.300f),
+                L: new Color(0.420f, 0.620f, 0.280f),
+                BgTop: new Color(0.020f, 0.035f, 0.028f), BgBottom: new Color(0.045f, 0.075f, 0.058f),
+                Glyph: SkinGlyph.Elytra, Material: CellMaterial.Chitin,
+                EdgeTint: new Color(0.550f, 1.000f, 0.850f, 0.75f),
+                Plan: ColorPlan.Mono, Signature: BurstArtifact.Swarm),
         },
         // Burst-FX artifacts (free): the line-clear celebration Block Fit plays.
         // Cosmetic only — never touches scoring. "artifact_sparks" is the default.
@@ -517,6 +603,68 @@ public static class StoreCatalog
             Id = "artifact_starfall", ProductId = "", Kind = StoreItemKind.Artifact,
             Name = "STARFALL", Blurb = "A SHOWER OF METEORS STREAKS ACROSS THE CLEAR.",
             PriceLabel = "FREE",
+        },
+        // The three animal-set signatures. Free and separately equippable on purpose: a set
+        // equips its own burst as a convenience, never as a lock.
+        new()
+        {
+            Id = "artifact_fluff", ProductId = "", Kind = StoreItemKind.Artifact,
+            Name = "FLUFF", Blurb = "SOFT TUFTS DRIFT UP AND SETTLE. NO FLASH, NO GLARE.",
+            PriceLabel = "FREE", IsNew = true,
+        },
+        new()
+        {
+            Id = "artifact_splash", ProductId = "", Kind = StoreItemKind.Artifact,
+            Name = "SPLASH", Blurb = "A COLUMN OF WATER, TWO RIPPLES, THEN FALLING DROPS.",
+            PriceLabel = "FREE", IsNew = true,
+        },
+        new()
+        {
+            Id = "artifact_swarm", ProductId = "", Kind = StoreItemKind.Artifact,
+            Name = "SWARM", Blurb = "THE SHELL CRACKS ON ONE RING AND SCATTERS.",
+            PriceLabel = "FREE", IsNew = true,
+        },
+        // ---- Placement sound packs -----------------------------------------
+        // Priced at nothing on purpose. MobilePlatform.PurchaseItem currently calls
+        // onComplete(true) WITHOUT a billing plugin (Platforms.cs) — the day a real
+        // plugin lands, every paid SKU behind that path is a grant-for-free bug, and
+        // we are not stacking another SKU on top of that mine. Empty ProductId ⇒
+        // owned by default (SaveManager.OwnsItem), so no purchase path is involved
+        // at all. Equipping writes GameSettings.SfxPack — the SAME setting the
+        // Settings › AUDIO picker owns, so the store is a second front door to one
+        // value, never a second source of truth. StoreScreen's SOUND section renders
+        // these (see StoreScreen.SoundRow); SoundPackIndex is what it writes.
+        // None carries IsNew: the packs themselves have shipped in Settings since
+        // v1.6 — only their shelf is new, and a badge on all five would say nothing.
+        new()
+        {
+            Id = "sound_neon", ProductId = "", Kind = StoreItemKind.SoundPack,
+            Name = "NEON", Blurb = "THE ORIGINAL LOCK TONE. ALWAYS YOURS.",
+            PriceLabel = "FREE", SoundPackIndex = 0,
+        },
+        new()
+        {
+            Id = "sound_tap", ProductId = "", Kind = StoreItemKind.SoundPack,
+            Name = "TAP", Blurb = "SOFT RUBBER DOME. QUIET DESK, LATE NIGHT.",
+            PriceLabel = "FREE", SoundPackIndex = 1,
+        },
+        new()
+        {
+            Id = "sound_click", ProductId = "", Kind = StoreItemKind.SoundPack,
+            Name = "CLICK", Blurb = "CLICKY SWITCH. TWO SNAPS PER PLACE.",
+            PriceLabel = "FREE", SoundPackIndex = 2,
+        },
+        new()
+        {
+            Id = "sound_typebar", ProductId = "", Kind = StoreItemKind.SoundPack,
+            Name = "TYPEBAR", Blurb = "STEEL HAMMER ON A PLATEN.",
+            PriceLabel = "FREE", SoundPackIndex = 3,
+        },
+        new()
+        {
+            Id = "sound_wood", ProductId = "", Kind = StoreItemKind.SoundPack,
+            Name = "WOOD", Blurb = "MALLET ON A WOODEN BAR. WARM AND DRY.",
+            PriceLabel = "FREE", SoundPackIndex = 4,
         },
         new()
         {

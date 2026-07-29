@@ -23,6 +23,24 @@ public static class UiTheme
 {
     public static Godot.Theme Shared { get; private set; } = null!;
 
+    // ---- "LIT GLASS" surface tokens (ADDITIVE — the Palette.Glass* set is untouched) ----
+    // Measured against the background midpoint (#0A0B14 → #16182E), the shipped glass
+    // recipe puts a card body at 1.168:1 and its border at 1.300:1 — i.e. the card is the
+    // same luminance as the sky, so at 50% screen brightness the surface disappears and
+    // only the text and the 4px accent bar survive. These raise the surface plane to
+    // 1.635:1 (body) and 3.092:1 (border, clearing the WCAG 3:1 non-text UI bar) while
+    // keeping the gradient direction (top brighter) and the bg-hue tint.
+    // Text on the lit card still improves: TextPrimary 11.35:1, TextSecondary 5.41:1.
+    // Field-tuning floor: SurfaceBorder alpha may drop to 0.28 (2.48:1) if a device reads
+    // harsh — below that the original problem is back.
+    // Consumers (a token with none is a lie about what the screen renders): the "Card"
+    // PanelContainer variation in BuildPanels uses all four verbatim; MainMenu.Card uses
+    // Top/Bottom RGB-tinted toward each card's identity colour.
+    public static readonly Color SurfaceTop = new(0.72f, 0.76f, 1f, 0.22f);
+    public static readonly Color SurfaceBottom = new(0.60f, 0.64f, 0.95f, 0.07f);
+    public static readonly Color SurfaceBorder = new(1f, 1f, 1f, 0.34f);
+    public static readonly Color SurfaceHighlight = new(1f, 1f, 1f, 0.22f);
+
     /// <summary>Accessibility text scale applied to every themed font size (1.0 = design size).</summary>
     private static float _scale = 1f;
 
@@ -270,9 +288,18 @@ public static class UiTheme
         t.SetStylebox("panel", "PanelContainer", new StyleBoxEmpty());
         t.SetStylebox("panel", "ScrollContainer", new StyleBoxEmpty());
 
-        // "Card": the glass surface for grouped content.
-        var card = TextureFactory.GlassStyle(Palette.RadiusL, Palette.GlassTop, Palette.GlassBottom,
-            Palette.GlassBorder, 1f, 0.16f, 24, 20);
+        // "Card": the glass surface for grouped content — and the ONE consumer of the LIT GLASS
+        // tokens, which is the whole reason they exist. Before this, every card on every screen
+        // (store rows, settings sections, results, the pause sheet over a live board) drew the
+        // Palette.Glass* recipe at 1.168:1 body / 1.300:1 border, i.e. the same luminance as the
+        // sky behind it: at half screen brightness the card boundary was simply not there and
+        // grouped content read as loose text on the background. SurfaceTop/Bottom/Border raise
+        // that to 1.635:1 / 3.092:1 (the WCAG 3:1 non-text UI bar), and SurfaceHighlight sets the
+        // 1px inner top edge that keeps the surface reading as glass rather than a flat slab.
+        // Palette.Glass* is untouched and still dresses buttons/chips — a card is a PLANE and
+        // needs an edge; a button is already identified by its label and its press state.
+        var card = TextureFactory.GlassStyle(Palette.RadiusL, SurfaceTop, SurfaceBottom,
+            SurfaceBorder, 1f, SurfaceHighlight.A, 24, 20);
         t.SetTypeVariation("Card", "PanelContainer");
         t.SetStylebox("panel", "Card", card);
     }

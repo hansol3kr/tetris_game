@@ -220,7 +220,11 @@ public partial class GameController : Node2D
             }
             else
             {
-                audio.PlaySfx("lock");
+                // The player's placement sound pack (settings) + the equipped skin's material
+                // pitch. Routed through PlayPlace so every "a piece landed" moment in the game
+                // speaks with the same, chosen voice — a raw PlaySfx("lock") here is exactly how
+                // the packs ended up audible only in the settings preview.
+                audio.PlayPlace();
             }
             // Grade finesse on the FINAL resting piece (before the next piece spawns).
             _finesse.Finalize(ev.Piece.Origin.Col, ev.Piece.State, ev.Result.Spin != SpinType.None);

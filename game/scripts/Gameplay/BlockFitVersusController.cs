@@ -25,7 +25,8 @@ public partial class BlockFitVersusController : Node2D
 
     private Control _uiHost = null!;
     private Button _back = null!;
-    private Label _title = null!, _botScore = null!, _pScore = null!, _flash = null!;
+    private Label _title = null!, _botScore = null!, _pScore = null!, _flash = null!, _pFuse = null!;
+    private FuseMeter _fuseMeter = null!;   // shared with solo — see FuseMeter for why it announces
     private Control _overlay = null!;
     private Label _overTitle = null!, _overSub = null!;
 
@@ -78,6 +79,13 @@ public partial class BlockFitVersusController : Node2D
         _title.Text = Loc.T("VS CPU · {0}", _diff.Name.ToUpperInvariant());
         _botScore = MakeLabel(HorizontalAlignment.Center, 18, Palette.TextSecondary);
         _pScore = MakeLabel(HorizontalAlignment.Center, 20, Palette.TextPrimary);
+        // Fuse budget. Same treatment as solo and for the same reasons (see BlockFitController):
+        // font 22 in the bottom exit strip, right beside the tray where fusing happens, instead of
+        // font 16 (≈8.3pt) parked on the score row above the board. It matters MORE here than in
+        // solo — the CPU never fuses, so the budget is a one-sided constraint and the player has to
+        // see what spending it costs them while the clock runs.
+        _pFuse = MakeLabel(HorizontalAlignment.Left, 22, Palette.TextSecondary);
+        _fuseMeter = new FuseMeter(_pFuse);
         _flash = MakeLabel(HorizontalAlignment.Center, 26, Palette.AccentRed);
         _flash.Visible = false;
 
@@ -165,7 +173,9 @@ public partial class BlockFitVersusController : Node2D
         // Player board (bottom, larger) + tray, sized from the remaining vertical space.
         float pTop = botBottom + safe.Y * 0.03f;
         float trayReserve = safe.Y * 0.20f;
-        _pScore.Position = new Vector2(0, botBottom + safe.Y * 0.004f); _pScore.Size = new Vector2(safe.X, safe.Y * 0.025f);
+        float pScoreY = botBottom + safe.Y * 0.004f;
+        float pScoreH = safe.Y * 0.025f;
+        _pScore.Position = new Vector2(0, pScoreY); _pScore.Size = new Vector2(safe.X, pScoreH);
         pTop += safe.Y * 0.03f;
         _pCell = Mathf.Floor(Mathf.Min(safe.X * 0.92f / n, (safe.Y - pTop - trayReserve) / n));
         _pCell = Mathf.Max(_pCell, 8f);
@@ -180,6 +190,14 @@ public partial class BlockFitVersusController : Node2D
         _pTrayCell = Mathf.Floor(Mathf.Min(_pCell * 0.55f, Mathf.Min(slotW * 0.9f / 5f, trayH / 3.4f)));
         for (int i = 0; i < 3; i++) _pTraySlot[i] = new Rect2(i * slotW, trayTop, slotW, trayH);
 
+        // FUSE lives in the exit strip beside the exit button, exactly as in solo. That strip is
+        // the band between the tray's bottom edge (safe.Y - exitBand) and the canvas floor, so the
+        // read-out covers neither board nor tray slot. Measured at 720×1280: strip y 1190→1274,
+        // tray band ends 1184, player board ends 1021.9, exit button x 25→109, label starts 121.
+        float fuseX = _back.Position.X + _back.Size.X + 12f;
+        _pFuse.Position = new Vector2(fuseX, _back.Position.Y);
+        _pFuse.Size = new Vector2(Mathf.Max(40f, safe.X - fuseX - pad), exitH);
+
         _flash.Position = new Vector2(0, _pOrigin.Y - safe.Y * 0.03f); _flash.Size = new Vector2(safe.X, safe.Y * 0.03f);
         if (GodotObject.IsInstanceValid(_overlay)) { _overlay.Position = Vector2.Zero; _overlay.Size = safe; }
         QueueRedraw();
@@ -193,6 +211,7 @@ public partial class BlockFitVersusController : Node2D
 
         _pScore.Text = Loc.T("YOU {0}", _match.PlayerGame.Score.ToString("N0"));
         _botScore.Text = Loc.T("CPU {0}", _match.BotGame.Score.ToString("N0"));
+        _fuseMeter.Sync(_match.PlayerGame.Merges, dt);
 
         for (int i = _bands.Count - 1; i >= 0; i--)
         {
@@ -274,6 +293,7 @@ public partial class BlockFitVersusController : Node2D
             inBand = true;                            // slots don't overlap — no other can match
             if (_match.PlayerGame.Tray[i] is null) break;
             _dragIndex = i; _touchId = id; _finger = pos;
+            Bootstrap.Instance.Audio.PlayPlace(lift: true);   // pickup upstroke, same as solo
             QueueRedraw();
             return;
         }
@@ -295,8 +315,22 @@ public partial class BlockFitVersusController : Node2D
         if (mergeInto >= 0 && _match.PlayerGame.Tray[idx] is { } msrc)
         {
             MergeOffset(msrc, mergeInto, out int mr, out int mc);
-            if (_match.PlayerMerge(idx, mergeInto, mr, mc)) Bootstrap.Instance.Audio.PlaySfx("hold");
-            else Bootstrap.Instance.Audio.PlaySfx("move");
+            // Three outcomes, three answers — identical to solo (see BlockFitController.Release).
+            switch (_match.PlayerGame.CheckMerge(idx, mergeInto, mr, mc))
+            {
+                case MergeVerdict.Ok:
+                    // PlayerMerge can still refuse if the duel ended between the drag and the
+                    // release, so the cue follows the COMMIT, not the verdict.
+                    if (_match.PlayerMerge(idx, mergeInto, mr, mc)) Bootstrap.Instance.Audio.PlayFuse();
+                    break;
+                case MergeVerdict.NoCharges:
+                    Bootstrap.Instance.Audio.PlayFuseDenied();
+                    _fuseMeter.Alert();
+                    break;
+                default:
+                    Bootstrap.Instance.Audio.PlaySfx("move");
+                    break;
+            }
             QueueRedraw();
             return;
         }
@@ -306,8 +340,10 @@ public partial class BlockFitVersusController : Node2D
         {
             _match.PlayerGame.LinesClearedBy(piece, gr, gc, _pvRows, _pvCols); // capture before the clear
             int lines = _match.PlayerPlace(idx, gr, gc);
-            // Material voice, same as solo Block Fit: wood locks low, a glass tube locks high.
-            Bootstrap.Instance.Audio.PlaySfx("lock", Blockfall.Audio.AudioManager.MaterialPitch(Palette.EquippedMaterial));
+            // The player's chosen sound pack, transposed by the equipped skin's material — all of
+            // it inside PlayPlace, so solo and the duel can never sound different (and so the packs
+            // are audible in the GAME, not only in the settings preview).
+            Bootstrap.Instance.Audio.PlayPlace();
             if (lines > 0)
             {
                 Bootstrap.Instance.Audio.PlaySfx(lines >= 2 ? "combo" : "line_clear");
@@ -353,12 +389,14 @@ public partial class BlockFitVersusController : Node2D
 
     /// <summary>Outlines the rect that accepts a merge drop, from the same geometry the hit test
     /// uses. Dim/thin = "aimable", bright/thick = "locked on" — weight carries the state, not
-    /// hue alone. Static, so no Motion.Reduced gate is owed.</summary>
-    private void DrawMergeTarget(BlockPiece p, Vector2 origin, Rect2 slot, bool hot)
+    /// hue alone. <paramref name="spent"/> turns the hot outline amber: right target, no charges.
+    /// Static, so no Motion.Reduced gate is owed.</summary>
+    private void DrawMergeTarget(BlockPiece p, Vector2 origin, Rect2 slot, bool hot, bool spent = false)
     {
         if (_pTrayCell <= 0f) return;
         var col = hot
-            ? new Color(0.4f, 1f, 0.6f, 0.95f)
+            ? (spent ? new Color(Palette.AccentGold.R, Palette.AccentGold.G, Palette.AccentGold.B, 0.95f)
+                     : new Color(0.4f, 1f, 0.6f, 0.95f))
             : new Color(Palette.Accent.R, Palette.Accent.G, Palette.Accent.B, 0.34f);
         DrawRect(MergeHitRect(p, origin, _pTrayCell, slot), col, filled: false, width: hot ? 3f : 1.5f);
     }
@@ -497,16 +535,24 @@ public partial class BlockFitVersusController : Node2D
         {
             var mdst = _match.PlayerGame.Tray[mergeHover]!;
             MergeOffset(mdp, mergeHover, out int mr, out int mc);
-            bool okMerge = _match.PlayerGame.CanMerge(_dragIndex, mergeHover, mr, mc);
+            // Three states, not two — see BlockFitController for why "no charges" must not wear
+            // the same red as "these two shapes won't join".
+            var verdict = _match.PlayerGame.CheckMerge(_dragIndex, mergeHover, mr, mc);
+            bool okMerge = verdict == MergeVerdict.Ok;
+            bool spent = verdict == MergeVerdict.NoCharges;
             var borigin = TrayPieceOrigin(mdst, mergeHover);
             DrawPiece(mdst, borigin, _pTrayCell, 0.5f, trayTex, glyph);
-            DrawMergeTarget(mdst, borigin, _pTraySlot[mergeHover], hot: true);
-            var srcCol = okMerge ? new Color(0.4f, 1f, 0.6f) : Palette.AccentRed;
+            var hitRect = MergeHitRect(mdst, borigin, _pTrayCell, _pTraySlot[mergeHover]);
+            DrawMergeTarget(mdst, borigin, _pTraySlot[mergeHover], hot: true, spent: spent);
+            var srcCol = okMerge ? new Color(0.4f, 1f, 0.6f) : spent ? Palette.AccentGold : Palette.AccentRed;
             foreach (var (dr, dc) in mdp.Cells)
             {
                 var rect = new Rect2(borigin + new Vector2((dc + mc) * _pTrayCell, (dr + mr) * _pTrayCell) + new Vector2(1, 1), new Vector2(_pTrayCell - 2, _pTrayCell - 2));
                 DrawTextureRect(trayTex, rect, false, new Color(srcCol.R, srcCol.G, srcCol.B, okMerge ? 0.95f : 0.6f));
             }
+            if (spent)   // shape channel, so the state never rides on hue alone
+                DrawLine(hitRect.Position, hitRect.Position + hitRect.Size,
+                         new Color(Palette.AccentGold.R, Palette.AccentGold.G, Palette.AccentGold.B, 0.9f), width: 3f);
 
             // The piece in hand still follows the finger while aiming at a fuse. It used to
             // vanish the instant the drag entered another slot (this branch simply never drew
@@ -521,7 +567,7 @@ public partial class BlockFitVersusController : Node2D
             // cover it. This board carries the smallest merge rect in the game (50×50px = 4.1mm)
             // AND a running clock, so it needs the confirmation-outside-the-thumb more than solo
             // does. See MergeLoupe for why it parks over the lower board and nothing else.
-            MergeLoupe.Draw(this, mdp, mdst, mr, mc, okMerge,
+            MergeLoupe.Draw(this, mdp, mdst, mr, mc, verdict,
                             Bootstrap.Instance.SafeCanvasSize, _pOrigin.Y, _pTraySlot[0].Position.Y,
                             _pTrayCell, _shimmer);
         }

@@ -47,7 +47,7 @@ internal static class LocData
         ["PLAY SEED"] = "시드 플레이",
         ["HOW TO PLAY"] = "게임 방법",
         ["FIRST RUN"] = "첫 도전",
-        ["Original brand — not affiliated with Tetris®."] = "독자 브랜드 — Tetris®와 무관합니다.",
+        ["ORIGINAL BRAND · ALL ART AND RULES ARE OUR OWN"] = "독자 브랜드 · 아트와 규칙 전부 자체 제작",
 
         // Mode titles (display only — the GameModeId enum is the persisted key).
         ["MARATHON"] = "마라톤",
@@ -84,12 +84,29 @@ internal static class LocData
         ["SFX VOLUME"] = "효과음 볼륨",
         ["MUSIC VOLUME"] = "음악 볼륨",
         ["MUTE"] = "음소거",
+        ["PLACE SOUND"] = "배치 사운드",
+        // Placement sound packs. Plain nouns only — no switch brands or model names.
+        ["NEON"] = "네온",
+        ["TAP"] = "탭",
+        ["CLICK"] = "클릭",
+        ["TYPEBAR"] = "타자기",
+        ["WOOD"] = "우드",
         ["GHOST PIECE"] = "고스트 블록",
         ["COLORBLIND PALETTE"] = "색약 팔레트",
         ["FINESSE METER"] = "피네스 미터",
         ["NEON GLOW (BLOOM)"] = "네온 글로우 (블룸)",
         ["REDUCED MOTION"] = "모션 줄이기",
         ["JUICE / SHAKE"] = "이펙트 / 흔들림",
+        ["CLEAR EFFECT"] = "클리어 이펙트",
+        // Clear-effect style values: the picker shows the VALUE, which went untranslated
+        // until CycleRow started running names through Loc.T. "BURST" is deliberately
+        // absent here: it is already keyed further down (the Descent stage name) and
+        // this is one flat dictionary — a second entry would silently win by position,
+        // which is how a translation quietly changes on an unrelated screen.
+        ["SPARKS"] = "스파크",
+        ["CONFETTI"] = "컨페티",
+        ["MINIMAL"] = "미니멀",
+        ["SHATTER"] = "파편",
         ["FULLSCREEN"] = "전체 화면",
         ["DAS (DELAY)"] = "DAS (지연)",
         ["ARR (REPEAT)"] = "ARR (반복)",
@@ -126,6 +143,9 @@ internal static class LocData
         ["{0} left"] = "{0} 남음",
         ["{0} rows"] = "{0} 줄",
         ["STREAK ×{0}"] = "연속 ×{0}",
+        // Block Fit fuse budget: remaining / cap. Both numbers are shown because the cap is the
+        // rule ("clearing a line earns one back, up to this") and the colour is only redundant.
+        ["FUSE {0}/{1}"] = "조합 {0}/{1}",
         ["BEST {0}"] = "최고 {0}",
         ["BEST STREAK ×{0}"] = "최고 연속 ×{0}",
         ["NEW BEST"] = "신기록",
@@ -139,6 +159,8 @@ internal static class LocData
         ["2  ·  FILL a whole row or column and it clears."] = "2  ·  가로 또는 세로 한 줄을 채우면 사라집니다.",
         ["3  ·  It ends when none of the three pieces fit."] = "3  ·  세 조각 모두 놓을 자리가 없으면 끝납니다.",
         ["3  ·  DROP a piece on ANOTHER TRAY PIECE to fuse them."] = "3  ·  다른 트레이 조각 위에 놓으면 두 조각이 합쳐집니다.",
+        ["3  ·  DROP a piece on ANOTHER TRAY PIECE to fuse them — fuses are limited, and clearing a line earns one back."]
+            = "3  ·  다른 트레이 조각 위에 놓으면 두 조각이 합쳐집니다 — 조합 횟수는 제한되어 있고, 줄을 지우면 1회 회복됩니다.",
         ["4  ·  DROP a piece on the HOLD slot to save it for later."] = "4  ·  홀드 칸에 놓으면 나중을 위해 보관합니다.",
         ["5  ·  It ends when none of the three pieces fit."] = "5  ·  세 조각 모두 놓을 자리가 없으면 끝납니다.",
         ["GOT IT"] = "알겠어요",
@@ -219,6 +241,155 @@ internal static class LocData
         ["COLOR-SAFE PALETTE IS ON: THE BOARD KEEPS IT. PREVIEWS BELOW SHOW EACH SKIN'S OWN COLORS."]
             = "색약 팔레트 사용 중: 보드는 색약 팔레트를 유지합니다. 아래 미리보기는 각 스킨 고유의 색을 보여줍니다.",
         ["{0}   ·   OWNED: {1}"] = "{0}   ·   보유: {1}",
+        ["INCLUDES THE {0} BURST"] = "{0} 클리어 연출 포함",
+        ["SOUND"] = "사운드",
+        ["HEAR"] = "들어보기",
+        ["EVERY PACK IS FREE AND ALREADY YOURS. TAP A WAVEFORM TO HEAR IT, EQUIP TO KEEP IT — IT CHANGES ONLY HOW A PLACED PIECE SOUNDS."]
+            = "모든 팩은 무료이며 이미 보유 중입니다. 파형을 눌러 들어보고, 장착을 눌러 적용하세요 — 블록을 놓을 때 나는 소리만 바뀝니다.",
+
+        // ---- Catalog copy: EVERY item's name and blurb ----------------------
+        // StoreScreen runs item.Name and item.Blurb through Loc.T, so a partial table does not
+        // degrade gracefully here the way it does elsewhere: an untranslated row does not look
+        // "not yet localized", it looks like a bug, because the row above it is Korean. The
+        // shelf is the one screen where the fallback rule (missing key ⇒ English) produces a
+        // WORSE result than no translation at all — one screen, two languages, alternating by
+        // row. So this block is exhaustive by contract: adding a catalog item means adding its
+        // two strings here in the same edit.
+        // Product names are transliterated rather than translated (네온 플럭스, not 네온 흐름):
+        // they are names, they appear in store listings and screenshots, and the animal sets
+        // above already set that precedent.
+
+        // Free themes.
+        ["NEON FLUX"] = "네온 플럭스",
+        ["THE ORIGINAL. ALWAYS YOURS."] = "오리지널. 언제나 당신의 것.",
+        ["AURORA"] = "오로라",
+        ["COOL GREEN NIGHT, TEAL HORIZON."] = "서늘한 초록빛 밤, 청록 지평선.",
+        ["TIDE"] = "타이드",
+        ["DEEP OCEAN BLUES, COOL NEON."] = "깊은 바다의 푸른빛, 차가운 네온.",
+        ["CRIMSON"] = "크림슨",
+        ["DARK RED DUSK, WARM GLOW."] = "짙은 붉은 노을, 따뜻한 빛.",
+        ["SYNTHWAVE"] = "신스웨이브",
+        ["PURPLE DUSK, MAGENTA & CYAN."] = "보랏빛 황혼, 마젠타와 시안.",
+        ["MINT"] = "민트",
+        ["SOFT PASTEL, COOL MINT NIGHT."] = "부드러운 파스텔, 시원한 민트빛 밤.",
+        ["EMBER"] = "엠버",
+        ["WARM AMBER COALS, GOLD GLOW."] = "따스한 호박빛 잉걸불, 금빛 광채.",
+
+        // Glyph skins.
+        ["SMILEY POP"] = "스마일 팝",
+        ["CANDY BRIGHTS WITH A HAPPY FACE ON EVERY BLOCK."] = "사탕처럼 선명한 색, 모든 블록에 웃는 얼굴.",
+        ["STARLIGHT"] = "스타라이트",
+        ["COSMIC NEON WITH A STAR ON EVERY BLOCK."] = "우주빛 네온, 모든 블록에 별 하나.",
+        ["LOVECORE"] = "러브코어",
+        ["ROSY POP WITH A HEART ON EVERY BLOCK."] = "장밋빛 팝, 모든 블록에 하트 하나.",
+        ["BLOOM"] = "블룸",
+        ["SPRING BRIGHTS WITH A FLOWER ON EVERY BLOCK."] = "봄빛 밝은 색, 모든 블록에 꽃 한 송이.",
+        ["VOLTAGE"] = "볼티지",
+        ["ELECTRIC NEON WITH A BOLT ON EVERY BLOCK."] = "전기 네온, 모든 블록에 번개 하나.",
+        ["MEOW"] = "야옹",
+        ["CREAMY PASTELS WITH A KAWAII CAT ON EVERY BLOCK."] = "크리미한 파스텔, 모든 블록에 귀여운 고양이.",
+        ["ROYALE"] = "로열",
+        ["REGAL PURPLE AND GOLD WITH A JEWELLED CROWN ON EVERY BLOCK."] = "고귀한 보라와 금빛, 모든 블록에 보석 왕관.",
+        ["MIDNIGHT"] = "미드나이트",
+        ["DEEP VIOLET NIGHT WITH A CRESCENT MOON ON EVERY BLOCK."] = "짙은 보랏빛 밤, 모든 블록에 초승달.",
+        ["LUCKY"] = "럭키",
+        ["FRESH GREENS WITH A LUCKY CLOVER ON EVERY BLOCK."] = "싱그러운 초록, 모든 블록에 행운의 클로버.",
+        ["SPOOKY"] = "스푸키",
+        ["HAUNTED GREEN AND PURPLE WITH A BONE-WHITE SKULL ON EVERY BLOCK."] = "으스스한 초록과 보라, 모든 블록에 뼛빛 해골.",
+        ["PRIDE"] = "프라이드",
+        ["JOYFUL BRIGHTS WITH A RAINBOW ON EVERY BLOCK."] = "즐거운 밝은 색, 모든 블록에 무지개.",
+
+        // Material skins.
+        ["SUNSET DRIVE"] = "선셋 드라이브",
+        ["WARM DUSK PINKS OVER A PURPLE HORIZON."] = "보랏빛 지평선 위로 번지는 따뜻한 노을빛 분홍.",
+        ["DEEP EMERALD"] = "딥 에메랄드",
+        ["JEWEL TONES ON A DARK GREEN SEA."] = "짙은 초록 바다 위의 보석빛.",
+        ["MONO ARCADE"] = "모노 아케이드",
+        ["PURE GRAYSCALE. SHAPES ONLY. NO MERCY."] = "순수한 무채색. 오직 모양뿐. 봐주는 것 없이.",
+        ["BUBBLEGUM"] = "버블검",
+        ["WET PASTEL GEL YOU COULD ALMOST CHEW, WITH A HEART ON EVERY BLOCK."] = "씹힐 듯 촉촉한 파스텔 젤리, 모든 블록에 하트 하나.",
+        ["GLACIER"] = "글레이셔",
+        ["MATTE FROSTED PEBBLES — THE QUIET, CALM PREMIUM."] = "무광 서리 조약돌 — 조용하고 차분한 프리미엄.",
+        ["GALAXY"] = "갤럭시",
+        ["DEEP-SPACE JEWELS WITH STARS THAT TWINKLE ON EVERY BLOCK."] = "심우주의 보석, 모든 블록에서 반짝이는 별.",
+        ["CIRCUIT"] = "서킷",
+        ["BRUSHED-METAL CELLS WITH A LIVE TEAL EDGE AND A BOLT ON EVERY BLOCK."] = "헤어라인 금속 셀에 살아 있는 청록 테두리, 모든 블록에 번개 하나.",
+        ["PRISM"] = "프리즘",
+        ["NEON GLASS THAT BLEEDS IRIDESCENCE, WITH A GEM ON EVERY BLOCK."] = "무지갯빛이 번지는 네온 유리, 모든 블록에 보석 하나.",
+        ["OBSIDIAN"] = "옵시디언",
+        ["FACETED BLACK GLASS THAT BLEEDS RAINBOW AT EVERY EDGE."] = "모서리마다 무지개가 번지는 각진 검은 유리.",
+
+        // ColorPlan skins.
+        ["OAK"] = "오크",
+        ["THREE TIMBER TONES. MATTE GRAIN, NO GLOSS — IT BREAKS INTO SPLINTERS."]
+            = "세 가지 목재 톤. 무광 나뭇결, 광택 없음 — 부서지면 나뭇조각이 됩니다.",
+        ["SUMI"] = "스미",
+        ["ONE INK, SEVEN SHADES. FROSTED STONE — THE QUIETEST BOARD IN THE GAME."]
+            = "하나의 먹, 일곱 단계 농담. 서리 낀 돌 — 게임에서 가장 고요한 보드.",
+        ["VAPOR TUBE"] = "베이퍼 튜브",
+        ["TWO GASES IN HOLLOW GLASS. IT SHATTERS INTO GLOWING ARCS."]
+            = "속이 빈 유리관 속 두 기체. 부서지면 빛나는 호가 흩어집니다.",
+        ["DICHROIC"] = "다이크로익",
+        ["THE BOARD ITSELF IS THE GRADIENT — CYAN AT ONE CORNER, VIOLET AT THE OTHER."]
+            = "보드 전체가 하나의 그러데이션 — 한쪽 모서리는 시안, 반대쪽은 보라.",
+
+        // Burst-FX artifacts (AURORA reuses the theme entry above — one flat table, one key).
+        ["SPARKLE"] = "스파클",
+        ["THE ORIGINAL GOLDEN SPARK BURST."] = "오리지널 황금빛 스파크 연출.",
+        ["FIREWORKS"] = "불꽃놀이",
+        ["MULTICOLOUR BURSTS AND BOOMING RINGS."] = "여러 색의 폭발과 울려 퍼지는 고리.",
+        ["A RAIN OF COLOURFUL PAPER BITS."] = "알록달록한 종잇조각의 비.",
+        ["SUPERNOVA"] = "슈퍼노바",
+        ["A BLINDING FLASH AND A HUGE SHOCKWAVE."] = "눈부신 섬광과 거대한 충격파.",
+        ["PRISM SHARDS"] = "프리즘 파편",
+        ["CHUNKY NEON SHARDS BLASTED OUTWARD."] = "굵직한 네온 파편이 사방으로 터집니다.",
+        ["RAINBOW WAVE"] = "레인보우 웨이브",
+        ["A FULL-SPECTRUM SWEEP ALONG THE LINE."] = "라인을 따라 흐르는 전 스펙트럼 물결.",
+        ["SOFT CURTAINS OF LIGHT RISE INSTEAD OF A BURST."] = "폭발 대신 부드러운 빛의 장막이 피어오릅니다.",
+        ["LIGHTNING"] = "라이트닝",
+        ["ELECTRIC ARCS SNAP ACROSS EACH CLEARED LINE."] = "지워진 줄마다 전기 아크가 튑니다.",
+        ["BUBBLE POP"] = "버블 팝",
+        ["IRIDESCENT SOAP BUBBLES DRIFT UP AND POP."] = "무지갯빛 비눗방울이 떠올라 터집니다.",
+        ["PRISM BLOOM"] = "프리즘 블룸",
+        ["CLEARS DISSOLVE INTO A RISING CLOUD OF RAINBOW LIGHT."] = "지워진 줄이 피어오르는 무지갯빛 구름으로 흩어집니다.",
+        ["STARFALL"] = "스타폴",
+        ["A SHOWER OF METEORS STREAKS ACROSS THE CLEAR."] = "유성우가 지워진 자리를 가로지릅니다.",
+
+        // Sound packs (the NAMES are already keyed under Settings › PLACE SOUND).
+        ["THE ORIGINAL LOCK TONE. ALWAYS YOURS."] = "오리지널 배치음. 언제나 당신의 것.",
+        ["SOFT RUBBER DOME. QUIET DESK, LATE NIGHT."] = "부드러운 러버돔. 조용한 책상, 늦은 밤.",
+        ["CLICKY SWITCH. TWO SNAPS PER PLACE."] = "클릭 스위치. 한 번 놓을 때 두 번의 딸깍.",
+        ["STEEL HAMMER ON A PLATEN."] = "압반을 때리는 강철 해머.",
+        ["MALLET ON A WOODEN BAR. WARM AND DRY."] = "나무 건반을 두드리는 말렛. 따뜻하고 건조하게.",
+
+        // Booster + entitlement.
+        ["SECOND CHANCE ×3"] = "다시 한 번 ×3",
+        ["TOP OUT, WIPE THE BOARD, KEEP THE RUN. SOLO MODES ONLY — REVIVED RUNS SET NO RECORDS."]
+            = "가득 차도 보드를 비우고 게임을 이어갑니다. 솔로 모드 전용 — 부활한 게임은 기록으로 남지 않습니다.",
+        ["REMOVE ADS"] = "광고 제거",
+        ["NO MORE INTERSTITIALS. FOREVER."] = "전면 광고 없음. 영원히.",
+
+        // ---- Animal skin sets (name + blurb + signature burst) -------------
+        ["PELT"] = "펠트",
+        ["THREE COAT TONES. MATTE STRAND GRAIN — IT SHEDS, IT DOESN'T SHATTER."]
+            = "세 가지 털색. 무광 결 — 부서지지 않고 흩날립니다.",
+        // Renamed from SERPENTINE (the set is a fish everywhere except its old name); the
+        // save key is still theme_serpentine, only the display string moved.
+        ["DORSAL"] = "등지느러미",
+        ["ONE BODY ACROSS THE WHOLE BOARD. WET OVERLAPPING SCALES."]
+            = "보드 전체가 하나의 몸통. 젖은 겹비늘.",
+        ["CARAPACE"] = "카라페이스",
+        ["ONE LACQUERED HUE, SEVEN RUNGS. THE HARDEST BOARD IN THE GAME."]
+            = "옻칠한 단색, 일곱 단계. 게임에서 가장 단단한 보드.",
+        ["FLUFF"] = "플러프",
+        ["SOFT TUFTS DRIFT UP AND SETTLE. NO FLASH, NO GLARE."]
+            = "부드러운 털뭉치가 떠올랐다 내려앉습니다. 섬광도 눈부심도 없이.",
+        ["SPLASH"] = "스플래시",
+        ["A COLUMN OF WATER, TWO RIPPLES, THEN FALLING DROPS."]
+            = "물기둥, 두 겹의 파문, 그리고 떨어지는 물방울.",
+        ["SWARM"] = "스웜",
+        ["THE SHELL CRACKS ON ONE RING AND SCATTERS."]
+            = "껍질이 한 겹의 고리로 갈라지며 흩어집니다.",
 
         // ---- Replays screen ----------------------------------------------
         ["paste a replay share code"] = "리플레이 공유 코드 붙여넣기",

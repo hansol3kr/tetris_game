@@ -291,6 +291,44 @@ public sealed class BurstEngine
                     0.10f, 0.14f, 60, 2.0f, 1.5f, 1.5f, 0, 0, 0, true, _ => new Color(1f, 0.95f, 0.8f), stride: 2);
                 break;
             }
+            // ---- Animal-set signatures ------------------------------------------------
+            // All three stay well inside MaxFx (30 / 25 / 30 at full budget) and all three
+            // reach the board only through EmitLine, whose caller already refuses to fire under
+            // reduced motion — so none of them needs a gate of its own.
+            case BurstArtifact.Fluff:
+            {
+                // Deliberately no Flash and nothing additive: a matte coat must not bleach the
+                // screen. Drifting tufts in the popped cells' own colours, then one soft ring.
+                EmitAlong(rowLine, index, origin, cell, n, budget, FxKind.Petal, 3, 40, 120, 0.55f, 0.95f,
+                    0.06f, 0.11f, 30, 3.5f, 0.8f, 2.2f, 0.9f, 0f, 0f, false, preClear,
+                    angBias: -Mathf.Pi / 2f, angSpread: 1.5f, stride: 1);
+                Ring(lineCenter, cell * 1.8f, cell * 0.06f, 0.30f, new Color(1f, 0.86f, 0.70f, 0.28f));
+                break;
+            }
+            case BurstArtifact.Splash:
+            {
+                // A column of water, two ripples at different speeds, then falling droplets.
+                var water = new Color(0.55f, 0.95f, 1f);
+                EmitAlong(rowLine, index, origin, cell, n, budget, FxKind.Dot, 2, 180, 300, 0.30f, 0.45f,
+                    0.05f, 0.09f, 520, 1.2f, 0, 0, 0, 0.25f, 0f, false, _ => water,
+                    angBias: -Mathf.Pi / 2f, angSpread: 0.35f, stride: 1);
+                Ring(lineCenter, cell * 2.6f, cell * 0.09f, 0.34f, water);
+                Ring(lineCenter, cell * 4.2f, cell * 0.06f, 0.52f, new Color(water.R, water.G, water.B, 0.45f), delay: 0.10f);
+                EmitAlong(rowLine, index, origin, cell, n, budget, FxKind.Dot, 1, 60, 140, 0.55f, 0.85f,
+                    0.04f, 0.07f, 420, 0.6f, 0, 0, 0, 0.35f, 0.12f, false, preClear,
+                    angBias: -Mathf.Pi / 2f, angSpread: 1.1f, stride: 2);
+                break;
+            }
+            case BurstArtifact.Swarm:
+            {
+                // The shell cracks along one ring, then the pieces scatter and are gone. No
+                // Flash, no TriggerNova — the carapace set's whole pitch is restraint.
+                Ring(lineCenter, cell * 2.2f, cell * 0.05f, 0.22f, new Color(0.75f, 1f, 0.90f, 0.55f));
+                EmitAlong(rowLine, index, origin, cell, n, budget, FxKind.Dot, 3, 110, 260, 0.40f, 0.70f,
+                    0.035f, 0.06f, -20, 2.8f, 0, 0, 2.6f, 0f, 0f, false, preClear,
+                    angSpread: Mathf.Pi, stride: 1);
+                break;
+            }
             default: // Sparks — warm gold fountain + ring + embers
             {
                 Flash(lineCenter, cell * 1.4f, 0.18f, Gold);

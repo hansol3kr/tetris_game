@@ -30,6 +30,14 @@ public static class AudioSynth
         "move", "rotate", "lock", "hard_drop", "hold", "line_clear", "quad",
         "tspin", "b2b", "combo", "garbage", "level_up", "perfect_clear",
         "game_over", "win",
+        // Block Fit's fuse: its OWN event, not a second use of "hold". Fusing spends a
+        // finite charge and destroys two pieces to make one; stashing costs nothing and is
+        // reversible. Sharing a cue told the player those were the same kind of act.
+        "fuse",
+        // Placement-sound packs: alternate TIMBRES for the same event ("a piece
+        // landed"), never new meanings. The view picks one by player preference;
+        // "lock" stays index 0 so an untouched save sounds exactly as before.
+        "place_tap", "place_click", "place_typebar", "place_wood",
     };
 
     /// <summary>Renders a named SFX to 16-bit PCM. Never returns null or empty.</summary>
@@ -50,6 +58,50 @@ public static class AudioSynth
                     .Tone(150, 0, 0.045, 0.22, Wave.Square, release: 0.03)
                     .Noise(0, 0.02, 0.10).To16();
 
+            // ---- Placement packs (see SfxNames) -----------------------------
+            // All four are under 70ms and sit in the same RMS band as "lock", so
+            // switching packs reads as a change of MATERIAL, not of volume. They
+            // differ by brightness (zero-crossing rate) and by transient shape,
+            // which is what the ear actually uses to tell a keycap from a mallet.
+
+            case "place_tap":
+                // Membrane / rubber dome: a contact puff, then the dome collapsing
+                // a minor third (196 -> 172Hz). No square anywhere => no buzz.
+                return new Buf(0.045)
+                    .Noise(0, 0.006, 0.072, attack: 0.0004, release: 0.006)
+                    .Tone(196, 0.001, 0.034, 0.26, Wave.Sine, glideTo: 172, attack: 0.0015, release: 0.030)
+                    .Tone(392, 0.001, 0.018, 0.078, Wave.Triangle, release: 0.017).To16();
+
+            case "place_click":
+                // Clicky switch. The signature is the DOUBLE transient 9ms apart
+                // (leaf snap, then the plate bottoming out) — a single transient
+                // reads as a membrane no matter how bright you make it.
+                return new Buf(0.040)
+                    .Noise(0, 0.005, 0.256, attack: 0.0002, release: 0.005)
+                    .Tone(2100, 0, 0.006, 0.128, Wave.Square, glideTo: 1500, attack: 0.0002, release: 0.006)
+                    .Noise(0.009, 0.007, 0.192, attack: 0.0002, release: 0.007)
+                    .Tone(320, 0.009, 0.026, 0.24, Wave.Triangle, glideTo: 250, attack: 0.0008, release: 0.024).To16();
+
+            case "place_typebar":
+                // Typewriter hammer: a longer slap plus a 1.517x INHARMONIC partial.
+                // That non-integer ratio is the whole metallic character; make it 1.5x
+                // and it turns into a musical fifth and stops sounding like steel.
+                return new Buf(0.050)
+                    .Noise(0, 0.012, 0.225, attack: 0.0002, release: 0.012)
+                    .Tone(1180, 0, 0.030, 0.098, Wave.Triangle, release: 0.029)
+                    .Tone(1790, 0, 0.024, 0.068, Wave.Sine, release: 0.023)
+                    .Tone(124, 0.002, 0.040, 0.18, Wave.Sine, glideTo: 104, attack: 0.001, release: 0.036).To16();
+
+            case "place_wood":
+                // Wooden block: 1 : 2.70 : 5.30 are the real transverse modes of a
+                // free-free bar. All sine, and higher modes die FASTER (52/26/11ms) —
+                // that decay order is what separates wood from metal to the ear.
+                return new Buf(0.060)
+                    .Noise(0, 0.004, 0.098, attack: 0.0002, release: 0.004)
+                    .Tone(440, 0, 0.055, 0.231, Wave.Sine, release: 0.052)
+                    .Tone(1188, 0, 0.028, 0.105, Wave.Sine, release: 0.026)
+                    .Tone(2332, 0, 0.012, 0.049, Wave.Sine, release: 0.011).To16();
+
             case "hard_drop":
                 return new Buf(0.14)
                     .Tone(320, 0, 0.11, 0.26, Wave.Saw, glideTo: 70, release: 0.05)
@@ -59,6 +111,19 @@ public static class AudioSynth
                 return new Buf(0.11)
                     .Tone(A4, 0, 0.04, 0.18, Wave.Triangle, release: 0.02)
                     .Tone(E5, 0.05, 0.05, 0.18, Wave.Triangle, release: 0.03).To16();
+
+            case "fuse":
+                // Two voices GLIDE TOWARD EACH OTHER (G4 up, E5 down) and land on the same C5,
+                // then one bright octave confirms — the shape of the event is literally "two
+                // became one", which is what makes it unmistakable against "hold" (two separate
+                // notes, still two things). A short noise seam marks the weld itself. The view
+                // also plays this cue pitched DOWN when the budget is spent, so a failed fuse is
+                // audibly the same verb sagging rather than a generic snap-back click.
+                return new Buf(0.17)
+                    .Tone(G4, 0, 0.085, 0.16, Wave.Triangle, glideTo: C5, release: 0.045)
+                    .Tone(E5, 0, 0.085, 0.13, Wave.Triangle, glideTo: C5, release: 0.045)
+                    .Noise(0.055, 0.022, 0.070, attack: 0.002, release: 0.02)
+                    .Tone(C6, 0.085, 0.06, 0.135, Wave.Sine, release: 0.05).To16();
 
             case "line_clear":
                 return new Buf(0.26)
