@@ -56,6 +56,12 @@
 ```
 성공 판정은 **로그가 아니라 종료코드**다. `PagedAllocator`, `ObjectDB instances leaked` 등 종료 노이즈는 무시한다.
 
+**예외 하나 — 셰이더는 종료코드가 거짓말을 한다.** 셰이더 컴파일이 실패해도 헤드리스 Godot은 0으로 끝나고, 이후 모든 `SetShaderParameter`가 조용한 no-op이 되어 배경이 단색 `ColorRect`로 강등된다(스모크는 `ScreenHost`의 마지막 자식만 재므로 CanvasLayer인 Background를 아예 보지 못한다). 셰이더를 건드렸으면 로그를 직접 그레프할 것:
+```bash
+./run.sh --smoke > /tmp/smoke.log 2>&1; grep -icE 'shader error|compilation failed' /tmp/smoke.log   # 0이어야 한다
+```
+이 검사가 실제로 작동하는지는 셰이더를 일부러 깨뜨려 확인했다(깬 상태 2건 검출, 그래도 종료코드 0).
+
 ### ⑥ 회고 (Recheck)
 §8 함정 목록을 훑어 방금 변경이 알려진 버그 클래스(특히 0×0, 결정론, 시그널 누수)를 재발시키지 않았는지 확인한다.
 
