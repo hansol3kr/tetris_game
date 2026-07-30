@@ -164,6 +164,10 @@ public partial class AutoPlay : Node
         // ── 5) 스킨(테마) 장착 라이브 적용 ──────────────────────────
         await CheckSkins();
 
+        // ── 6) 배경 씬 장착 + 상점 카테고리 탭 (신규 축) ─────────────
+        await CheckBackdrops();
+        await CheckStoreTabs();
+
         // ── 리포트 ─────────────────────────────────────────────────
         GD.Print("[autoplay] ===== 리포트 =====");
         GD.Print($"[autoplay] 통과 {_passes} · 실패 {_fails.Count}");
@@ -307,8 +311,11 @@ public partial class AutoPlay : Node
             try
             {
                 save.EquipTheme(item.Id);
-                Palette.ApplyTheme(theme);
-                Bootstrap.Instance.Bg.ApplyThemeColors();
+                // Through the real façade, not by poking Palette directly: ApplySkin is what the
+                // store and settings call, and it also re-bakes the shared UI theme and pushes the
+                // backdrop uniforms. Poking Palette alone would have left this sweep blind to the
+                // two layers a skin now reaches beyond the board.
+                Bootstrap.Instance.ApplySkin();
                 // Resolve the plan over the whole board diagonal and every piece type — the exact
                 // call the cell draw makes (FitFill) and the one the store card makes (PlanFill),
                 // which is the only place a positional plan can go wrong.
@@ -330,9 +337,124 @@ public partial class AutoPlay : Node
         CheckLayout($"스킨 스윕 {swept}종 (소유 무관)");
 
         save.EquipTheme(original);
-        Palette.ApplyTheme(StoreCatalog.ById(original)?.Theme);
-        Bootstrap.Instance.Bg.ApplyThemeColors();
+        Bootstrap.Instance.ApplySkin();
         Ok($"스킨 복원: {original}");
         await Nav("→Menu", () => R.GoToMainMenu(), typeof(MainMenu));
+    }
+
+    /// <summary>
+    /// Sweep every backdrop scene, on a live Block Fit board, through the real equip façade.
+    ///
+    /// <para>The backdrop is the one cosmetic axis the rest of this harness cannot see: the shader
+    /// lives on a CanvasLayer sibling of ScreenHost, so <see cref="CheckLayout"/> never touches it,
+    /// and a malformed uniform name fails SILENTLY (SetShaderParameter on an unknown uniform is a
+    /// no-op, and headless Godot exits 0 even when shader compilation failed). This cannot assert
+    /// the pixels, so it asserts what it can: every scene id resolves, every equip runs without
+    /// throwing, and the board still lays out under each one. Shader COMPILATION is checked outside
+    /// C#, by grepping the headless log for SHADER ERROR.</para>
+    /// </summary>
+    private async Task CheckBackdrops()
+    {
+        var save = Bootstrap.Instance.Save;
+        string original = save.EquippedBackdropId;
+        await Nav("BlockFit(scenes)", () => R.StartBlockFit());
+
+        int swept = 0;
+        foreach (var item in StoreCatalog.Items)
+        {
+            if (item.Kind != StoreItemKind.Backdrop) continue;
+            // An id that does not round-trip through the mapping is a scene the player can equip
+            // and never see — Backdrops.FromId falls back to Aurora instead of failing.
+            var style = Backdrops.FromId(item.Id);
+            if (Backdrops.ToId(style) != item.Id)
+            {
+                Fail($"씬 {item.Id}: id 매핑 왕복 실패 (FromId/ToId 불일치 — 조용히 Aurora로 강등됨)");
+                continue;
+            }
+            try
+            {
+                save.EquipBackdrop(item.Id);
+                Bootstrap.Instance.ApplySkin();
+                if (Palette.EquippedBackdrop != style)
+                    Fail($"씬 {item.Id}: 적용 후 Palette.EquippedBackdrop={Palette.EquippedBackdrop}, 기대={style}");
+                swept++;
+            }
+            catch (Exception e)
+            {
+                Fail($"씬 {item.Id} 장착 예외 {e.GetType().Name}: {e.Message}");
+            }
+        }
+        await Wait(0.2);
+        CheckLayout($"씬 스윕 {swept}종");
+
+        save.EquipBackdrop(original);
+        Bootstrap.Instance.ApplySkin();
+        Ok($"씬 복원: {original}");
+        await Nav("→Menu", () => R.GoToMainMenu(), typeof(MainMenu));
+    }
+
+    /// <summary>
+    /// Walk the store's category tabs and assert each shelf actually laid out.
+    ///
+    /// <para>Necessary because <see cref="CheckLayout"/> is shallower than it looks for Control
+    /// screens: it measures the screen ROOT, and StoreScreen is FullRect on ScreenHost, so it
+    /// passes unconditionally. A tab bar or a category pane that collapsed to 0×0 — the exact class
+    /// of bug this harness exists for — would ship green. This drills into the shell instead.</para>
+    /// </summary>
+    private async Task CheckStoreTabs()
+    {
+        await Nav("Store(tabs)", () => R.GoToStore(), typeof(StoreScreen));
+        if (Current() is not StoreScreen store) { Fail("상점 탭: StoreScreen 이 아님"); return; }
+
+        var tabs = FindTabBar(store);
+        var scroll = FindScroll(store);
+        if (tabs is null) { Fail("상점 탭: 탭 바를 찾을 수 없음"); return; }
+        if (scroll is null) { Fail("상점 탭: 스크롤 영역을 찾을 수 없음"); return; }
+        if (tabs.GetChildCount() < 2) { Fail($"상점 탭: 탭이 {tabs.GetChildCount()}개 (2개 미만)"); return; }
+        if (tabs.Size.X < 1f || tabs.Size.Y < 1f) { Fail($"상점 탭: 탭 바 0×0 (size={tabs.Size})"); return; }
+        Ok($"상점 탭 바: {tabs.GetChildCount()}개 · size={tabs.Size}");
+
+        int n = tabs.GetChildCount();
+        for (int i = 0; i < n; i++)
+        {
+            if (tabs.GetChild(i) is not Button chip) continue;
+            string label = chip.Text;
+            try { chip.EmitSignal(BaseButton.SignalName.Toggled, true); }
+            catch (Exception e) { Fail($"상점 탭 {label}: 전환 예외 {e.GetType().Name}: {e.Message}"); continue; }
+            await Wait(0.15);
+            // Measured INSIDE the scroll, not across the whole screen: the screen root is FullRect
+            // and would answer for a collapsed pane on any shelf shorter than the viewport (SOUND
+            // and EXTRAS both are), which is exactly the blind spot this check exists to close.
+            // Every shelf renders at least one row — an empty one renders an explanatory note — so
+            // no measurable content is a build failure, not an empty catalog.
+            var pane = LargestControl(scroll);
+            if (pane.X < 1f || pane.Y < 1f) Fail($"상점 탭 {label}: 내용 0×0");
+            else Ok($"상점 탭 {label}: 내용 size={pane}");
+        }
+        await Nav("→Menu", () => R.GoToMainMenu(), typeof(MainMenu));
+    }
+
+    /// <summary>The store's tab bar: the first HFlowContainer in the shell.</summary>
+    private static HFlowContainer? FindTabBar(Node n)
+    {
+        foreach (var child in n.GetChildren())
+        {
+            if (child is HFlowContainer f) return f;
+            var deeper = FindTabBar(child);
+            if (deeper is not null) return deeper;
+        }
+        return null;
+    }
+
+    /// <summary>The store's scrolling shelf area.</summary>
+    private static ScrollContainer? FindScroll(Node n)
+    {
+        foreach (var child in n.GetChildren())
+        {
+            if (child is ScrollContainer s) return s;
+            var deeper = FindScroll(child);
+            if (deeper is not null) return deeper;
+        }
+        return null;
     }
 }

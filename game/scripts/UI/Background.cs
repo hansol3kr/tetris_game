@@ -39,19 +39,36 @@ public partial class Background : CanvasLayer
             _mat = new ShaderMaterial { Shader = shader };
             _rect.Material = _mat;
             _rect.Resized += () => _mat.SetShaderParameter("size", _rect.Size);
+            // Push it ONCE up front too. The Resized signal is subscribed after the rect has
+            // already been sized, so on a device whose resolution never changes the uniform
+            // would keep the shader's literal default (720×1280) for the whole session — every
+            // scene that works in pixel space (grids, stars, rain columns, circuit traces) would
+            // then be scaled for a phone the player is not holding.
+            _mat.SetShaderParameter("size", _rect.Size);
         }
 
         ApplyThemeColors();
         ApplyMotionSetting();
     }
 
-    /// <summary>Re-read the (fixed) backdrop gradient from the palette. Called on startup and by
-    /// the autoplay harness; store/settings equips no longer retint the backdrop (see Palette.ApplyTheme).</summary>
+    /// <summary>
+    /// Push the equipped skin's backdrop into the shader: gradient, the two decorative accents the
+    /// scenes tint themselves with, and the scene selector itself. Called on startup, on every
+    /// equip (via <c>Bootstrap.ApplySkin</c>) and by the autoplay harness.
+    ///
+    /// <para>The <see cref="ColorRect.Color"/> fallback matters: on a device where the shader
+    /// failed to compile (or under a null render backend) it is the ONLY thing painting the
+    /// backdrop, so it has to track the skin too or a themed build degrades to stock navy.</para>
+    /// </summary>
     public void ApplyThemeColors()
     {
         _rect.Color = Palette.Background;
-        _mat?.SetShaderParameter("top_color", Palette.Background);
-        _mat?.SetShaderParameter("bottom_color", Palette.BgBottom);
+        if (_mat is null) return;
+        _mat.SetShaderParameter("top_color", Palette.Background);
+        _mat.SetShaderParameter("bottom_color", Palette.BgBottom);
+        _mat.SetShaderParameter("accent_a", Palette.Accent);
+        _mat.SetShaderParameter("accent_b", Palette.AccentViolet);
+        _mat.SetShaderParameter("pattern", (int)Palette.EquippedBackdrop);
     }
 
     /// <summary>Re-read the reduced-motion preference (call when settings change).</summary>

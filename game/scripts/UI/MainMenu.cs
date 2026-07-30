@@ -58,7 +58,7 @@ public partial class MainMenu : Control
         UiTheme.ApplyTo(this);
         SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
 
-        var scroll = new ScrollContainer
+        var scroll = new TouchScroll
         {
             HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled,
         };
@@ -212,7 +212,7 @@ public partial class MainMenu : Control
         long bfBest = (long)Bootstrap.Instance.Save.BlockFitBest;
         content.AddChild(ChipLabel(bfBest > 0 ? $"★ {bfBest:N0}" : Loc.T("FIRST RUN"), Palette.TextSecondary));
 
-        b.Pressed += () => BlockFitChosen?.Invoke();
+        TouchScroll.Bind(b, () => BlockFitChosen?.Invoke());
         return b;
     }
 
@@ -249,7 +249,7 @@ public partial class MainMenu : Control
         if (best.HasValue)
             content.AddChild(ChipLabel($"★ {best.Value:N0}", Palette.AccentGold));
 
-        b.Pressed += () => DailyChosen?.Invoke();
+        TouchScroll.Bind(b, () => DailyChosen?.Invoke());
         return b;
     }
 
@@ -284,7 +284,7 @@ public partial class MainMenu : Control
         if (dBest > 0)
             content.AddChild(ChipLabel($"★ {dBest:N0}", Palette.AccentRed));
 
-        b.Pressed += () => DescentChosen?.Invoke();
+        TouchScroll.Bind(b, () => DescentChosen?.Invoke());
         return b;
     }
 
@@ -320,7 +320,7 @@ public partial class MainMenu : Control
             text.AddChild(sub);
             content.AddChild(text);
 
-            b.Pressed += () => ModeChosen?.Invoke(m);
+            TouchScroll.Bind(b, () => ModeChosen?.Invoke(m));
             grid.AddChild(b);
         }
         return grid;
@@ -346,7 +346,7 @@ public partial class MainMenu : Control
         text.AddChild(sub);
         content.AddChild(text);
 
-        b.Pressed += () => VersusChosen?.Invoke();
+        TouchScroll.Bind(b, () => VersusChosen?.Invoke());
         return b;
     }
 
@@ -503,7 +503,7 @@ public partial class MainMenu : Control
         l.AddThemeFontSizeOverride("font_size", 18);
         content.AddChild(l);
         Motion.BindButtonFeel(b);
-        b.Pressed += () => onPressed();
+        TouchScroll.Bind(b, onPressed);
         return b;
     }
 

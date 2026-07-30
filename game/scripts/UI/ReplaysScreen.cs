@@ -25,7 +25,7 @@ public partial class ReplaysScreen : Control
         UiTheme.ApplyTo(this);
         SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
 
-        var scroll = new ScrollContainer { HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
+        var scroll = new TouchScroll { HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
         scroll.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         AddChild(scroll);
 
@@ -44,7 +44,7 @@ public partial class ReplaysScreen : Control
         _import = new LineEdit { PlaceholderText = Loc.T("paste a replay share code"), CustomMinimumSize = new Vector2(320, 44) };
         var importBtn = new Button { Text = Loc.T("IMPORT"), CustomMinimumSize = new Vector2(120, 44), ThemeTypeVariation = "GhostButton" };
         Motion.BindButtonFeel(importBtn);
-        importBtn.Pressed += OnImport;
+        TouchScroll.Bind(importBtn, OnImport);
         importRow.AddChild(_import);
         importRow.AddChild(importBtn);
         col.AddChild(importRow);
@@ -55,7 +55,7 @@ public partial class ReplaysScreen : Control
 
         var back = new Button { Text = Loc.T("BACK"), ThemeTypeVariation = "GhostButton", CustomMinimumSize = new Vector2(0, 48) };
         Motion.BindButtonFeel(back);
-        back.Pressed += () => BackRequested?.Invoke();
+        TouchScroll.Bind(back, () => BackRequested?.Invoke());
         col.AddChild(back);
 
         RebuildList();
@@ -115,14 +115,14 @@ public partial class ReplaysScreen : Control
         // an easier accidental delete.
         var watch = new Button { Text = Loc.T("WATCH"), CustomMinimumSize = new Vector2(96, 84), ThemeTypeVariation = "PrimaryButton" };
         Motion.BindButtonFeel(watch);
-        watch.Pressed += () =>
+        TouchScroll.Bind(watch, () =>
         {
             var data = ReplayStore.Load(e.Path);
             if (data is not null) WatchRequested?.Invoke(data);
-        };
+        });
         var del = new Button { Text = "✕", CustomMinimumSize = new Vector2(84, 84), ThemeTypeVariation = "GhostButton" };
         Motion.BindButtonFeel(del);
-        del.Pressed += () => { ReplayStore.Delete(e.Path); RebuildList(); };
+        TouchScroll.Bind(del, () => { ReplayStore.Delete(e.Path); RebuildList(); });
         row.AddChild(watch);
         row.AddChild(new Control { CustomMinimumSize = new Vector2(10, 0), MouseFilter = MouseFilterEnum.Ignore });
         row.AddChild(del);

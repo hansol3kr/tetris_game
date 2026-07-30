@@ -40,7 +40,7 @@ public partial class DescentResultsScreen : Control
         // The run's ad slot (mobile, non-paying): end of run only, 1-in-3 capped.
         Bootstrap.Instance.Platform.MaybeShowInterstitial();
 
-        var scroll = new ScrollContainer { HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
+        var scroll = new TouchScroll { HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
         scroll.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         AddChild(scroll);
 
@@ -195,7 +195,7 @@ public partial class DescentResultsScreen : Control
             CustomMinimumSize = new Vector2(0, 56),
         };
         Motion.BindButtonFeel(b);
-        b.Pressed += () => onPressed();
+        TouchScroll.Bind(b, onPressed);
         return b;
     }
 

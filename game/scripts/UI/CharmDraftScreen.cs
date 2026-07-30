@@ -30,7 +30,7 @@ public partial class CharmDraftScreen : Control
         UiTheme.ApplyTo(this);
         SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
 
-        var scroll = new ScrollContainer { HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
+        var scroll = new TouchScroll { HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
         scroll.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         AddChild(scroll);
 
@@ -116,7 +116,7 @@ public partial class CharmDraftScreen : Control
             CustomMinimumSize = new Vector2(0, 52),
         };
         Motion.BindButtonFeel(skip);
-        skip.Pressed += () => Choose(() => Skipped?.Invoke());
+        TouchScroll.Bind(skip, () => Choose(() => Skipped?.Invoke()));
         col.AddChild(skip);
 
         if (run.Owned.Count > 0)
@@ -183,7 +183,7 @@ public partial class CharmDraftScreen : Control
         text.AddChild(desc);
         box.AddChild(text);
 
-        b.Pressed += () => Choose(() => CharmPicked?.Invoke(charm));
+        TouchScroll.Bind(b, () => Choose(() => CharmPicked?.Invoke(charm)));
         return b;
     }
 

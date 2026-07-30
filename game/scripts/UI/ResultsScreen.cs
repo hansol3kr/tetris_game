@@ -38,7 +38,7 @@ public partial class ResultsScreen : Control
         // Offer an interstitial ad before showing results (mobile, non-paying users).
         Bootstrap.Instance.Platform.MaybeShowInterstitial();
 
-        var scroll = new ScrollContainer { HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
+        var scroll = new TouchScroll { HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
         scroll.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         AddChild(scroll);
 
@@ -206,7 +206,7 @@ public partial class ResultsScreen : Control
             CustomMinimumSize = new Vector2(0, 56),
         };
         Motion.BindButtonFeel(b);
-        b.Pressed += () => onPressed();
+        TouchScroll.Bind(b, onPressed);
         return b;
     }
 

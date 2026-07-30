@@ -42,9 +42,14 @@ public partial class Bootstrap : Node2D
         Save = new SaveManager { Name = "SaveManager" };
         AddChild(Save); // SaveManager._Ready loads settings from disk here.
 
-        // Design system: fonts first, then the theme built from them, then the
-        // motion system's reduced-motion gate. Must precede any screen build.
+        // Design system: fonts first, then the equipped SKIN (it owns the UI accent now), then
+        // the theme built from both, then the motion gate. Order is load-bearing: UiTheme bakes
+        // the accent into its styleboxes, so a theme built before the skin is applied would ship
+        // stock-cyan buttons under a retinted skin until the next rebuild.
         Fonts.Init();
+        Palette.ColorblindMode = Save.Settings.ColorblindMode;   // colorblind still wins per-piece
+        Palette.ApplyTheme(StoreCatalog.ById(Save.EquippedThemeId)?.Theme);
+        Palette.ApplyBackdrop(Backdrops.FromId(Save.EquippedBackdropId));
         UiTheme.Init(Save.Settings.TextScale); // accessibility text scale, before any screen builds
         Motion.Reduced = Save.Settings.ReducedMotion;
         Blockfall.Core.Localization.Loc.Current = Save.Settings.Language; // localize before any screen builds
@@ -57,11 +62,6 @@ public partial class Bootstrap : Node2D
         // Settings; this only picks the first-run default, never overrides a choice.
         if (Save.FreshInstall && OS.HasFeature("mobile"))
             Save.Settings.GlowEnabled = false;
-
-        // Restore the colorblind palette preference before any board renders,
-        // then the purchased cosmetic theme (colorblind still wins per-piece).
-        Palette.ColorblindMode = Save.Settings.ColorblindMode;
-        Palette.ApplyTheme(StoreCatalog.ById(Save.EquippedThemeId)?.Theme);
 
         SetupEnvironment();
         ApplyGlowSetting();
@@ -97,6 +97,29 @@ public partial class Bootstrap : Node2D
         // Opt-in headless smoke test (--autoplay). Never attaches in a shipped build.
         if (Dev.AutoPlay.Requested)
             AddChild(new Dev.AutoPlay { Name = "AutoPlay" });
+    }
+
+    /// <summary>
+    /// Re-read the equipped cosmetics from the save and push them through EVERY layer that
+    /// caches a colour. There are three, and a screen that refreshes two of them is a screen
+    /// that reskins two thirds of itself:
+    ///   1. <see cref="Palette"/> — piece fills, backdrop gradient, decorative UI accents.
+    ///      (Boards read per draw, so they need nothing further.)
+    ///   2. <see cref="UiTheme.Rebuild"/> — the shared control theme's baked styleboxes.
+    ///   3. <see cref="Background.ApplyThemeColors"/> — the live shader uniforms.
+    /// Plus the world environment's clear colour, which is what shows through if the shader
+    /// never compiled.
+    ///
+    /// <para>Every equip path goes through here (store, settings, the autoplay harness) so the
+    /// three can never drift apart. Call it AFTER writing the ids to the save.</para>
+    /// </summary>
+    public void ApplySkin()
+    {
+        Palette.ApplyTheme(StoreCatalog.ById(Save.EquippedThemeId)?.Theme);
+        Palette.ApplyBackdrop(Backdrops.FromId(Save.EquippedBackdropId));
+        UiTheme.Rebuild();
+        if (_env is not null) _env.BackgroundColor = Palette.Background;
+        if (GodotObject.IsInstanceValid(Bg)) Bg.ApplyThemeColors();
     }
 
     /// <summary>

@@ -14,13 +14,31 @@ public static class Palette
 {
     // ---- Background -------------------------------------------------------
     // Deep navy-violet; the animated shader interpolates Background -> BgBottom.
-    // FIXED: equipping a cosmetic theme no longer retints these — a block-skin
-    // change must never recolor the game screen, so the backdrop stays constant
-    // (piece contrast reads identically under every skin). See ApplyTheme.
-    public static Color Background { get; private set; } = DefaultBgTop;
-    public static Color BgBottom { get; private set; } = DefaultBgBottom;
+    //
+    // HISTORY, because this reverses a shipped decision. These were frozen for a release: a
+    // block-skin change was not allowed to recolor the game screen, on the grounds that piece
+    // contrast had to read identically under every skin. The freeze bought that guarantee by
+    // making the single largest surface in the game cosmetically dead — the player equipped a
+    // skin and the app looked the same.
+    //
+    // The guarantee is now bought a better way, and BOTH halves have to hold or the freeze was
+    // right after all:
+    //   1. ClampLuma caps how bright a backdrop may get (see BackdropLumaCapTop/Bottom), so the
+    //      sky can never climb toward the pieces' luminance band whatever a skin declares.
+    //   2. The PLAY FIELD is its own near-opaque plane (BlockFitController.DrawUnder), so
+    //      piece-vs-substrate contrast is a constant that does not depend on the backdrop at
+    //      all — which is what makes (1) a comfort margin rather than the only line of defence.
+    //
+    // DECLARATION ORDER IS LOAD-BEARING: the Default* fields must come BEFORE the properties that
+    // initialise from them. C# runs static initialisers in TEXTUAL order, so with the defaults
+    // declared below, Background/BgBottom initialised to default(Color) — fully TRANSPARENT, not
+    // navy. It stayed latent because Bootstrap applies a skin before the first frame, but anything
+    // that reads a backdrop colour during static init (a store card built early, a probe, a test)
+    // got (0,0,0,0). Measured headless before the reorder.
     private static readonly Color DefaultBgTop = new(0.039f, 0.043f, 0.078f);    // #0A0B14
     private static readonly Color DefaultBgBottom = new(0.086f, 0.094f, 0.180f); // #16182E
+    public static Color Background { get; private set; } = DefaultBgTop;
+    public static Color BgBottom { get; private set; } = DefaultBgBottom;
     public static readonly Color PanelBg = new(0.078f, 0.086f, 0.133f, 0.85f);
 
     // ---- Text hierarchy (fixed levels — never eyeball per screen) ---------
@@ -38,8 +56,19 @@ public static class Palette
     //   Gold   = daily challenge + new-best + perfect clear. Nowhere else.
     //   Red    = danger / incoming garbage only.
     //   Green  = success ticks (finesse clean) only.
-    public static readonly Color Accent = new(0.20f, 0.85f, 1f);        // cyan
-    public static readonly Color AccentViolet = new(0.70f, 0.42f, 1f);
+    //
+    // SKIN-DRIVEN vs FIXED, and the line between them: Accent and AccentViolet are the two
+    // DECORATIVE accents — "the UI's colour" and "the second colour" — so a skin may retint them
+    // and the whole app follows (see ApplyTheme + UiTheme.Rebuild). Gold, Red and Green are
+    // SEMANTIC: gold means daily/new-best, red means danger, green means success. A skin that
+    // could move those would be a skin that changes what the screen is telling you, so they stay
+    // const-in-practice and no theme field reaches them.
+    // Defaults first — see the declaration-order note on Background above; the same textual-order
+    // rule applies here and would otherwise leave the UI accent transparent until the first equip.
+    private static readonly Color DefaultAccent = new(0.20f, 0.85f, 1f);
+    private static readonly Color DefaultAccent2 = new(0.70f, 0.42f, 1f);
+    public static Color Accent { get; private set; } = DefaultAccent;         // cyan
+    public static Color AccentViolet { get; private set; } = DefaultAccent2;
     public static readonly Color AccentGold = new(1f, 0.85f, 0.32f);
     public static readonly Color AccentRed = new(1f, 0.36f, 0.46f);
     public static readonly Color AccentGreen = new(0.36f, 0.95f, 0.56f);
@@ -59,6 +88,26 @@ public static class Palette
     // ---- Board chrome ------------------------------------------------------
     public static readonly Color GridLine = new(1f, 1f, 1f, 0.04f);
     public static readonly Color GridBorder = new(0.35f, 0.55f, 0.95f, 0.5f);
+
+    /// <summary>
+    /// The plane the PLAY FIELD is painted on — and the reason a skin is now allowed to change the
+    /// backdrop at all.
+    ///
+    /// <para>It is a deep version of the skin's own sky (so the board belongs to the scene rather
+    /// than sitting on it as a grey slab) at an alpha high enough that whatever the backdrop is
+    /// doing behind it barely reaches the cells. That decouples the two contrast budgets: piece vs
+    /// substrate is a near-constant the skin cannot move, so backdrop richness costs legibility
+    /// almost nothing. It was 0.85 and hard-coded navy while the backdrop was frozen; 0.94 is what
+    /// the same board looks like once the sky is allowed to be interesting behind it.</para>
+    ///
+    /// <para>Lower this and the guarantee weakens; the backdrop luma caps above are the second
+    /// line, not the first.</para>
+    /// </summary>
+    public static Color BoardSubstrate => new(BgBottom.R * 0.55f, BgBottom.G * 0.55f, BgBottom.B * 0.55f, 0.94f);
+
+    /// <summary>The board's outer edge: a faint lit rim in the equipped accent, so the play field
+    /// reads as a pane laid ON the scene instead of a hole cut out of it.</summary>
+    public static Color BoardFrame => new(Accent.R, Accent.G, Accent.B, 0.22f);
 
     /// <summary>
     /// When true, pieces use the Okabe–Ito colorblind-safe palette (maximally
@@ -83,6 +132,16 @@ public static class Palette
     /// piece hue is information (next/hold queues).</summary>
     public static ColorPlan EquippedPlan { get; private set; } = ColorPlan.Rainbow7;
 
+    /// <summary>The procedural scene the backdrop shader paints. Set by
+    /// <see cref="ApplyBackdrop"/> (the BACKDROP shelf is its own equip axis, so this does NOT
+    /// come from <see cref="ApplyTheme"/> — a skin only supplies the DEFAULT one at equip time,
+    /// the same way it supplies a signature burst).</summary>
+    public static BackdropStyle EquippedBackdrop { get; private set; } = BackdropStyle.Aurora;
+
+    /// <summary>Equip a backdrop scene. Colours are not touched — a scene is form and motion
+    /// only, and takes its palette from whatever skin is equipped.</summary>
+    public static void ApplyBackdrop(BackdropStyle style) => EquippedBackdrop = style;
+
     // Neon-pastel piece fills (the default "NEON FLUX" theme): hue identities
     // preserved, saturation/luminance pulled into one band so the set reads as a
     // family on the navy background. Mutable — retinted by cosmetic themes.
@@ -103,23 +162,130 @@ public static class Palette
         new Color(1.00f, 0.64f, 0.36f), DefaultBgTop, DefaultBgBottom);
 
     /// <summary>
-    /// Equip a cosmetic theme (null = back to the default). Only the piece colors,
-    /// glyph, material and edge tint retint — the screen background is deliberately
-    /// LEFT UNCHANGED so switching block skins never shifts the play-field backdrop
-    /// (piece contrast/legibility stays constant). Views read ForPiece per draw, so
-    /// boards update on the next frame with no explicit backdrop refresh.
+    /// Equip a cosmetic theme (null = back to the default). A skin now drives EVERY colour
+    /// channel it can safely reach: the piece fills, the block finish (glyph / material / edge
+    /// tint / colour plan), the BACKDROP GRADIENT, and the two decorative UI accents.
+    ///
+    /// <para>Views read <see cref="ForPiece"/> per draw, so boards update next frame with no
+    /// refresh call. The other two consumers cache and MUST be told:
+    /// <c>UiTheme.Rebuild()</c> re-bakes the shared control theme with the new accent, and
+    /// <c>Background.ApplyThemeColors()</c> re-pushes the gradient/scene into the shader.
+    /// <c>Bootstrap.ApplySkin()</c> is the one call that does all three in the right order —
+    /// prefer it over calling this directly, or a screen ends up half-reskinned.</para>
+    ///
+    /// <para>Both guards below exist because a skin is DATA: someone will eventually author a
+    /// pale backdrop or a near-black accent, and neither should be able to make the game
+    /// unreadable. They clamp, they never reject — a skin always equips.</para>
     /// </summary>
     public static void ApplyTheme(BlockTheme? t)
     {
         t ??= DefaultTheme;
         I = t.I; O = t.O; T = t.T; S = t.S; Z = t.Z; J = t.J; L = t.L;
-        // Background intentionally NOT retinted — a block-skin change must not recolor
-        // the game screen. BlockTheme.BgTop/BgBottom stay on the record (data compat)
-        // but no longer drive the live backdrop.
+        // The backdrop gradient, luma-capped. Every gradient in the catalog already sits 4-13×
+        // under these caps (measured: brightest BgTop 0.0057, brightest BgBottom 0.0183), so this
+        // changes nothing that exists and bounds everything that comes next.
+        Background = ClampLuma(t.BgTop, BackdropLumaCapTop);
+        BgBottom = ClampLuma(t.BgBottom, BackdropLumaCapBottom);
+        // Decorative accents. alpha 0 (the struct default) means "this skin has no opinion" ⇒
+        // keep the stock cyan/violet, which is what every pre-existing catalog row does.
+        Accent = LiftForInk(t.Accent.A > 0f ? t.Accent : DefaultAccent);
+        AccentViolet = LiftForInk(t.Accent2.A > 0f ? t.Accent2 : DefaultAccent2);
         EquippedGlyph = t.Glyph;
         EquippedMaterial = t.Material;
         EquippedEdgeTint = t.EdgeTint;
         EquippedPlan = t.Plan;
+    }
+
+    // ---- Legibility guards ---------------------------------------------------
+    // Both are pure functions of a colour, run once per equip (never per frame).
+
+    /// <summary>
+    /// Luma ceilings (WCAG relative luminance) for the two ends of the backdrop gradient.
+    ///
+    /// <para>Chosen from the DIMMEST TEXT that sits directly on this surface, not from the board —
+    /// the board has its own opaque plane and does not need protecting. That level is
+    /// <see cref="TextTertiary"/> (rel lum 0.175): the "SectionLabel" variation and the 12px legal
+    /// footer on the main menu both render straight onto the sky with no card behind them. At
+    /// 0.025 it holds 3.0:1, the WCAG bar for incidental UI; calibrating against
+    /// <see cref="TextSecondary"/> instead admitted 0.075, where that same copy measures 1.80:1 and
+    /// simply disappears. (4.5:1 is unreachable for the tertiary level by ANY backdrop — it caps at
+    /// 4.49:1 against pure black — so 3.0 is the real ceiling a cap can buy.) The top of the
+    /// gradient is deeper still because the logo and title sit against it.</para>
+    ///
+    /// <para>Measured across all 40 catalog gradients, the brightest values that actually ship are
+    /// BgTop 0.0057 and BgBottom 0.0183, so both caps clear every existing skin and exist purely to
+    /// bound what a future one may declare.</para>
+    ///
+    /// <para>Raising them is a legibility decision, not a taste one: re-measure the tertiary level
+    /// first. (An earlier revision of this comment quoted 0.128 for BUBBLEGUM's bottom; that was a
+    /// weighted average of GAMMA-ENCODED channels, which overstates dark colours by ~8× here. The
+    /// real figure is 0.0166 — always linearise before weighting.)</para>
+    /// </summary>
+    private const float BackdropLumaCapTop = 0.015f;
+    private const float BackdropLumaCapBottom = 0.025f;
+
+    /// <summary>Minimum contrast between a decorative accent and <see cref="InkOnAccent"/>, the
+    /// dark ink printed on accent-FILLED primary buttons. 4.5:1 is the WCAG AA body-text bar —
+    /// the button label is large and bold enough to qualify for 3:1, and the extra margin is
+    /// deliberately spent here because this is the one place a skin's colour choice can render
+    /// text unreadable rather than merely ugly. The stock cyan measures 11.5:1, so this only
+    /// ever engages for a genuinely dark accent.</summary>
+    private const float MinInkContrast = 4.5f;
+
+    /// <summary>sRGB → linear, for a real WCAG relative-luminance computation (the naive
+    /// weighted average of gamma-encoded channels is wrong by up to ~2× in the dark end, which
+    /// is precisely the range every colour on this screen lives in).</summary>
+    private static float Lin(float c) => c <= 0.04045f ? c / 12.92f : Mathf.Pow((c + 0.055f) / 1.055f, 2.4f);
+
+    private static float RelLum(Color c) => 0.2126f * Lin(c.R) + 0.7152f * Lin(c.G) + 0.0722f * Lin(c.B);
+
+    private static float Contrast(Color x, Color y)
+    {
+        float a = RelLum(x), b = RelLum(y);
+        return (Mathf.Max(a, b) + 0.05f) / (Mathf.Min(a, b) + 0.05f);
+    }
+
+    /// <summary>Scale a colour's RGB down uniformly until its relative luminance fits under
+    /// <paramref name="cap"/>. Uniform scaling keeps the hue and the saturation ratio, so a
+    /// clamped backdrop is the same colour the author picked, just deeper.</summary>
+    private static Color ClampLuma(Color c, float cap)
+    {
+        float lum = RelLum(c);
+        if (lum <= cap || lum <= 0.0001f) return c;
+        // Luminance is not linear in the sRGB encoding, so solve by bisection rather than by a
+        // ratio — 12 iterations lands inside 1/4096 of the true factor, which is far below a
+        // perceptible step and costs nothing at equip time.
+        float lo = 0f, hi = 1f;
+        for (int i = 0; i < 12; i++)
+        {
+            float mid = (lo + hi) * 0.5f;
+            if (RelLum(new Color(c.R * mid, c.G * mid, c.B * mid, c.A)) > cap) hi = mid; else lo = mid;
+        }
+        return new Color(c.R * lo, c.G * lo, c.B * lo, c.A);
+    }
+
+    /// <summary>Raise an accent until dark ink reads on it: brighten first (keeps the hue exact),
+    /// then desaturate toward white only if brightening alone tops out. Returns the input
+    /// untouched in the overwhelming common case.</summary>
+    private static Color LiftForInk(Color c)
+    {
+        if (Contrast(c, InkOnAccent) >= MinInkContrast) return c;
+        float h = c.H, s = c.S, v = c.V;
+        for (int i = 0; i < 16; i++)
+        {
+            v = Mathf.Min(1f, v + 0.06f);
+            var lifted = Color.FromHsv(h, s, v, c.A);
+            if (Contrast(lifted, InkOnAccent) >= MinInkContrast) return lifted;
+        }
+        for (int i = 0; i < 16; i++)
+        {
+            s = Mathf.Max(0.20f, s - 0.05f);
+            var lifted = Color.FromHsv(h, s, 1f, c.A);
+            if (Contrast(lifted, InkOnAccent) >= MinInkContrast) return lifted;
+        }
+        // Unreachable for any colour with a hue (white itself measures 16.4:1) — but a guard
+        // that can silently return an illegible accent is not a guard.
+        return Color.FromHsv(h, 0.20f, 1f, c.A);
     }
 
     // ---- Block Fit colour plans -------------------------------------------

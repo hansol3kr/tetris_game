@@ -63,7 +63,7 @@ public partial class ProfileScreen : Control
     private Control BuildStatsTab()
     {
         var s = Bootstrap.Instance.Save.Lifetime;
-        var scroll = new ScrollContainer { Name = "STATS", HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
+        var scroll = new TouchScroll { Name = "STATS", HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
         var grid = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         grid.AddThemeConstantOverride("separation", 4);
         scroll.AddChild(grid);
@@ -99,7 +99,7 @@ public partial class ProfileScreen : Control
     {
         var save = Bootstrap.Instance.Save;
         int have = 0;
-        var scroll = new ScrollContainer { Name = "ACHIEVEMENTS", HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
+        var scroll = new TouchScroll { Name = "ACHIEVEMENTS", HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
         var box = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         box.AddThemeConstantOverride("separation", 6);
         scroll.AddChild(box);
@@ -140,7 +140,7 @@ public partial class ProfileScreen : Control
         _modePick.ItemSelected += _ => RebuildRanks();
         root.AddChild(_modePick);
 
-        var scroll = new ScrollContainer { SizeFlagsVertical = SizeFlags.ExpandFill, HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
+        var scroll = new TouchScroll { SizeFlagsVertical = SizeFlags.ExpandFill, HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
         _rankList = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         _rankList.AddThemeConstantOverride("separation", 6);
         scroll.AddChild(_rankList);
@@ -196,11 +196,11 @@ public partial class ProfileScreen : Control
                 var watch = new Button { Text = "▶", CustomMinimumSize = new Vector2(84, 84), ThemeTypeVariation = "GhostButton" };
                 Motion.BindButtonFeel(watch);
                 string path = e.ReplayPath;
-                watch.Pressed += () =>
+                TouchScroll.Bind(watch, () =>
                 {
                     var data = ReplayStore.Load(path);
                     if (data is not null) WatchReplay?.Invoke(data);
-                };
+                });
                 row.AddChild(watch);
             }
             card.AddChild(row);

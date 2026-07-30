@@ -371,8 +371,12 @@ internal static class LocData
 
         // ---- Animal skin sets (name + blurb + signature burst) -------------
         ["PELT"] = "펠트",
-        ["THREE COAT TONES. MATTE STRAND GRAIN — IT SHEDS, IT DOESN'T SHATTER."]
-            = "세 가지 털색. 무광 결 — 부서지지 않고 흩날립니다.",
+        // Key re-anchored to the string the catalog actually ships. It had drifted to an older
+        // wording ("THREE COAT TONES...") when the blurb was rewritten, so Korean players saw the
+        // English fallback on a shipped skin — the silent-degradation failure mode of an
+        // English-text-as-key scheme.
+        ["BONE, FOX AND CHARCOAL. MATTE STRAND GRAIN — IT SHEDS, IT DOESN'T SHATTER."]
+            = "본 화이트, 여우색, 숯색. 무광 결 — 부서지지 않고 흩날립니다.",
         // Renamed from SERPENTINE (the set is a fish everywhere except its old name); the
         // save key is still theme_serpentine, only the display string moved.
         ["DORSAL"] = "등지느러미",
@@ -390,6 +394,84 @@ internal static class LocData
         ["SWARM"] = "스웜",
         ["THE SHELL CRACKS ON ONE RING AND SCATTERS."]
             = "껍질이 한 겹의 고리로 갈라지며 흩어집니다.",
+
+        // ---- Store shell: category tabs + shelf captions --------------------
+        // The tabs are the store's whole navigation now, so these five are the highest-traffic
+        // strings on the screen. Kept SHORT in Korean too — they sit in pill chips that have to
+        // fit one row on a phone.
+        ["SKINS"] = "스킨",
+        ["SCENES"] = "배경",
+        ["FX"] = "연출",
+        ["EXTRAS"] = "기타",
+        ["A SKIN NOW DRESSES THE WHOLE APP: BLOCKS, MENU ACCENT AND THE SCENE BEHIND EVERY SCREEN."]
+            = "스킨은 이제 앱 전체를 갈아입힙니다: 블록, 메뉴 강조색, 그리고 모든 화면 뒤의 배경까지.",
+        ["A SCENE IS MOTION, NOT COLOUR — IT BORROWS THE EQUIPPED SKIN'S PALETTE, SO EVERY SCENE LOOKS DIFFERENT UNDER EVERY SKIN."]
+            = "배경은 색이 아니라 움직임입니다 — 장착한 스킨의 색을 그대로 빌려 쓰기 때문에, 같은 배경도 스킨마다 다르게 보입니다.",
+        ["INCLUDES THE {0} SCENE"] = "{0} 배경 포함",
+        ["NOTHING ON THIS SHELF RIGHT NOW."] = "지금 이 칸에는 아무것도 없습니다.",
+        ["BLOCKS, MENU ACCENT AND BACKDROP · APPLIES INSTANTLY"] = "블록·메뉴 강조색·배경 · 즉시 적용",
+
+        // ---- Scene sets (skins designed around a backdrop) ------------------
+        ["NIGHT DRIVE"] = "나이트 드라이브",
+        ["TWO GASES IN GLASS OVER A LIT FLOOR RUNNING TO THE HORIZON."]
+            = "유리관 속 두 가지 네온, 그 아래로 지평선까지 뻗은 발광 바닥.",
+        ["DEEP SIGNAL"] = "딥 시그널",
+        ["BRUSHED METAL ON A LIVE BOARD. THE TRACES ARE STILL CARRYING SOMETHING."]
+            = "살아 있는 기판 위의 브러시드 메탈. 배선에는 아직 무언가가 흐릅니다.",
+        ["HANAMI"] = "하나미",
+        ["PEARL BLOSSOMS UNDER DRIFTING LIGHTS. NOTHING HERE IS IN A HURRY."]
+            = "떠다니는 빛 아래 진주빛 꽃잎. 여기서 서두르는 것은 아무것도 없습니다.",
+        ["MONSOON"] = "몬순",
+        ["ONE STEEL INK, SEVEN RUNGS, AND RAIN THAT DOES NOT LET UP."]
+            = "강철빛 단색 일곱 단계, 그리고 그치지 않는 비.",
+        ["FORGE"] = "포지",
+        ["HOT METAL, COOLING METAL, AND SLAG. IT THROWS SPARKS WHEN IT BREAKS."]
+            = "달군 쇠, 식는 쇠, 그리고 슬래그. 부서질 때 불티가 튑니다.",
+        ["TUNDRA"] = "툰드라",
+        ["ONE PALE ICE UNDER A HARD SKY. IT SHATTERS INTO SNOW."]
+            = "차가운 하늘 아래 창백한 얼음 하나. 부서지면 눈이 됩니다.",
+        ["AETHER"] = "에테르",
+        ["THE BOARD IS ONE PANE OF GLASS HELD UP TO A NEBULA."]
+            = "보드 전체가 성운에 비춰 든 한 장의 유리.",
+
+        // ---- Scene-set signature bursts -------------------------------------
+        ["GLITCH"] = "글리치",
+        ["THE LINE TEARS SIDEWAYS IN RGB SLICES AND SNAPS BACK."]
+            = "줄이 RGB 조각으로 옆으로 찢어졌다가 제자리로 튕겨 돌아옵니다.",
+        ["PETALS"] = "꽃잎",
+        ["BLOSSOMS LIFT OFF, TURN ONCE IN THE AIR, AND FALL."]
+            = "꽃잎이 떠올라 공중에서 한 번 돌고 떨어집니다.",
+        ["FROST"] = "서리",
+        ["CRYSTALS GROW ALONG THE LINE, THEN BURST INTO SNOW."]
+            = "줄을 따라 결정이 자라난 뒤 눈으로 터집니다.",
+        ["INK"] = "먹",
+        ["A DARK BLOOM SPREADS, THROWS DROPLETS, AND RUNS DOWN."]
+            = "검은 번짐이 퍼지며 방울을 튀기고 아래로 흘러내립니다.",
+
+        // ---- Backdrop scenes -------------------------------------------------
+        // AURORA is deliberately absent here: the string already maps (the burst artifact of the
+        // same name shipped first), and a duplicate key in this indexer initializer would silently
+        // take over rather than error.
+        ["THE ORIGINAL DRIFTING LIGHTS. ALWAYS YOURS."] = "처음부터 있던 흐르는 빛. 언제나 당신의 것.",
+        ["NEBULA"] = "성운",
+        ["SLOW CLOUDS OF GAS, LIT FROM SOMEWHERE INSIDE."] = "안쪽에서 빛나는 느린 가스 구름.",
+        ["STARFIELD"] = "별밭",
+        ["THREE LAYERS OF STARS. THE NEAR ONES ARE IN A HURRY."] = "세 겹의 별. 가까운 별일수록 빠릅니다.",
+        ["NIGHT GRID"] = "나이트 그리드",
+        ["A LIT FLOOR RUNNING OUT TO A BURNING HORIZON."] = "타오르는 지평선까지 뻗은 발광 바닥.",
+        ["SUNSHAFT"] = "선샤프트",
+        ["A SLOW FAN OF LIGHT FROM SOMETHING ABOVE THE SCREEN."] = "화면 위 어딘가에서 천천히 퍼지는 빛살.",
+        ["SWELL"] = "너울",
+        ["FOUR LONG WAVES ROLLING UNDER THE BOARD."] = "보드 아래로 흐르는 네 겹의 긴 파도.",
+        ["BOKEH"] = "보케",
+        ["OUT-OF-FOCUS LIGHTS DRIFTING UP PAST THE CAMERA."] = "초점 밖의 빛망울이 위로 떠올라 지나갑니다.",
+        ["DOWNPOUR"] = "폭우",
+        ["SLANTED RAIN AND A WET SHEEN POOLING AT THE BOTTOM."] = "비스듬한 비, 그리고 아래에 고이는 물기.",
+        ["CINDERS"] = "잉걸",
+        ["WARM SPARKS RISING OFF A FIRE YOU CANNOT SEE."] = "보이지 않는 불에서 피어오르는 따뜻한 불티.",
+        ["TRACE"] = "트레이스",
+        ["COPPER RUNS AND TRAVELLING PULSES. THE SCREEN IS THE CHIP."]
+            = "구리 배선과 흐르는 신호. 화면 자체가 칩입니다.",
 
         // ---- Replays screen ----------------------------------------------
         ["paste a replay share code"] = "리플레이 공유 코드 붙여넣기",

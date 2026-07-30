@@ -35,6 +35,18 @@ public enum ColorPlan { Rainbow7, Trio, Duo, Mono, BoardGradient }
 /// convenience, never a lock — the burst stays a separate free catalog row the player can
 /// change back at any time. Persisted state is unchanged (only the theme id is saved), and
 /// the parameter is appended LAST so all existing themes compile untouched.
+///
+/// <paramref name="Scene"/> is the signature <see cref="BackdropStyle"/>, and behaves exactly
+/// like <paramref name="Signature"/>: equipping the skin equips the scene, and the player can
+/// override it from the BACKDROP shelf afterwards. Null = keep whatever scene is equipped, which
+/// is what a pure palette swap wants.
+///
+/// <paramref name="Accent"/> / <paramref name="Accent2"/> retint the two DECORATIVE UI accents
+/// (see Palette): the logo, card identities, focus rings, primary-button fills — the whole app
+/// chrome, not just the board. Leave them at <c>default</c> (alpha 0) to keep the stock
+/// cyan/violet. The semantic accents (gold = daily/record, red = danger, green = success) are
+/// deliberately unreachable from here. Both are run through a contrast guard on equip
+/// (Palette.LiftForInk), so an authored value is a request, not a way to break the UI.
 /// </summary>
 public sealed record BlockTheme(
     string Id,
@@ -44,4 +56,7 @@ public sealed record BlockTheme(
     CellMaterial Material = CellMaterial.Gel,
     Color EdgeTint = default,
     ColorPlan Plan = ColorPlan.Rainbow7,
-    BurstArtifact? Signature = null);
+    BurstArtifact? Signature = null,
+    BackdropStyle? Scene = null,
+    Color Accent = default,
+    Color Accent2 = default);

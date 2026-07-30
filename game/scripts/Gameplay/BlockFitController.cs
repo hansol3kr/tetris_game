@@ -835,22 +835,12 @@ public partial class BlockFitController : Node2D
         foreach (int c in _pvCols)
             _burst.EmitLine(_artifact, rowLine: false, c, _boardOrigin, _cell, n, budget, k => PreClearColor(k, c));
 
-        // Background wash, tinted and scaled to the equipped artifact.
-        var (pulseCol, pulseBase) = _artifact switch
-        {
-            BurstArtifact.Supernova => (new Color(1f, 0.98f, 0.9f), 0.34f),
-            BurstArtifact.Rainbow => (Palette.AccentViolet, 0.26f),
-            BurstArtifact.Fireworks => (Palette.AccentGold, 0.28f),
-            BurstArtifact.Confetti => (Palette.AccentGreen, 0.22f),
-            BurstArtifact.Shards => (Palette.Accent, 0.24f),
-            BurstArtifact.Aurora => (new Color(0.3f, 0.9f, 0.8f), 0.20f),
-            BurstArtifact.Lightning => (Palette.Accent, 0.30f),
-            BurstArtifact.BubblePop => (Palette.Accent, 0.18f),
-            BurstArtifact.PrismBloom => (Palette.AccentViolet, 0.26f),
-            BurstArtifact.Starfall => (new Color(0.9f, 0.85f, 1f), 0.24f),
-            _ => (Palette.AccentGold, 0.22f),
-        };
-        Bootstrap.Instance.Bg.Pulse(pulseCol, Mathf.Min(0.6f, pulseBase + lines * 0.1f));
+        // Background wash, tinted and scaled to the equipped artifact. The table used to live here
+        // and had silently gone stale — the three animal-set bursts were missing from it, so they
+        // washed the screen gold while their own store cards showed the right colour. It is now
+        // BurstArtifacts.AccentOf/PulseOf, shared with the store card and the equip flourish.
+        Bootstrap.Instance.Bg.Pulse(BurstArtifacts.AccentOf(_artifact),
+                                    Mathf.Min(0.6f, BurstArtifacts.PulseOf(_artifact) + lines * 0.1f));
     }
 
     /// <summary>Snapshot the colours of the cells the just-placed piece completes, so the
@@ -908,8 +898,13 @@ public partial class BlockFitController : Node2D
     {
         if (_cell <= 0) return;
         float boardPx = _cell * BlockFitGame.Size;
-        ci.DrawRect(new Rect2(_boardOrigin - new Vector2(6, 6), new Vector2(boardPx + 12, boardPx + 12)),
-                    new Color(0.05f, 0.06f, 0.11f, 0.85f), filled: true);
+        // The panel is the equipped skin's own substrate now, not a hard-coded navy — the animated
+        // scene shows through everywhere EXCEPT here, and that is deliberate: this near-opaque
+        // plane is what keeps piece contrast constant while the backdrop is free to be a themed
+        // scene (see Palette.BoardSubstrate for the full argument).
+        var frame = new Rect2(_boardOrigin - new Vector2(6, 6), new Vector2(boardPx + 12, boardPx + 12));
+        ci.DrawRect(frame, Palette.BoardSubstrate, filled: true);
+        ci.DrawRect(frame, Palette.BoardFrame, filled: false, width: 1.5f);
         _burst.DrawDebrisNormal(ci);
     }
 

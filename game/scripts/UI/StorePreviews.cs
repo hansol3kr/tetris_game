@@ -213,23 +213,10 @@ public partial class ArtifactPreview : Control
     private void DrawPoster(Vector2 o)
     {
         var c = o + new Vector2(N * Cell / 2f, Cell / 2f);
-        var accent = _art switch
-        {
-            BurstArtifact.Supernova => new Color(1f, 0.98f, 0.9f),
-            BurstArtifact.Rainbow => Palette.AccentViolet,
-            BurstArtifact.Confetti => Palette.AccentGreen,
-            BurstArtifact.Shards => Palette.Accent,
-            BurstArtifact.Aurora => new Color(0.3f, 0.9f, 0.8f),
-            BurstArtifact.Lightning => Palette.Accent,
-            BurstArtifact.BubblePop => Palette.Accent,
-            BurstArtifact.PrismBloom => Palette.AccentViolet,
-            BurstArtifact.Starfall => new Color(0.9f, 0.85f, 1f),
-            BurstArtifact.Fireworks => Palette.AccentGold,
-            BurstArtifact.Fluff => new Color(1.00f, 0.86f, 0.70f),
-            BurstArtifact.Splash => new Color(0.55f, 0.95f, 1.00f),
-            BurstArtifact.Swarm => new Color(0.75f, 1.00f, 0.90f),
-            _ => new Color(1f, 0.95f, 0.6f),
-        };
+        // One shared table (BurstArtifacts.AccentOf) rather than this card's own copy. The copy and
+        // the in-game one had already drifted — three bursts were missing from the in-game switch,
+        // so the poster here and the screen wash during a run disagreed about what colour a burst is.
+        var accent = BurstArtifacts.AccentOf(_art);
         DrawArc(c, Cell * 1.6f, 0f, Mathf.Tau, 32, new Color(accent.R, accent.G, accent.B, 0.7f), 2f);
         for (int i = 0; i < 6; i++)
         {
@@ -348,4 +335,255 @@ public partial class SoundPreview : Control
 
     private static float Spike(float t, float at, float sharpness)
         => t < at ? Mathf.Exp(-sharpness * 3f * (at - t)) : Mathf.Exp(-sharpness * (t - at));
+}
+
+/// <summary>
+/// The shelf card for a BACKDROP: the real backdrop shader, running live, at thumbnail size.
+///
+/// <para>It loads <c>res://shaders/background.gdshader</c> onto its own <see cref="ColorRect"/> and
+/// feeds it the same uniforms <see cref="Background"/> feeds the full-screen surface — the scene
+/// ordinal plus the equipped skin's gradient and resolved accents. Nothing here re-draws an
+/// IMPRESSION of a scene, which is the entire point: the ten scenes are a few hundred lines of GLSL
+/// (fbm nebulae, a perspective grid, parallax spark layers), and a hand-painted approximation would
+/// start lying the first time anyone edits the fragment shader. Instantiating the real thing makes
+/// the card correct forever, at the cost of no new art and no second implementation to keep in sync.
+/// This is the same "preview through the shipping renderer" rule <see cref="ThemePreview"/> follows
+/// with <see cref="BlockRender"/> and <see cref="ArtifactPreview"/> follows with
+/// <see cref="BurstEngine"/>.</para>
+///
+/// <para>ZOOM IS 1:1 — the <c>size</c> uniform gets the rect's own pixel size, so the card is a
+/// true-density WINDOW onto the backdrop, not a phone screen squeezed into 122px. Feeding a larger
+/// virtual size would fit more of the composition in, but every fine detail in that shader is tuned
+/// in PIXELS (stars at 1.4–2.6px, rain columns every 26px, 64px circuit traces) and would collapse
+/// below one screen pixel — a starfield of flickering half-lit dots is a worse lie than a sparse
+/// one. The scenes whose form is uv- or width-relative (Aurora blobs, Nebula fbm, the Grid horizon,
+/// Rays, Waves, the Embers hearth glow) compose identically at any size, so the crop only costs
+/// speck COUNT in the sparse scenes, which is the cheapest thing on the card to give up.</para>
+///
+/// <para>Colours are read from <see cref="Palette"/> when the card is BUILT and never cached in a
+/// static: a backdrop contributes motion and form only and takes its palette from the equipped
+/// skin (see <see cref="BackdropStyle"/>), so the shelf has to show each scene under what the
+/// player is wearing right now. Equipping anything rebuilds the store rows, which rebuilds these.
+/// Unlike <see cref="ThemePreview"/> there is nothing to override here — the whole value of the
+/// card is that it renders the LIVE palette, not a hypothetical one.</para>
+///
+/// <para>Two failure paths, both of which this repo has already been bitten by. A missing or
+/// unloadable shader leaves the rounded gradient plate this control draws for itself
+/// (<see cref="Palette.Background"/> → <see cref="Palette.BgBottom"/>, the exact two stops the
+/// shader itself starts from), so the card degrades to a legible swatch instead of a hole; and no
+/// parameter is ever tweened — the scene animates itself off <c>TIME</c> on the GPU — so the
+/// headless smoke run has nothing to animate on a shader that never compiled, which is the
+/// "property does not exist" trap documented in <see cref="Background"/>.</para>
+/// </summary>
+public partial class BackdropPreview : Control
+{
+    private const string ShaderPath = "res://shaders/background.gdshader";
+
+    /// <summary>Square, 132px. Width matches the SOUND shelf's audition button so the left column
+    /// of every shelf lines up down the page, and it lands within 10px of
+    /// <see cref="ThemePreview"/>'s 122 so the three cosmetic shelves carry one visual weight.
+    /// Square rather than the screen's 9:16: at 1:1 zoom area IS detail, every scene anchors its
+    /// vertical story in UV (horizon at 46%, rays from above, embers from below) so it survives any
+    /// aspect, and a phone-shaped 132×234 card would make a ten-row shelf three screens tall.</summary>
+    private const float Side = 132f;
+
+    /// <summary>Ring left free around the thumbnail for the shared selection halo — the same 4px
+    /// <see cref="ThemePreview"/> leaves around its 3×3 grid, which is what lets this card reuse
+    /// <see cref="ThemePreview.DrawSelectionHalo"/> unchanged instead of forking a rounded variant
+    /// of the shelf's one "equipped" affordance.</summary>
+    private const float Inset = 4f;
+
+    /// <summary>Hairline edge between the halo ring and the scene. A backdrop thumbnail is a dark
+    /// rectangle on a dark glass card; without a bezel it reads as a hole in the row rather than an
+    /// object in it. The scene is inset by this much so the plate's border survives around it.</summary>
+    private const float Bezel = 1f;
+
+    /// <summary>Corner radius of the thumbnail. Smaller than <see cref="Palette.RadiusM"/> (14)
+    /// because this plate is 122px, not a full-width card — the same rounding at this size reads as
+    /// a lozenge.</summary>
+    private const int Radius = 10;
+
+    /// <summary>Segments per corner arc in the fallback polygon. Eight puts the faceting error at
+    /// 0.19px on a 10px radius (r·(1−cos 11.25°)), i.e. under the dither noise.</summary>
+    private const int CornerSegments = 8;
+
+    private readonly BackdropStyle _style;
+
+    /// <summary>The rounded plate: the card's silhouette, its bezel, AND — because
+    /// <see cref="CanvasItem.ClipChildren"/> masks children against this control's own drawing — the
+    /// mask that rounds the shader child. Built once per card because its colours come from the
+    /// live palette, and StyleBoxFlat is the only rounded primitive here that anti-aliases.</summary>
+    private readonly StyleBoxFlat _plate;
+
+    /// <summary>Null when the shader is absent or failed to load: the signal to draw the gradient
+    /// fallback in <see cref="_Draw"/>.</summary>
+    private ColorRect? _scene;
+
+    private bool _selected;
+
+    /// <summary>When set, frames the card with an accent halo (the equipped backdrop). Settable
+    /// rather than <c>init</c> like the siblings only so a row can re-mark a card after an equip
+    /// without rebuilding it; the setter has to invalidate, since the halo lives in
+    /// <see cref="_Draw"/> and this control does not redraw per frame (the scene child does).</summary>
+    public bool Selected
+    {
+        get => _selected;
+        set
+        {
+            if (_selected == value) return;
+            _selected = value;
+            QueueRedraw();
+        }
+    }
+
+    public BackdropPreview(BackdropStyle style)
+    {
+        _style = style;
+        MouseFilter = MouseFilterEnum.Ignore;
+        CustomMinimumSize = new Vector2(Side, Side);
+
+        // ClipContents would clip to the RECT and leave square corners; the rounded silhouette
+        // comes from ClipChildren, which masks children against what this node draws (the plate
+        // below). Both rendering methods this game ships (forward_plus desktop / mobile) support
+        // it, and the one documented combination where it misbehaves — a CanvasGroup ancestor —
+        // does not exist anywhere in this project. If a driver ignored it the scene would keep
+        // square corners INSIDE the plate: cosmetic, never a hole in the row.
+        ClipChildren = ClipChildrenMode.AndDraw;
+
+        _plate = new StyleBoxFlat
+        {
+            // Flat top-of-gradient fill. Under a working shader this is only ever visible through
+            // the anti-aliased corner pixels, but it is what a compile failure falls back to, so
+            // it tracks the skin instead of a hardcoded navy (same reasoning as Background's
+            // ColorRect.Color fallback).
+            BgColor = Opaque(Palette.Background),
+            BorderColor = Opaque(Palette.Background).Lerp(Colors.White, 0.20f),
+            AntiAliasing = true,
+            AntiAliasingSize = 1f,
+        };
+        _plate.SetCornerRadiusAll(Radius);
+        _plate.SetBorderWidthAll((int)Bezel);
+    }
+
+    public override void _Ready()
+    {
+        if (!ResourceLoader.Exists(ShaderPath)) return;              // fallback: the plate gradient
+        var shader = ResourceLoader.Load<Shader>(ShaderPath);
+        if (shader is null) return;                                  // ditto — a broken import
+
+        var mat = new ShaderMaterial { Shader = shader };
+        var rect = new ColorRect
+        {
+            // Last-ditch layer: if the shader RESOURCE loads but fails to COMPILE on this GPU,
+            // Godot draws the ColorRect unshaded, and this keeps that state on-palette.
+            Color = Palette.Background,
+            MouseFilter = MouseFilterEnum.Ignore,
+            Material = mat,
+        };
+        // Anchored, not hand-sized: the scene then tracks every row resize with no arithmetic here.
+        // FullRect + margin (never SetAnchorsPreset — see the 0×0 rule in CLAUDE.md §8) leaves the
+        // halo ring and the bezel free.
+        rect.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect, LayoutPresetMode.Minsize,
+                                       (int)(Inset + Bezel));
+        AddChild(rect);
+        _scene = rect;
+
+        mat.SetShaderParameter("pattern", (int)_style);
+        mat.SetShaderParameter("dim", 0f);      // a shelf card is never "during gameplay"
+        mat.SetShaderParameter("motion", Motion.Reduced ? 0f : 1f);
+        // Read live, never cached: this is what makes the card show the scene under the equipped
+        // skin rather than under stock cyan/violet.
+        mat.SetShaderParameter("top_color", Palette.Background);
+        mat.SetShaderParameter("bottom_color", Palette.BgBottom);
+        mat.SetShaderParameter("accent_a", Palette.Accent);
+        mat.SetShaderParameter("accent_b", Palette.AccentViolet);
+
+        // The scenes work in PIXELS, so a stale extent warps every one of them (and the uniform's
+        // 720×1280 default would put this card inside the top-left corner of a phone screen). Seed
+        // it from the known plate size because layout may not have run yet, then re-push on every
+        // resize — exactly the pattern Background.cs uses.
+        mat.SetShaderParameter("size", rect.Size.X > 1f ? rect.Size : PlateSize);
+        rect.Resized += () => mat.SetShaderParameter("size", rect.Size);
+    }
+
+    /// <summary>The thumbnail's size at <see cref="Side"/>, used only to seed the shader before the
+    /// first layout pass.</summary>
+    private static Vector2 PlateSize
+        => new(Side - 2f * (Inset + Bezel), Side - 2f * (Inset + Bezel));
+
+    public override void _Draw()
+    {
+        // Below this there is no thumbnail to speak of, and the fallback polygon's radius would
+        // exceed the rect. (Non-zero layout is guaranteed by CustomMinimumSize; this guards the
+        // one frame before the container's first sort pass.)
+        if (Size.X <= 2f * (Inset + Radius) || Size.Y <= 2f * (Inset + Radius)) return;
+
+        var plate = new Rect2(Inset, Inset, Size.X - 2f * Inset, Size.Y - 2f * Inset);
+        DrawStyleBox(_plate, plate);
+        // Only when there is no shader child to cover it — a gradient under an opaque scene is
+        // wasted vertices on a card that redraws on every resize of a ten-row shelf.
+        if (_scene is null) DrawGradient(plate.Grow(-Bezel), Radius - Bezel);
+
+        // The shelf's one "equipped" mark, shared verbatim with the sibling previews: it sits in
+        // the 4px ring outside the plate, so its square geometry never crosses the rounded corners.
+        // Drawn here rather than on an overlay child on purpose — a child would be clipped away by
+        // the plate mask, which is exactly what ClipChildren is doing for the scene.
+        if (Selected) ThemePreview.DrawSelectionHalo(this, Size);
+    }
+
+    /// <summary>The no-shader fallback: the same two stops the shader interpolates, as a
+    /// per-vertex-coloured rounded polygon. StyleBoxFlat cannot hold a gradient and Godot has no
+    /// gradient draw primitive, so the ramp has to come from vertex colours.</summary>
+    private void DrawGradient(Rect2 r, float radius)
+    {
+        var pts = RoundedPoly(r, radius);
+        var cols = new Color[pts.Length];
+        var top = Opaque(Palette.Background);
+        var bottom = Opaque(Palette.BgBottom);
+        float h = Mathf.Max(r.Size.Y, 1f);
+        for (int i = 0; i < pts.Length; i++)
+            cols[i] = top.Lerp(bottom, Mathf.Clamp((pts[i].Y - r.Position.Y) / h, 0f, 1f));
+        DrawPolygon(pts, cols);
+    }
+
+    /// <summary>
+    /// Force full alpha on a backdrop colour. Not cosmetic paranoia: under
+    /// <see cref="ClipChildrenMode.AndDraw"/> the plate's ALPHA *is* the mask, so a translucent
+    /// <see cref="Palette.Background"/> would not tint the card — it would erase it, scene and all,
+    /// which is the alpha-channel cousin of this project's twice-shipped 0×0 collapse. Two ways
+    /// that happens: a skin declaring a BgTop with alpha (nothing on the theme path clamps it), and
+    /// a card built before <c>Palette.ApplySkin</c> has run, where the skin-driven colours are still
+    /// <c>default(Color)</c> — i.e. transparent, not navy (measured headless: all four read
+    /// (0,0,0,0) at static-init time). Losing the hue is survivable; losing the card is not.
+    /// </summary>
+    private static Color Opaque(Color c) => c.A >= 1f ? c : new Color(c.R, c.G, c.B, 1f);
+
+    /// <summary>Vertices of a rounded rectangle, clockwise from the left end of the top-left arc
+    /// (screen space, +Y down). Convex, so Godot's triangulator fans it and interpolates the vertex
+    /// colours across the fill.</summary>
+    private static Vector2[] RoundedPoly(Rect2 r, float radius)
+    {
+        radius = Mathf.Max(0f, Mathf.Min(radius, Mathf.Min(r.Size.X, r.Size.Y) * 0.5f));
+        // Arc centres in draw order (TL → TR → BR → BL), each sweeping a quarter turn.
+        var centres = new[]
+        {
+            new Vector2(r.Position.X + radius, r.Position.Y + radius),
+            new Vector2(r.End.X - radius, r.Position.Y + radius),
+            new Vector2(r.End.X - radius, r.End.Y - radius),
+            new Vector2(r.Position.X + radius, r.End.Y - radius),
+        };
+
+        var pts = new Vector2[4 * (CornerSegments + 1)];
+        int k = 0;
+        for (int corner = 0; corner < 4; corner++)
+        {
+            float start = Mathf.Pi + corner * Mathf.Pi * 0.5f;   // TL begins pointing left
+            for (int s = 0; s <= CornerSegments; s++)
+            {
+                float a = start + Mathf.Pi * 0.5f * s / CornerSegments;
+                pts[k++] = centres[corner] + new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * radius;
+            }
+        }
+        return pts;
+    }
 }

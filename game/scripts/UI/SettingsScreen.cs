@@ -52,7 +52,7 @@ public partial class SettingsScreen : Control
     /// <summary>Builds (or rebuilds, after a language switch) the whole options tree.</summary>
     private void BuildUi()
     {
-        var scroll = new ScrollContainer { HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
+        var scroll = new TouchScroll { HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
         scroll.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         AddChild(scroll);
 
@@ -84,7 +84,7 @@ public partial class SettingsScreen : Control
         // ---- LANGUAGE (first, so a new player can switch before anything else) --
         BuildLanguageSection(col);
 
-        // ---- SKIN (block colors only — the game screen background never changes) --
+        // ---- SKIN (blocks + UI accent + the backdrop scene — see BuildSkinSection) --
         BuildSkinSection(col);
 
         // ---- AUDIO -----------------------------------------------------------
@@ -149,7 +149,7 @@ public partial class SettingsScreen : Control
         var help = SectionCard(col, "HELP");
         var replay = new Button { Text = Loc.T("REPLAY TUTORIAL"), CustomMinimumSize = new Vector2(0, 46) };
         Motion.BindButtonFeel(replay);
-        replay.Pressed += () => { Bootstrap.Instance.Save.SetSettings(_s); ReplayTutorialRequested?.Invoke(); };
+        TouchScroll.Bind(replay, () => { Bootstrap.Instance.Save.SetSettings(_s); ReplayTutorialRequested?.Invoke(); });
         help.AddChild(replay);
 
         col.AddChild(new Control { CustomMinimumSize = new Vector2(0, 8) });
@@ -160,7 +160,7 @@ public partial class SettingsScreen : Control
             CustomMinimumSize = new Vector2(0, 54),
         };
         Motion.BindButtonFeel(back);
-        back.Pressed += () => { Bootstrap.Instance.Save.SetSettings(_s); BackRequested?.Invoke(); };
+        TouchScroll.Bind(back, () => { Bootstrap.Instance.Save.SetSettings(_s); BackRequested?.Invoke(); });
         col.AddChild(back);
     }
 
@@ -186,7 +186,7 @@ public partial class SettingsScreen : Control
             };
             Motion.BindButtonFeel(b);
             var chosen = lang;
-            b.Pressed += () => SetLanguage(chosen);
+            TouchScroll.Bind(b, () => SetLanguage(chosen));
             row.AddChild(b);
         }
         card.AddChild(row);
@@ -240,13 +240,13 @@ public partial class SettingsScreen : Control
             CustomMinimumSize = new Vector2(0, 46),
         };
         Motion.BindButtonFeel(reset);
-        reset.Pressed += () =>
+        TouchScroll.Bind(reset, () =>
         {
             StopListening();
             KeyBinds.ResetDefaults(_s);
             Bootstrap.Instance.Save.SetSettings(_s);
             RebuildControls();
-        };
+        });
         card.AddChild(reset);
     }
 
@@ -271,7 +271,7 @@ public partial class SettingsScreen : Control
             SizeFlagsVertical = SizeFlags.ShrinkCenter,
         };
         Motion.BindButtonFeel(btn);
-        btn.Pressed += () => StartListening(action, btn);
+        TouchScroll.Bind(btn, () => StartListening(action, btn));
         row.AddChild(btn);
         return row;
     }
@@ -322,16 +322,20 @@ public partial class SettingsScreen : Control
 
     /// <summary>
     /// A gallery of the owned skins (the default + all free ones; any premium the
-    /// player bought too). Picking one retints the blocks instantly and persists via
-    /// <see cref="SaveManager.EquipTheme"/>. The game screen background is NOT part of
-    /// a skin — it stays fixed so piece contrast reads the same under every skin.
+    /// player bought too). Picking one applies instantly and persists via
+    /// <see cref="SaveManager.EquipTheme"/>.
+    /// <para>A skin is app-wide now: blocks, the two decorative UI accents, the backdrop gradient
+    /// and (if the skin ships one) the backdrop scene. The old note here said the background was
+    /// deliberately NOT part of a skin — that freeze was lifted once the play field got its own
+    /// opaque substrate to hold piece contrast (Palette.BoardSubstrate), so the sky no longer has
+    /// to stay still to keep the board readable.</para>
     /// Premium skins live in the Store; this is the free, always-available control.
     /// </summary>
     private void BuildSkinSection(Container parent)
     {
         var card = SectionCard(parent, "SKIN");
 
-        card.AddChild(Hint("BLOCK COLORS · APPLIES INSTANTLY"));
+        card.AddChild(Hint("BLOCKS, MENU ACCENT AND BACKDROP · APPLIES INSTANTLY"));
 
         _skinRows = new VBoxContainer();
         _skinRows.AddThemeConstantOverride("separation", 8);
@@ -399,7 +403,7 @@ public partial class SettingsScreen : Control
         }
 
         b.CustomMinimumSize = new Vector2(0, SkinRowHeight(name, preview));
-        b.Pressed += () => EquipSkin(item);
+        TouchScroll.Bind(b, () => EquipSkin(item));
         return b;
     }
 
@@ -442,8 +446,18 @@ public partial class SettingsScreen : Control
         var save = Bootstrap.Instance.Save;
         if (save.EquippedThemeId == item.Id) return;
         save.EquipTheme(item.Id);
-        Palette.ApplyTheme(item.Theme);                     // retints blocks only — backdrop stays fixed
+        // A set skin brings its burst and its scene, exactly as the store does — one equip path
+        // behaving two ways is how a player ends up with a skin that looks different depending on
+        // which screen they equipped it from.
+        if (item.Theme?.Signature is { } sig) save.EquipArtifact(BurstArtifacts.ToId(sig));
+        if (item.Theme?.Scene is { } scene) save.EquipBackdrop(Backdrops.ToId(scene));
+        Bootstrap.Instance.ApplySkin();                     // pieces + UI accent + backdrop, in one place
         Bootstrap.Instance.Bg.Pulse(Palette.Accent, 0.28f); // equip flourish (Motion.Reduced-gated)
+        // Only the skin rows, deliberately NOT the full Rebuild(): the shared theme (every button,
+        // pill and slider) already followed the new accent in place via UiTheme.Rebuild, and a full
+        // teardown would scroll this long list back to the top — dropping the player away from the
+        // section they are using to try skins on. The handful of build-time accent overrides
+        // elsewhere on the screen catch up on the next visit.
         RebuildSkins();
     }
 
@@ -521,6 +535,12 @@ public partial class SettingsScreen : Control
             CustomMinimumSize = new Vector2(220, 24),
             SizeFlagsHorizontal = SizeFlags.ExpandFill,
             SizeFlagsVertical = SizeFlags.ShrinkCenter,
+            // The wheel belongs to the LIST, not to this control. TouchScroll is the single
+            // implementation of scrolling for its subtree (see its class doc), so leaving the
+            // stock Scrollable on would make one notch over a slider both scroll the page and
+            // rewrite the setting. Drag ownership is handled the other way round — TouchScroll
+            // yields any gesture that starts on a Slider.
+            Scrollable = false,
         };
         var valLabel = new Label
         {
@@ -556,12 +576,12 @@ public partial class SettingsScreen : Control
             SizeFlagsVertical = SizeFlags.ShrinkCenter,
         };
         Motion.BindButtonFeel(btn);
-        btn.Pressed += () =>
+        TouchScroll.Bind(btn, () =>
         {
             idx = (idx + 1) % names.Length;
             btn.Text = Loc.T(names[idx]);
             onChanged(idx);
-        };
+        });
         row.AddChild(btn);
         return row;
     }
@@ -623,13 +643,13 @@ public partial class SettingsScreen : Control
         label.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
 
         Motion.BindButtonFeel(t);
-        t.Toggled += on =>
+        TouchScroll.BindToggle(t, on =>
         {
             pill.AddThemeStyleboxOverride("panel", on ? pillOn : pillOff);
             label.Text = on ? Loc.T("ON") : Loc.T("OFF");
             label.AddThemeColorOverride("font_color", on ? Palette.Accent : Palette.TextSecondary);
             onChanged(on);
-        };
+        });
         return t;
     }
 

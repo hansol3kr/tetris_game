@@ -53,6 +53,14 @@ public partial class BlockFitVersusController : Node2D
     private float _flashTtl;   // callout label fade
     private float _shimmer;    // drives the shared block material breathe/shimmer
 
+    /// <summary>The equipped burst FX. The duel does not run a full <see cref="BurstEngine"/> (it
+    /// has no under-layer and no additive pass), so it cannot play the artifact's SHAPE — but it
+    /// can and now does wear its COLOUR. It used to hard-code gold for both the screen wash and
+    /// the sparks, which broke two rules at once: gold is a semantic accent reserved for
+    /// daily/new-best (see Palette), and a player who equipped a burst saw it everywhere except
+    /// in the one mode that is about being watched.</summary>
+    private BurstArtifact _artifact = BurstArtifacts.FromId(null);
+
     // 44pt on the 720×1280 design canvas (the exit strip carved off the tray band is
     // measured from the button's real minimum size in Layout).
     private const float TouchTarget = 84f;
@@ -65,6 +73,11 @@ public partial class BlockFitVersusController : Node2D
 
     public override void _Ready()
     {
+        // Latched once, exactly like BlockFitController._artifact: a mid-match equip is not
+        // reachable (the store is a different screen) and re-reading per clear would cost a save
+        // lookup on the hottest frame of the mode.
+        _artifact = BurstArtifacts.FromId(Bootstrap.Instance.Save.EquippedArtifactId);
+
         _uiHost = new Control { Name = "UiHost", MouseFilter = Control.MouseFilterEnum.Ignore };
         AddChild(_uiHost);
         UiTheme.ApplyTo(_uiHost);
@@ -457,7 +470,8 @@ public partial class BlockFitVersusController : Node2D
         if (Motion.Reduced || _pCell <= 0) return;
         foreach (int r in _pvRows) Burst(true, r);
         foreach (int c in _pvCols) Burst(false, c);
-        Bootstrap.Instance.Bg.Pulse(Palette.AccentGold, Mathf.Min(0.5f, 0.22f + (_pvRows.Count + _pvCols.Count) * 0.1f));
+        Bootstrap.Instance.Bg.Pulse(BurstArtifacts.AccentOf(_artifact),
+            Mathf.Min(0.5f, BurstArtifacts.PulseOf(_artifact) + (_pvRows.Count + _pvCols.Count) * 0.1f));
     }
 
     private void Burst(bool rowLine, int index)
@@ -477,7 +491,7 @@ public partial class BlockFitVersusController : Node2D
                     Vel = new Vector2(Mathf.Cos(ang), Mathf.Sin(ang)) * spd,
                     Life = _fxRng.RandfRange(0.35f, 0.6f),
                     Size = _fxRng.RandfRange(2.5f, 5f),
-                    Col = new Color(1f, 0.95f, 0.6f),
+                    Col = BurstArtifacts.AccentOf(_artifact),   // sparks match the wash
                 });
             }
         }
@@ -627,7 +641,12 @@ public partial class BlockFitVersusController : Node2D
         float boardPx = cell * n;
         var mat = Palette.EquippedMaterial;
         bool reduced = Motion.Reduced;
-        DrawRect(new Rect2(origin - new Vector2(6, 6), new Vector2(boardPx + 12, boardPx + 12)), new Color(0.05f, 0.06f, 0.11f, 0.85f), filled: true);
+        // Same themed substrate + rim as the solo board (Palette.BoardSubstrate). The duel is
+        // structurally a different screen, so a solo-only change here would have shipped a CPU
+        // match that visibly ignores the equipped skin.
+        var frame = new Rect2(origin - new Vector2(6, 6), new Vector2(boardPx + 12, boardPx + 12));
+        DrawRect(frame, Palette.BoardSubstrate, filled: true);
+        DrawRect(frame, Palette.BoardFrame, filled: false, width: 1.5f);
         for (int r = 0; r < n; r++)
             for (int c = 0; c < n; c++)
             {

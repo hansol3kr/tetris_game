@@ -73,6 +73,23 @@ public static class UiTheme
     /// <summary>Re-apply the theme at a new accessibility text scale (live). Clamped to a sane range.</summary>
     public static void SetScale(float scale) => Init(Mathf.Clamp(scale, 0.8f, 1.6f));
 
+    /// <summary>
+    /// Re-bake every stylebox at the CURRENT text scale. Call after <see cref="Palette.Accent"/>
+    /// changes (i.e. after equipping a skin) so hovers, focus rings, chip toggles, primary-button
+    /// fills, slider grabbers and caret colours all move to the new accent.
+    ///
+    /// <para>Why this is cheap and safe: <see cref="Init"/> mutates the ONE shared
+    /// <see cref="Shared"/> instance in place, so every Control already pointing at it updates
+    /// with no tree walk (the same mechanism the live TEXT SIZE slider rides). And
+    /// <see cref="TextureFactory"/> keys its bake cache on the colours, so a new accent produces
+    /// new entries rather than returning stale ones — the cost is ~20 baked 48×48 textures per
+    /// distinct accent the player equips in a session, once each.</para>
+    ///
+    /// <para>Must NOT be <c>Init()</c> — that overload resets the scale to 1.0 and would silently
+    /// undo the player's accessibility setting on every equip.</para>
+    /// </summary>
+    public static void Rebuild() => Init(_scale);
+
     // ---- Buttons -----------------------------------------------------------
 
     private static void BuildButton(Godot.Theme t)

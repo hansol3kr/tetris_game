@@ -259,10 +259,16 @@ public static class TextureFactory
         });
     }
 
-    /// <summary>Checkbox glyph: rounded square, optionally with an accent check mark.</summary>
+    /// <summary>Checkbox glyph: rounded square, optionally with an accent check mark.
+    /// <para>The key carries <see cref="Palette.Accent"/> because the tick is BAKED in that
+    /// colour. Every other colour-dependent bake here already keys on its colours (glass, fill,
+    /// circle); this one keyed on size alone, which was harmless only while the accent was a
+    /// compile-time constant. Now that a skin drives it, a size-only key would hand back the
+    /// first-equipped accent forever — and re-running <c>UiTheme.Init</c> would not fix it,
+    /// because the stale texture is what the cache returns.</para></summary>
     public static ImageTexture CheckIcon(int px, bool ticked)
     {
-        string key = $"check:{px}:{ticked}";
+        string key = $"check:{px}:{ticked}:{Palette.Accent}";
         var half = new Vector2(px / 2f, px / 2f);
         float radius = px * 0.22f;
         // Check mark segment endpoints (in unit space).

@@ -22,7 +22,7 @@ public partial class VersusSelectScreen : Control
         UiTheme.ApplyTo(this);
         SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
 
-        var scroll = new ScrollContainer { HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
+        var scroll = new TouchScroll { HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
         scroll.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         AddChild(scroll);
 
@@ -73,7 +73,7 @@ public partial class VersusSelectScreen : Control
         onlineText.AddChild(onlineSub);
         onlineContent.AddChild(onlineText);
         online.AddChild(onlineContent);
-        online.Pressed += () => OnlineChosen?.Invoke();
+        TouchScroll.Bind(online, () => OnlineChosen?.Invoke());
         col.AddChild(online);
 
         var hint = new Label
@@ -104,7 +104,7 @@ public partial class VersusSelectScreen : Control
             content.AddChild(name);
             b.AddChild(content);
 
-            b.Pressed += () => DifficultyChosen?.Invoke(d);
+            TouchScroll.Bind(b, () => DifficultyChosen?.Invoke(d));
             col.AddChild(b);
             items.Add(b);
         }
@@ -112,7 +112,7 @@ public partial class VersusSelectScreen : Control
         col.AddChild(new Control { CustomMinimumSize = new Vector2(0, 6) });
         var back = new Button { Text = Loc.T("BACK"), ThemeTypeVariation = "GhostButton", CustomMinimumSize = new Vector2(0, 48) };
         Motion.BindButtonFeel(back);
-        back.Pressed += () => BackRequested?.Invoke();
+        TouchScroll.Bind(back, () => BackRequested?.Invoke());
         col.AddChild(back);
 
         Motion.EnterStagger(items.ToArray(), initialDelay: 0.05f);

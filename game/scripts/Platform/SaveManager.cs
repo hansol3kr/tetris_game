@@ -94,6 +94,9 @@ internal sealed class SaveData
     public string EquippedTheme { get; set; } = "theme_neon_flux";
     /// <summary>Store: the equipped Block Fit burst-FX artifact's item id.</summary>
     public string EquippedArtifact { get; set; } = "artifact_sparks";
+    /// <summary>Store: the equipped backdrop scene's item id. Defaults to the shipped Aurora, so
+    /// a save written before this key existed deserializes to exactly what it used to render.</summary>
+    public string EquippedBackdrop { get; set; } = "scene_aurora";
     /// <summary>Store: consumable booster counts by booster id.</summary>
     public Dictionary<string, int> Boosters { get; set; } = new();
 
@@ -293,9 +296,10 @@ public partial class SaveManager : Node
     {
         if (itemId == StoreCatalog.DefaultThemeId || _data.OwnedItems.Contains(itemId)) return true;
         var item = StoreCatalog.ById(itemId);
-        // Free cosmetics (themes, burst-FX artifacts, sound packs with no store product)
-        // are always owned.
-        return item is { Kind: StoreItemKind.Theme or StoreItemKind.Artifact or StoreItemKind.SoundPack }
+        // Free cosmetics (themes, burst-FX artifacts, backdrop scenes, sound packs with no store
+        // product) are always owned.
+        return item is { Kind: StoreItemKind.Theme or StoreItemKind.Artifact
+                               or StoreItemKind.Backdrop or StoreItemKind.SoundPack }
             && string.IsNullOrEmpty(item.ProductId);
     }
 
@@ -323,6 +327,16 @@ public partial class SaveManager : Node
     {
         if (_data.EquippedArtifact == itemId) return;
         _data.EquippedArtifact = itemId;
+        _dirty = true;
+        Flush();
+    }
+
+    public string EquippedBackdropId => _data.EquippedBackdrop;
+
+    public void EquipBackdrop(string itemId)
+    {
+        if (_data.EquippedBackdrop == itemId) return;
+        _data.EquippedBackdrop = itemId;
         _dirty = true;
         Flush();
     }

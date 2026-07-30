@@ -3,10 +3,14 @@ using Blockfall.Theme;
 
 namespace Blockfall.Platform;
 
+/// <summary>What shelf an item sits on. Not persisted anywhere (the save stores ids), so the
+/// order is free — but <see cref="UI.StoreScreen"/> derives its category tabs from this set, so
+/// a new value is a new tab and needs a row builder to go with it.</summary>
 public enum StoreItemKind
 {
-    Theme,       // permanent cosmetic (block palette + backdrop + optional glyph)
+    Theme,       // permanent cosmetic (block palette + finish + optional glyph)
     Artifact,    // permanent cosmetic (Block Fit line-clear burst style)
+    Backdrop,    // permanent cosmetic (the procedural scene behind every screen and the board)
     SoundPack,   // permanent cosmetic (placement timbre) — always free, see below
     BoosterPack, // consumable bundle (adds N uses)
     RemoveAds,   // permanent entitlement (mobile)
@@ -73,7 +77,8 @@ public static class StoreCatalog
                 T: new Color(0.70f, 0.55f, 1.00f), S: new Color(0.45f, 0.95f, 0.60f),
                 Z: new Color(1.00f, 0.45f, 0.55f), J: new Color(0.45f, 0.70f, 1.00f),
                 L: new Color(1.00f, 0.70f, 0.40f),
-                BgTop: new Color(0.016f, 0.063f, 0.063f), BgBottom: new Color(0.043f, 0.133f, 0.118f)),
+                BgTop: new Color(0.016f, 0.063f, 0.063f), BgBottom: new Color(0.043f, 0.133f, 0.118f),
+                Accent: new Color(0.35f, 0.95f, 0.90f), Accent2: new Color(0.45f, 0.75f, 1.00f)),
         },
         new()
         {
@@ -85,7 +90,9 @@ public static class StoreCatalog
                 T: new Color(0.65f, 0.60f, 1.00f), S: new Color(0.40f, 0.95f, 0.70f),
                 Z: new Color(1.00f, 0.50f, 0.60f), J: new Color(0.40f, 0.65f, 1.00f),
                 L: new Color(1.00f, 0.68f, 0.42f),
-                BgTop: new Color(0.016f, 0.039f, 0.098f), BgBottom: new Color(0.031f, 0.090f, 0.200f)),
+                BgTop: new Color(0.016f, 0.039f, 0.098f), BgBottom: new Color(0.031f, 0.090f, 0.200f),
+                Scene: BackdropStyle.Waves,
+                Accent: new Color(0.30f, 0.85f, 1.00f), Accent2: new Color(0.38f, 0.62f, 1.00f)),
         },
         new()
         {
@@ -97,7 +104,9 @@ public static class StoreCatalog
                 T: new Color(0.90f, 0.50f, 0.95f), S: new Color(0.55f, 0.90f, 0.55f),
                 Z: new Color(1.00f, 0.42f, 0.45f), J: new Color(0.50f, 0.60f, 1.00f),
                 L: new Color(1.00f, 0.60f, 0.30f),
-                BgTop: new Color(0.090f, 0.020f, 0.031f), BgBottom: new Color(0.180f, 0.043f, 0.063f)),
+                BgTop: new Color(0.090f, 0.020f, 0.031f), BgBottom: new Color(0.180f, 0.043f, 0.063f),
+                Scene: BackdropStyle.Embers,
+                Accent: new Color(1.00f, 0.45f, 0.45f), Accent2: new Color(0.95f, 0.35f, 0.62f)),
         },
         new()
         {
@@ -109,7 +118,9 @@ public static class StoreCatalog
                 T: new Color(0.65f, 0.40f, 1.00f), S: new Color(0.35f, 0.95f, 0.85f),
                 Z: new Color(1.00f, 0.30f, 0.55f), J: new Color(0.45f, 0.55f, 1.00f),
                 L: new Color(1.00f, 0.60f, 0.35f),
-                BgTop: new Color(0.063f, 0.020f, 0.100f), BgBottom: new Color(0.137f, 0.043f, 0.200f)),
+                BgTop: new Color(0.063f, 0.020f, 0.100f), BgBottom: new Color(0.137f, 0.043f, 0.200f),
+                Scene: BackdropStyle.Grid,
+                Accent: new Color(1.00f, 0.35f, 0.75f), Accent2: new Color(0.30f, 0.90f, 1.00f)),
         },
         new()
         {
@@ -121,7 +132,8 @@ public static class StoreCatalog
                 T: new Color(0.75f, 0.65f, 1.00f), S: new Color(0.55f, 0.95f, 0.70f),
                 Z: new Color(1.00f, 0.55f, 0.65f), J: new Color(0.55f, 0.75f, 1.00f),
                 L: new Color(1.00f, 0.75f, 0.50f),
-                BgTop: new Color(0.020f, 0.070f, 0.063f), BgBottom: new Color(0.047f, 0.129f, 0.110f)),
+                BgTop: new Color(0.020f, 0.070f, 0.063f), BgBottom: new Color(0.047f, 0.129f, 0.110f),
+                Accent: new Color(0.45f, 0.95f, 0.85f), Accent2: new Color(0.75f, 0.65f, 1.00f)),
         },
         new()
         {
@@ -133,7 +145,9 @@ public static class StoreCatalog
                 T: new Color(1.00f, 0.55f, 0.75f), S: new Color(0.70f, 0.90f, 0.45f),
                 Z: new Color(1.00f, 0.45f, 0.35f), J: new Color(0.60f, 0.60f, 1.00f),
                 L: new Color(1.00f, 0.65f, 0.25f),
-                BgTop: new Color(0.090f, 0.050f, 0.020f), BgBottom: new Color(0.160f, 0.090f, 0.040f)),
+                BgTop: new Color(0.090f, 0.050f, 0.020f), BgBottom: new Color(0.160f, 0.090f, 0.040f),
+                Scene: BackdropStyle.Embers,
+                Accent: new Color(1.00f, 0.58f, 0.22f), Accent2: new Color(1.00f, 0.42f, 0.30f)),
         },
         // Emoji-like glyph skins (free): vivid palettes that also stamp a cute mark on
         // every block. The glyph reads globally through Palette.EquippedGlyph.
@@ -148,7 +162,8 @@ public static class StoreCatalog
                 Z: new Color(1.00f, 0.40f, 0.50f), J: new Color(0.40f, 0.60f, 1.00f),
                 L: new Color(1.00f, 0.60f, 0.25f),
                 BgTop: new Color(0.055f, 0.035f, 0.075f), BgBottom: new Color(0.120f, 0.070f, 0.140f),
-                Glyph: SkinGlyph.Smile),
+                Glyph: SkinGlyph.Smile, Scene: BackdropStyle.Bokeh,
+                Accent: new Color(0.35f, 0.90f, 1.00f), Accent2: new Color(1.00f, 0.55f, 0.90f)),
         },
         new()
         {
@@ -161,7 +176,8 @@ public static class StoreCatalog
                 Z: new Color(1.00f, 0.50f, 0.70f), J: new Color(0.50f, 0.65f, 1.00f),
                 L: new Color(1.00f, 0.70f, 0.40f),
                 BgTop: new Color(0.020f, 0.024f, 0.075f), BgBottom: new Color(0.050f, 0.055f, 0.160f),
-                Glyph: SkinGlyph.Star),
+                Glyph: SkinGlyph.Star, Scene: BackdropStyle.Starfield,
+                Accent: new Color(0.55f, 0.85f, 1.00f), Accent2: new Color(0.75f, 0.60f, 1.00f)),
         },
         new()
         {
@@ -174,7 +190,8 @@ public static class StoreCatalog
                 Z: new Color(1.00f, 0.40f, 0.55f), J: new Color(0.65f, 0.60f, 1.00f),
                 L: new Color(1.00f, 0.60f, 0.55f),
                 BgTop: new Color(0.090f, 0.030f, 0.055f), BgBottom: new Color(0.170f, 0.055f, 0.100f),
-                Glyph: SkinGlyph.Heart),
+                Glyph: SkinGlyph.Heart, Scene: BackdropStyle.Bokeh,
+                Accent: new Color(1.00f, 0.55f, 0.80f), Accent2: new Color(0.75f, 0.60f, 1.00f)),
         },
         new()
         {
@@ -187,7 +204,8 @@ public static class StoreCatalog
                 Z: new Color(1.00f, 0.45f, 0.60f), J: new Color(0.45f, 0.70f, 1.00f),
                 L: new Color(1.00f, 0.65f, 0.30f),
                 BgTop: new Color(0.025f, 0.065f, 0.045f), BgBottom: new Color(0.055f, 0.130f, 0.090f),
-                Glyph: SkinGlyph.Flower),
+                Glyph: SkinGlyph.Flower, Scene: BackdropStyle.Bokeh,
+                Accent: new Color(0.50f, 0.95f, 0.70f), Accent2: new Color(0.85f, 0.60f, 1.00f)),
         },
         new()
         {
@@ -200,7 +218,8 @@ public static class StoreCatalog
                 Z: new Color(1.00f, 0.35f, 0.45f), J: new Color(0.35f, 0.65f, 1.00f),
                 L: new Color(1.00f, 0.60f, 0.20f),
                 BgTop: new Color(0.030f, 0.035f, 0.055f), BgBottom: new Color(0.070f, 0.080f, 0.120f),
-                Glyph: SkinGlyph.Bolt),
+                Glyph: SkinGlyph.Bolt, Scene: BackdropStyle.Circuit,
+                Accent: new Color(0.30f, 1.00f, 1.00f), Accent2: new Color(0.55f, 1.00f, 0.45f)),
         },
         new()
         {
@@ -213,7 +232,8 @@ public static class StoreCatalog
                 Z: new Color(1.00f, 0.36f, 0.36f), J: new Color(0.49f, 0.55f, 1.00f),
                 L: new Color(1.00f, 0.58f, 0.25f),
                 BgTop: new Color(0.094f, 0.039f, 0.118f), BgBottom: new Color(0.200f, 0.063f, 0.180f),
-                Material: CellMaterial.Pearl),
+                Material: CellMaterial.Pearl, Scene: BackdropStyle.Rays,
+                Accent: new Color(1.00f, 0.55f, 0.80f), Accent2: new Color(0.70f, 0.50f, 1.00f)),
         },
         new()
         {
@@ -226,7 +246,8 @@ public static class StoreCatalog
                 Z: new Color(0.97f, 0.44f, 0.44f), J: new Color(0.38f, 0.65f, 0.98f),
                 L: new Color(0.98f, 0.71f, 0.36f),
                 BgTop: new Color(0.016f, 0.078f, 0.055f), BgBottom: new Color(0.043f, 0.165f, 0.118f),
-                Material: CellMaterial.Gemstone),
+                Material: CellMaterial.Gemstone, Scene: BackdropStyle.Waves,
+                Accent: new Color(0.30f, 0.92f, 0.78f), Accent2: new Color(0.45f, 0.70f, 1.00f)),
         },
         new()
         {
@@ -239,7 +260,8 @@ public static class StoreCatalog
                 Z: new Color(0.53f, 0.53f, 0.60f), J: new Color(0.83f, 0.86f, 0.93f),
                 L: new Color(0.60f, 0.65f, 0.75f),
                 BgTop: new Color(0.039f, 0.039f, 0.055f), BgBottom: new Color(0.102f, 0.102f, 0.141f),
-                Material: CellMaterial.Metallic),
+                Material: CellMaterial.Metallic, Scene: BackdropStyle.Circuit,
+                Accent: new Color(0.85f, 0.88f, 0.95f), Accent2: new Color(0.62f, 0.67f, 0.80f)),
         },
         // ---- Material skins: the "finish" axis (each feels like a different physical object) ----
         new()
@@ -253,7 +275,8 @@ public static class StoreCatalog
                 Z: new Color(1.00f, 0.65f, 0.75f), J: new Color(0.70f, 0.80f, 1.00f),
                 L: new Color(1.00f, 0.80f, 0.70f),
                 BgTop: new Color(0.10f, 0.05f, 0.10f), BgBottom: new Color(0.20f, 0.10f, 0.20f),
-                Glyph: SkinGlyph.Heart, Material: CellMaterial.Pearl),
+                Glyph: SkinGlyph.Heart, Material: CellMaterial.Pearl, Scene: BackdropStyle.Bokeh,
+                Accent: new Color(1.00f, 0.70f, 0.92f), Accent2: new Color(0.60f, 0.90f, 1.00f)),
         },
         new()
         {
@@ -266,7 +289,8 @@ public static class StoreCatalog
                 Z: new Color(1.00f, 0.75f, 0.80f), J: new Color(0.60f, 0.75f, 1.00f),
                 L: new Color(0.95f, 0.82f, 0.70f),
                 BgTop: new Color(0.02f, 0.05f, 0.09f), BgBottom: new Color(0.05f, 0.11f, 0.18f),
-                Material: CellMaterial.Frosted),
+                Material: CellMaterial.Frosted, Scene: BackdropStyle.Starfield,
+                Accent: new Color(0.60f, 0.85f, 1.00f), Accent2: new Color(0.80f, 0.75f, 1.00f)),
         },
         new()
         {
@@ -279,7 +303,8 @@ public static class StoreCatalog
                 Z: new Color(1.00f, 0.50f, 0.70f), J: new Color(0.45f, 0.60f, 1.00f),
                 L: new Color(1.00f, 0.65f, 0.45f),
                 BgTop: new Color(0.03f, 0.02f, 0.09f), BgBottom: new Color(0.08f, 0.04f, 0.18f),
-                Glyph: SkinGlyph.Star, Material: CellMaterial.Starfield),
+                Glyph: SkinGlyph.Star, Material: CellMaterial.Starfield, Scene: BackdropStyle.Starfield,
+                Accent: new Color(0.60f, 0.70f, 1.00f), Accent2: new Color(0.75f, 0.55f, 1.00f)),
         },
         new()
         {
@@ -292,7 +317,9 @@ public static class StoreCatalog
                 Z: new Color(0.85f, 0.55f, 0.55f), J: new Color(0.45f, 0.60f, 0.85f),
                 L: new Color(0.85f, 0.70f, 0.50f),
                 BgTop: new Color(0.02f, 0.05f, 0.06f), BgBottom: new Color(0.04f, 0.10f, 0.11f),
-                Glyph: SkinGlyph.Bolt, Material: CellMaterial.Metallic, EdgeTint: new Color(0.25f, 0.95f, 0.85f, 0.7f)),
+                Glyph: SkinGlyph.Bolt, Material: CellMaterial.Metallic, EdgeTint: new Color(0.25f, 0.95f, 0.85f, 0.7f),
+                Scene: BackdropStyle.Circuit,
+                Accent: new Color(0.25f, 0.95f, 0.85f), Accent2: new Color(0.55f, 0.75f, 0.92f)),
         },
         new()
         {
@@ -305,7 +332,8 @@ public static class StoreCatalog
                 Z: new Color(1.00f, 0.45f, 0.60f), J: new Color(0.45f, 0.65f, 1.00f),
                 L: new Color(1.00f, 0.65f, 0.35f),
                 BgTop: new Color(0.04f, 0.03f, 0.09f), BgBottom: new Color(0.10f, 0.06f, 0.18f),
-                Glyph: SkinGlyph.Gem, Material: CellMaterial.Holographic),
+                Glyph: SkinGlyph.Gem, Material: CellMaterial.Holographic, Scene: BackdropStyle.Nebula,
+                Accent: new Color(0.50f, 0.95f, 1.00f), Accent2: new Color(0.90f, 0.55f, 1.00f)),
         },
         new()
         {
@@ -318,7 +346,9 @@ public static class StoreCatalog
                 Z: new Color(0.48f, 0.18f, 0.24f), J: new Color(0.18f, 0.26f, 0.48f),
                 L: new Color(0.48f, 0.32f, 0.16f),
                 BgTop: new Color(0.02f, 0.02f, 0.03f), BgBottom: new Color(0.05f, 0.05f, 0.07f),
-                Glyph: SkinGlyph.Gem, Material: CellMaterial.Gemstone, EdgeTint: new Color(0.55f, 0.72f, 1.00f, 0.8f)),
+                Glyph: SkinGlyph.Gem, Material: CellMaterial.Gemstone, EdgeTint: new Color(0.55f, 0.72f, 1.00f, 0.8f),
+                Scene: BackdropStyle.Nebula,
+                Accent: new Color(0.60f, 0.75f, 1.00f), Accent2: new Color(0.85f, 0.60f, 1.00f)),
         },
         // ---- Glyph skins showcasing the new embossed roster (free) ----
         new()
@@ -332,7 +362,8 @@ public static class StoreCatalog
                 Z: new Color(1.00f, 0.55f, 0.60f), J: new Color(0.65f, 0.70f, 1.00f),
                 L: new Color(1.00f, 0.72f, 0.55f),
                 BgTop: new Color(0.09f, 0.05f, 0.06f), BgBottom: new Color(0.17f, 0.10f, 0.12f),
-                Glyph: SkinGlyph.Cat, Material: CellMaterial.Pearl),
+                Glyph: SkinGlyph.Cat, Material: CellMaterial.Pearl, Scene: BackdropStyle.Bokeh,
+                Accent: new Color(1.00f, 0.68f, 0.85f), Accent2: new Color(0.70f, 0.85f, 1.00f)),
         },
         new()
         {
@@ -345,7 +376,8 @@ public static class StoreCatalog
                 Z: new Color(1.00f, 0.50f, 0.65f), J: new Color(0.55f, 0.60f, 1.00f),
                 L: new Color(1.00f, 0.68f, 0.40f),
                 BgTop: new Color(0.06f, 0.03f, 0.09f), BgBottom: new Color(0.13f, 0.07f, 0.18f),
-                Glyph: SkinGlyph.Crown),
+                Glyph: SkinGlyph.Crown, Scene: BackdropStyle.Rays,
+                Accent: new Color(0.80f, 0.55f, 1.00f), Accent2: new Color(0.55f, 0.62f, 1.00f)),
         },
         new()
         {
@@ -358,7 +390,8 @@ public static class StoreCatalog
                 Z: new Color(1.00f, 0.55f, 0.70f), J: new Color(0.50f, 0.62f, 1.00f),
                 L: new Color(1.00f, 0.72f, 0.45f),
                 BgTop: new Color(0.02f, 0.02f, 0.08f), BgBottom: new Color(0.06f, 0.05f, 0.17f),
-                Glyph: SkinGlyph.Moon),
+                Glyph: SkinGlyph.Moon, Scene: BackdropStyle.Starfield,
+                Accent: new Color(0.60f, 0.72f, 1.00f), Accent2: new Color(0.70f, 0.55f, 1.00f)),
         },
         new()
         {
@@ -371,7 +404,8 @@ public static class StoreCatalog
                 Z: new Color(1.00f, 0.55f, 0.55f), J: new Color(0.45f, 0.72f, 1.00f),
                 L: new Color(1.00f, 0.70f, 0.35f),
                 BgTop: new Color(0.02f, 0.07f, 0.04f), BgBottom: new Color(0.05f, 0.14f, 0.09f),
-                Glyph: SkinGlyph.Clover),
+                Glyph: SkinGlyph.Clover, Scene: BackdropStyle.Bokeh,
+                Accent: new Color(0.50f, 0.95f, 0.60f), Accent2: new Color(0.45f, 0.80f, 1.00f)),
         },
         new()
         {
@@ -384,7 +418,8 @@ public static class StoreCatalog
                 Z: new Color(1.00f, 0.45f, 0.45f), J: new Color(0.55f, 0.55f, 1.00f),
                 L: new Color(1.00f, 0.60f, 0.25f),
                 BgTop: new Color(0.04f, 0.05f, 0.03f), BgBottom: new Color(0.09f, 0.11f, 0.07f),
-                Glyph: SkinGlyph.Skull),
+                Glyph: SkinGlyph.Skull, Scene: BackdropStyle.Nebula,
+                Accent: new Color(0.60f, 1.00f, 0.55f), Accent2: new Color(0.75f, 0.45f, 1.00f)),
         },
         new()
         {
@@ -397,7 +432,8 @@ public static class StoreCatalog
                 Z: new Color(1.00f, 0.40f, 0.50f), J: new Color(0.40f, 0.60f, 1.00f),
                 L: new Color(1.00f, 0.60f, 0.25f),
                 BgTop: new Color(0.05f, 0.04f, 0.07f), BgBottom: new Color(0.11f, 0.08f, 0.15f),
-                Glyph: SkinGlyph.Rainbow),
+                Glyph: SkinGlyph.Rainbow, Scene: BackdropStyle.Rays,
+                Accent: new Color(0.40f, 0.90f, 1.00f), Accent2: new Color(1.00f, 0.50f, 0.85f)),
         },
         // ---- ColorPlan skins: the "how many colours" axis --------------------------------
         // Every skin above is a permutation of the same 7-hue rainbow, which is why they blur
@@ -422,7 +458,8 @@ public static class StoreCatalog
                 Z: new Color(0.549f, 0.353f, 0.200f), J: new Color(0.788f, 0.561f, 0.322f),
                 L: new Color(0.890f, 0.729f, 0.522f),
                 BgTop: new Color(0.055f, 0.040f, 0.028f), BgBottom: new Color(0.115f, 0.082f, 0.055f),
-                Material: CellMaterial.Wood, Plan: ColorPlan.Trio),
+                Material: CellMaterial.Wood, Plan: ColorPlan.Trio, Scene: BackdropStyle.Bokeh,
+                Accent: new Color(0.90f, 0.72f, 0.48f), Accent2: new Color(0.72f, 0.85f, 0.60f)),
         },
         new()
         {
@@ -435,7 +472,8 @@ public static class StoreCatalog
                 Z: new Color(0.580f, 0.596f, 0.651f), J: new Color(0.514f, 0.529f, 0.588f),
                 L: new Color(0.447f, 0.463f, 0.525f),
                 BgTop: new Color(0.035f, 0.036f, 0.043f), BgBottom: new Color(0.082f, 0.086f, 0.102f),
-                Material: CellMaterial.Frosted, Plan: ColorPlan.Mono),
+                Material: CellMaterial.Frosted, Plan: ColorPlan.Mono, Scene: BackdropStyle.Rain,
+                Accent: new Color(0.82f, 0.85f, 0.92f), Accent2: new Color(0.58f, 0.63f, 0.75f)),
         },
         new()
         {
@@ -448,7 +486,8 @@ public static class StoreCatalog
                 Z: new Color(1.000f, 0.337f, 0.784f), J: new Color(0.247f, 0.910f, 1.000f),
                 L: new Color(1.000f, 0.337f, 0.784f),
                 BgTop: new Color(0.040f, 0.020f, 0.062f), BgBottom: new Color(0.090f, 0.043f, 0.130f),
-                Material: CellMaterial.NeonTube, Plan: ColorPlan.Duo),
+                Material: CellMaterial.NeonTube, Plan: ColorPlan.Duo, Scene: BackdropStyle.Grid,
+                Accent: new Color(0.25f, 0.91f, 1.00f), Accent2: new Color(1.00f, 0.34f, 0.78f)),
         },
         new()
         {
@@ -462,7 +501,9 @@ public static class StoreCatalog
                 L: new Color(0.640f, 0.620f, 1.000f),
                 BgTop: new Color(0.030f, 0.030f, 0.070f), BgBottom: new Color(0.070f, 0.055f, 0.145f),
                 Material: CellMaterial.Holographic, Plan: ColorPlan.BoardGradient,
-                EdgeTint: new Color(1.000f, 0.851f, 0.941f, 0.35f)),
+                EdgeTint: new Color(1.000f, 0.851f, 0.941f, 0.35f),
+                Scene: BackdropStyle.Rays,
+                Accent: new Color(0.45f, 0.80f, 1.00f), Accent2: new Color(0.78f, 0.50f, 1.00f)),
         },
         // ---- The ANIMAL SETS: colour + material + glyph + burst, sold as one thing -------
         // The previous wave proved the material axis; these three prove the SET. A skin here is
@@ -479,7 +520,7 @@ public static class StoreCatalog
         {
             Id = "theme_pelt", ProductId = "", Kind = StoreItemKind.Theme,
             Name = "PELT", Blurb = "BONE, FOX AND CHARCOAL. MATTE STRAND GRAIN — IT SHEDS, IT DOESN'T SHATTER.",
-            PriceLabel = "FREE", IsNew = true,
+            PriceLabel = "FREE",
             // Anchors moved OUT of the timber band (hue ~30 deg, compressed mid-luma) that OAK
             // already owns. At arm's length luma rhythm reads before hue: OAK runs 0.531/0.327/0.131
             // (compressed mids), PELT now runs 0.776/0.138/0.073 (high-contrast three-step).
@@ -496,7 +537,9 @@ public static class StoreCatalog
                 BgTop: new Color(0.055f, 0.038f, 0.030f), BgBottom: new Color(0.118f, 0.082f, 0.062f),
                 Glyph: SkinGlyph.Paw, Material: CellMaterial.Pelt,
                 EdgeTint: new Color(1.000f, 0.780f, 0.500f, 0.30f),
-                Plan: ColorPlan.Trio, Signature: BurstArtifact.Fluff),
+                Plan: ColorPlan.Trio, Signature: BurstArtifact.Fluff,
+                Scene: BackdropStyle.Bokeh,
+                Accent: new Color(0.95f, 0.75f, 0.55f), Accent2: new Color(0.87f, 0.45f, 0.28f)),
         },
         new()
         {
@@ -510,7 +553,7 @@ public static class StoreCatalog
             // already equipped it, and a display name is not worth orphaning that.
             Id = "theme_serpentine", ProductId = "", Kind = StoreItemKind.Theme,
             Name = "DORSAL", Blurb = "ONE BODY ACROSS THE WHOLE BOARD. WET OVERLAPPING SCALES.",
-            PriceLabel = "FREE", IsNew = true,
+            PriceLabel = "FREE",
             Theme = new BlockTheme("theme_serpentine",
                 I: new Color(0.267f, 0.855f, 0.788f), O: new Color(0.400f, 0.780f, 0.700f),
                 T: new Color(0.180f, 0.235f, 0.545f), S: new Color(0.290f, 0.640f, 0.760f),
@@ -519,13 +562,15 @@ public static class StoreCatalog
                 BgTop: new Color(0.012f, 0.043f, 0.055f), BgBottom: new Color(0.027f, 0.086f, 0.110f),
                 Glyph: SkinGlyph.Fin, Material: CellMaterial.Scale,
                 EdgeTint: new Color(0.600f, 1.000f, 0.950f, 0.45f),
-                Plan: ColorPlan.BoardGradient, Signature: BurstArtifact.Splash),
+                Plan: ColorPlan.BoardGradient, Signature: BurstArtifact.Splash,
+                Scene: BackdropStyle.Waves,
+                Accent: new Color(0.35f, 0.90f, 0.85f), Accent2: new Color(0.30f, 0.58f, 0.85f)),
         },
         new()
         {
             Id = "theme_carapace", ProductId = "com.blockfall.theme.carapace", Kind = StoreItemKind.Theme,
             Name = "CARAPACE", Blurb = "ONE LACQUERED HUE, SEVEN RUNGS. THE HARDEST BOARD IN THE GAME.",
-            PriceLabel = "US$2.99", IsNew = true,
+            PriceLabel = "US$2.99",
             Theme = new BlockTheme("theme_carapace",
                 I: new Color(0.353f, 0.690f, 0.478f), O: new Color(0.500f, 0.750f, 0.400f),
                 T: new Color(0.250f, 0.560f, 0.420f), S: new Color(0.180f, 0.440f, 0.330f),
@@ -534,7 +579,137 @@ public static class StoreCatalog
                 BgTop: new Color(0.020f, 0.035f, 0.028f), BgBottom: new Color(0.045f, 0.075f, 0.058f),
                 Glyph: SkinGlyph.Elytra, Material: CellMaterial.Chitin,
                 EdgeTint: new Color(0.550f, 1.000f, 0.850f, 0.75f),
-                Plan: ColorPlan.Mono, Signature: BurstArtifact.Swarm),
+                Plan: ColorPlan.Mono, Signature: BurstArtifact.Swarm,
+                Scene: BackdropStyle.Circuit,
+                Accent: new Color(0.45f, 0.90f, 0.62f), Accent2: new Color(0.68f, 0.87f, 0.32f)),
+        },
+        // ---- The SCENE SETS: skins built around a backdrop ------------------------------
+        // The wave that follows the animal sets, and the first one authored AFTER the backdrop
+        // became a cosmetic axis. Each of these is a skin designed backwards from a scene: the
+        // gradient is the scene's sky, the piece colours are what reads against it, the material
+        // is what the scene's light would do to a solid object, and the burst is what that object
+        // does when it breaks. Equipping one changes the menu, the store, the board and the space
+        // around the board at once — which is the whole point of the axis.
+        //
+        // All free, deliberately. MobilePlatform.PurchaseItem still completes without a billing
+        // plugin (Platforms.cs), so every paid SKU is a grant-for-free bug waiting for the day a
+        // real plugin lands; a fifteen-item wave is not the place to add fifteen more of them.
+        // Pricing is publishing's call once billing is real — until then the shelf is honest.
+        new()
+        {
+            Id = "theme_night_drive", ProductId = "", Kind = StoreItemKind.Theme,
+            Name = "NIGHT DRIVE", Blurb = "TWO GASES IN GLASS OVER A LIT FLOOR RUNNING TO THE HORIZON.",
+            PriceLabel = "FREE", IsNew = true,
+            Theme = new BlockTheme("theme_night_drive",
+                I: new Color(0.216f, 0.949f, 1.000f), O: new Color(1.000f, 0.216f, 0.667f),
+                T: new Color(0.216f, 0.949f, 1.000f), S: new Color(1.000f, 0.216f, 0.667f),
+                Z: new Color(1.000f, 0.216f, 0.667f), J: new Color(0.216f, 0.949f, 1.000f),
+                L: new Color(1.000f, 0.216f, 0.667f),
+                BgTop: new Color(0.043f, 0.016f, 0.075f), BgBottom: new Color(0.098f, 0.035f, 0.153f),
+                Glyph: SkinGlyph.Bolt, Material: CellMaterial.NeonTube,
+                EdgeTint: new Color(1.000f, 0.400f, 0.850f, 0.55f),
+                Plan: ColorPlan.Duo, Signature: BurstArtifact.Lightning,
+                Scene: BackdropStyle.Grid,
+                Accent: new Color(1.00f, 0.35f, 0.80f), Accent2: new Color(0.30f, 0.92f, 1.00f)),
+        },
+        new()
+        {
+            Id = "theme_deep_signal", ProductId = "", Kind = StoreItemKind.Theme,
+            Name = "DEEP SIGNAL", Blurb = "BRUSHED METAL ON A LIVE BOARD. THE TRACES ARE STILL CARRYING SOMETHING.",
+            PriceLabel = "FREE", IsNew = true,
+            Theme = new BlockTheme("theme_deep_signal",
+                I: new Color(0.204f, 0.855f, 0.749f), O: new Color(0.478f, 0.878f, 0.298f),
+                T: new Color(0.478f, 0.878f, 0.298f), S: new Color(0.145f, 0.420f, 0.478f),
+                Z: new Color(0.145f, 0.420f, 0.478f), J: new Color(0.204f, 0.855f, 0.749f),
+                L: new Color(0.478f, 0.878f, 0.298f),
+                BgTop: new Color(0.008f, 0.043f, 0.047f), BgBottom: new Color(0.020f, 0.086f, 0.094f),
+                Glyph: SkinGlyph.Gem, Material: CellMaterial.Metallic,
+                EdgeTint: new Color(0.350f, 1.000f, 0.850f, 0.70f),
+                Plan: ColorPlan.Trio, Signature: BurstArtifact.Glitch,
+                Scene: BackdropStyle.Circuit,
+                Accent: new Color(0.20f, 0.90f, 0.78f), Accent2: new Color(0.60f, 0.95f, 0.35f)),
+        },
+        new()
+        {
+            Id = "theme_hanami", ProductId = "", Kind = StoreItemKind.Theme,
+            Name = "HANAMI", Blurb = "PEARL BLOSSOMS UNDER DRIFTING LIGHTS. NOTHING HERE IS IN A HURRY.",
+            PriceLabel = "FREE", IsNew = true,
+            Theme = new BlockTheme("theme_hanami",
+                I: new Color(0.600f, 0.900f, 1.000f), O: new Color(1.000f, 0.900f, 0.650f),
+                T: new Color(1.000f, 0.700f, 0.900f), S: new Color(0.750f, 0.950f, 0.750f),
+                Z: new Color(1.000f, 0.600f, 0.720f), J: new Color(0.720f, 0.780f, 1.000f),
+                L: new Color(1.000f, 0.800f, 0.700f),
+                BgTop: new Color(0.075f, 0.035f, 0.055f), BgBottom: new Color(0.145f, 0.075f, 0.110f),
+                Glyph: SkinGlyph.Flower, Material: CellMaterial.Pearl,
+                Signature: BurstArtifact.Petals,
+                Scene: BackdropStyle.Bokeh,
+                Accent: new Color(1.00f, 0.62f, 0.80f), Accent2: new Color(0.78f, 0.60f, 1.00f)),
+        },
+        new()
+        {
+            Id = "theme_monsoon", ProductId = "", Kind = StoreItemKind.Theme,
+            Name = "MONSOON", Blurb = "ONE STEEL INK, SEVEN RUNGS, AND RAIN THAT DOES NOT LET UP.",
+            PriceLabel = "FREE",
+            Theme = new BlockTheme("theme_monsoon",
+                I: new Color(0.780f, 0.847f, 0.918f), O: new Color(0.714f, 0.784f, 0.859f),
+                T: new Color(0.647f, 0.722f, 0.800f), S: new Color(0.580f, 0.659f, 0.741f),
+                Z: new Color(0.510f, 0.596f, 0.682f), J: new Color(0.443f, 0.533f, 0.624f),
+                L: new Color(0.376f, 0.471f, 0.565f),
+                BgTop: new Color(0.016f, 0.027f, 0.043f), BgBottom: new Color(0.039f, 0.063f, 0.098f),
+                Material: CellMaterial.Frosted,
+                Plan: ColorPlan.Mono, Signature: BurstArtifact.Ink,
+                Scene: BackdropStyle.Rain,
+                Accent: new Color(0.52f, 0.72f, 0.95f), Accent2: new Color(0.45f, 0.52f, 0.88f)),
+        },
+        new()
+        {
+            Id = "theme_forge", ProductId = "", Kind = StoreItemKind.Theme,
+            Name = "FORGE", Blurb = "HOT METAL, COOLING METAL, AND SLAG. IT THROWS SPARKS WHEN IT BREAKS.",
+            PriceLabel = "FREE",
+            Theme = new BlockTheme("theme_forge",
+                I: new Color(1.000f, 0.816f, 0.400f), O: new Color(0.878f, 0.318f, 0.098f),
+                T: new Color(0.878f, 0.318f, 0.098f), S: new Color(0.310f, 0.267f, 0.278f),
+                Z: new Color(0.310f, 0.267f, 0.278f), J: new Color(1.000f, 0.816f, 0.400f),
+                L: new Color(0.878f, 0.318f, 0.098f),
+                BgTop: new Color(0.062f, 0.031f, 0.016f), BgBottom: new Color(0.125f, 0.059f, 0.027f),
+                Material: CellMaterial.Metallic,
+                EdgeTint: new Color(1.000f, 0.550f, 0.180f, 0.60f),
+                Plan: ColorPlan.Trio, Signature: BurstArtifact.Shards,
+                Scene: BackdropStyle.Embers,
+                Accent: new Color(1.00f, 0.55f, 0.20f), Accent2: new Color(1.00f, 0.30f, 0.18f)),
+        },
+        new()
+        {
+            Id = "theme_tundra", ProductId = "", Kind = StoreItemKind.Theme,
+            Name = "TUNDRA", Blurb = "ONE PALE ICE UNDER A HARD SKY. IT SHATTERS INTO SNOW.",
+            PriceLabel = "FREE",
+            Theme = new BlockTheme("theme_tundra",
+                I: new Color(0.878f, 0.941f, 1.000f), O: new Color(0.816f, 0.886f, 0.965f),
+                T: new Color(0.749f, 0.827f, 0.925f), S: new Color(0.682f, 0.769f, 0.882f),
+                Z: new Color(0.612f, 0.710f, 0.839f), J: new Color(0.545f, 0.651f, 0.796f),
+                L: new Color(0.478f, 0.592f, 0.753f),
+                BgTop: new Color(0.020f, 0.031f, 0.055f), BgBottom: new Color(0.047f, 0.075f, 0.125f),
+                Glyph: SkinGlyph.Moon, Material: CellMaterial.Frosted,
+                Plan: ColorPlan.Mono, Signature: BurstArtifact.Frost,
+                Scene: BackdropStyle.Starfield,
+                Accent: new Color(0.62f, 0.85f, 1.00f), Accent2: new Color(0.78f, 0.78f, 1.00f)),
+        },
+        new()
+        {
+            Id = "theme_aether", ProductId = "", Kind = StoreItemKind.Theme,
+            Name = "AETHER", Blurb = "THE BOARD IS ONE PANE OF GLASS HELD UP TO A NEBULA.",
+            PriceLabel = "FREE",
+            Theme = new BlockTheme("theme_aether",
+                I: new Color(0.450f, 0.950f, 1.000f), O: new Color(0.700f, 0.700f, 1.000f),
+                T: new Color(0.850f, 0.450f, 1.000f), S: new Color(0.550f, 0.800f, 1.000f),
+                Z: new Color(0.750f, 0.600f, 1.000f), J: new Color(0.500f, 0.880f, 1.000f),
+                L: new Color(0.800f, 0.520f, 1.000f),
+                BgTop: new Color(0.035f, 0.020f, 0.075f), BgBottom: new Color(0.082f, 0.047f, 0.157f),
+                Glyph: SkinGlyph.Sparkle, Material: CellMaterial.Holographic,
+                EdgeTint: new Color(1.000f, 0.850f, 1.000f, 0.40f),
+                Plan: ColorPlan.BoardGradient, Signature: BurstArtifact.PrismBloom,
+                Scene: BackdropStyle.Nebula,
+                Accent: new Color(0.85f, 0.50f, 1.00f), Accent2: new Color(0.40f, 0.92f, 1.00f)),
         },
         // Burst-FX artifacts (free): the line-clear celebration Block Fit plays.
         // Cosmetic only — never touches scoring. "artifact_sparks" is the default.
@@ -610,19 +785,115 @@ public static class StoreCatalog
         {
             Id = "artifact_fluff", ProductId = "", Kind = StoreItemKind.Artifact,
             Name = "FLUFF", Blurb = "SOFT TUFTS DRIFT UP AND SETTLE. NO FLASH, NO GLARE.",
-            PriceLabel = "FREE", IsNew = true,
+            PriceLabel = "FREE",
         },
         new()
         {
             Id = "artifact_splash", ProductId = "", Kind = StoreItemKind.Artifact,
             Name = "SPLASH", Blurb = "A COLUMN OF WATER, TWO RIPPLES, THEN FALLING DROPS.",
-            PriceLabel = "FREE", IsNew = true,
+            PriceLabel = "FREE",
         },
         new()
         {
             Id = "artifact_swarm", ProductId = "", Kind = StoreItemKind.Artifact,
             Name = "SWARM", Blurb = "THE SHELL CRACKS ON ONE RING AND SCATTERS.",
+            PriceLabel = "FREE",
+        },
+        // The four SCENE-SET signatures. Same rule as every burst before them: a set equips its
+        // own as a convenience, and it stays a free row the player can change back.
+        new()
+        {
+            Id = "artifact_glitch", ProductId = "", Kind = StoreItemKind.Artifact,
+            Name = "GLITCH", Blurb = "THE LINE TEARS SIDEWAYS IN RGB SLICES AND SNAPS BACK.",
             PriceLabel = "FREE", IsNew = true,
+        },
+        new()
+        {
+            Id = "artifact_petals", ProductId = "", Kind = StoreItemKind.Artifact,
+            Name = "PETALS", Blurb = "BLOSSOMS LIFT OFF, TURN ONCE IN THE AIR, AND FALL.",
+            PriceLabel = "FREE", IsNew = true,
+        },
+        new()
+        {
+            Id = "artifact_frost", ProductId = "", Kind = StoreItemKind.Artifact,
+            Name = "FROST", Blurb = "CRYSTALS GROW ALONG THE LINE, THEN BURST INTO SNOW.",
+            PriceLabel = "FREE", IsNew = true,
+        },
+        new()
+        {
+            Id = "artifact_ink", ProductId = "", Kind = StoreItemKind.Artifact,
+            Name = "INK", Blurb = "A DARK BLOOM SPREADS, THROWS DROPLETS, AND RUNS DOWN.",
+            PriceLabel = "FREE", IsNew = true,
+        },
+        // ---- Backdrop scenes -------------------------------------------------
+        // The newest axis, and the one with the most screen area: the procedural scene behind
+        // every menu AND behind the play field. A scene carries FORM AND MOTION only and takes
+        // its palette from the equipped skin, so ten rows here multiply against every skin in
+        // the shelf above instead of adding ten wallpapers. That is also why they are free:
+        // their value is combinatorial, and a paywall on the combinatorial axis makes the skins
+        // the player already owns worth less.
+        //
+        // Ids are the contract with Blockfall.Theme.Backdrops.FromId — an id typo here does not
+        // fail the build, it silently equips Aurora.
+        new()
+        {
+            Id = Backdrops.DefaultId, ProductId = "", Kind = StoreItemKind.Backdrop,
+            Name = "AURORA", Blurb = "THE ORIGINAL DRIFTING LIGHTS. ALWAYS YOURS.",
+            PriceLabel = "FREE",
+        },
+        new()
+        {
+            Id = "scene_nebula", ProductId = "", Kind = StoreItemKind.Backdrop,
+            Name = "NEBULA", Blurb = "SLOW CLOUDS OF GAS, LIT FROM SOMEWHERE INSIDE.",
+            PriceLabel = "FREE", IsNew = true,
+        },
+        new()
+        {
+            Id = "scene_starfield", ProductId = "", Kind = StoreItemKind.Backdrop,
+            Name = "STARFIELD", Blurb = "THREE LAYERS OF STARS. THE NEAR ONES ARE IN A HURRY.",
+            PriceLabel = "FREE", IsNew = true,
+        },
+        new()
+        {
+            Id = "scene_grid", ProductId = "", Kind = StoreItemKind.Backdrop,
+            Name = "NIGHT GRID", Blurb = "A LIT FLOOR RUNNING OUT TO A BURNING HORIZON.",
+            PriceLabel = "FREE", IsNew = true,
+        },
+        new()
+        {
+            Id = "scene_rays", ProductId = "", Kind = StoreItemKind.Backdrop,
+            Name = "SUNSHAFT", Blurb = "A SLOW FAN OF LIGHT FROM SOMETHING ABOVE THE SCREEN.",
+            PriceLabel = "FREE",
+        },
+        new()
+        {
+            Id = "scene_waves", ProductId = "", Kind = StoreItemKind.Backdrop,
+            Name = "SWELL", Blurb = "FOUR LONG WAVES ROLLING UNDER THE BOARD.",
+            PriceLabel = "FREE",
+        },
+        new()
+        {
+            Id = "scene_bokeh", ProductId = "", Kind = StoreItemKind.Backdrop,
+            Name = "BOKEH", Blurb = "OUT-OF-FOCUS LIGHTS DRIFTING UP PAST THE CAMERA.",
+            PriceLabel = "FREE",
+        },
+        new()
+        {
+            Id = "scene_rain", ProductId = "", Kind = StoreItemKind.Backdrop,
+            Name = "DOWNPOUR", Blurb = "SLANTED RAIN AND A WET SHEEN POOLING AT THE BOTTOM.",
+            PriceLabel = "FREE",
+        },
+        new()
+        {
+            Id = "scene_embers", ProductId = "", Kind = StoreItemKind.Backdrop,
+            Name = "CINDERS", Blurb = "WARM SPARKS RISING OFF A FIRE YOU CANNOT SEE.",
+            PriceLabel = "FREE",
+        },
+        new()
+        {
+            Id = "scene_circuit", ProductId = "", Kind = StoreItemKind.Backdrop,
+            Name = "TRACE", Blurb = "COPPER RUNS AND TRAVELLING PULSES. THE SCREEN IS THE CHIP.",
+            PriceLabel = "FREE",
         },
         // ---- Placement sound packs -----------------------------------------
         // Priced at nothing on purpose. MobilePlatform.PurchaseItem currently calls
