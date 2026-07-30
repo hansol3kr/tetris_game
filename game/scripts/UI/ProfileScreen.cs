@@ -73,7 +73,7 @@ public partial class ProfileScreen : Control
         AddStat(grid, Loc.T("LINES CLEARED"), s.TotalLines.ToString("N0"));
         AddStat(grid, Loc.T("PIECES PLACED"), s.TotalPieces.ToString("N0"));
         AddStat(grid, Loc.T("TIME PLAYED"), FormatPlaytime(s.TotalPlaytime));
-        AddStat(grid, Loc.T("QUADS"), s.Tetrises.ToString("N0"));
+        AddStat(grid, Loc.T("QUADS"), s.Quads.ToString("N0"));
         AddStat(grid, Loc.T("T-SPINS"), s.TSpins.ToString("N0"));
         AddStat(grid, Loc.T("PERFECT CLEARS"), s.PerfectClears.ToString("N0"));
         AddStat(grid, Loc.T("BEST COMBO"), s.BestCombo.ToString());

@@ -1,17 +1,22 @@
 namespace Blockfall.Core;
 
 /// <summary>
-/// Scores a hypothetical board state for the AI. Uses the well-known "El-Tetris"
-/// six-feature heuristic (landing height, eroded piece cells, row/column
-/// transitions, holes, cumulative wells) with published weights that clear
-/// millions of lines. Pure and deterministic, so the bot's judgement is unit-testable.
+/// Scores a hypothetical board state for the AI. Uses the well-known six-feature heuristic
+/// published by Islam El-Ashi (landing height, eroded piece cells, row/column transitions, holes,
+/// cumulative wells) with his published weights, which clear millions of lines. Pure and
+/// deterministic, so the bot's judgement is unit-testable.
 ///
 /// Higher score = better placement. Buggy stacks (holes, tall towers, deep wells)
 /// score very negative; clearing lines with the piece scores positive.
+///
+/// <para>TRADEMARK NOTE, so this is not re-audited every release: the author's own name for this
+/// heuristic contains a third-party mark, so it is deliberately NOT written here. The attribution
+/// is by AUTHOR instead, which is both accurate and clean — and it must stay out of any
+/// player-facing string, including the in-game licences screen.</para>
 /// </summary>
 public static class BotEvaluator
 {
-    // Published El-Tetris weights.
+    // Published weights (El-Ashi's six-feature heuristic — see the class note).
     private const double WLandingHeight = -4.500158825082766;
     private const double WErodedCells   =  3.4181268101392694;
     private const double WRowTransitions = -3.2178882868487753;

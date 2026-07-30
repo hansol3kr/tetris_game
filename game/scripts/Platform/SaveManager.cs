@@ -403,6 +403,9 @@ public partial class SaveManager : Node
         SaveMerge.MergeBest(_data.Best, cloud.Best, IsTimeAttackKey);
         SaveMerge.MergeMax(_data.Daily, cloud.Daily);
         SaveMerge.MergeUnion(_data.OwnedItems, cloud.OwnedItems);
+        // Migrate the CLOUD list before merging: a device still on an older build keeps uploading
+        // the old id, and unioning it in raw would resurrect the pre-rename string on this device.
+        AchievementCatalog.MigrateUnlocked(cloud.Achievements);
         SaveMerge.MergeUnion(_data.Achievements, cloud.Achievements);
         SaveMerge.MergeCounts(_data.Boosters, cloud.Boosters);
         SaveMerge.MergeLifetime(_data.Lifetime, cloud.Lifetime);
@@ -441,6 +444,11 @@ public partial class SaveManager : Node
             var json = f?.GetAsText();
             if (!string.IsNullOrEmpty(json))
                 _data = JsonSerializer.Deserialize<SaveData>(json!) ?? new SaveData();
+            // Renamed achievement ids, folded forward on read. Marked dirty so the migrated list
+            // reaches disk on the next flush rather than being re-migrated every launch — and NOT
+            // flushed here, because a load that immediately writes turns a corrupt-read into a
+            // corrupt-write. (LifetimeStats migrates itself through its JSON shim; see LegacyQuads.)
+            if (AchievementCatalog.MigrateUnlocked(_data.Achievements)) _dirty = true;
         }
         catch (System.Exception e)
         {

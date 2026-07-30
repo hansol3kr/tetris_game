@@ -27,7 +27,7 @@ public static class AttackTable
     {
         SpinType.Full => lines switch { 1 => 2, 2 => 4, 3 => 6, _ => 0 }, // T-spin S/D/T
         SpinType.Mini => lines switch { 1 => 0, 2 => 1, _ => 0 },         // mini S/D
-        _ => lines switch { 1 => 0, 2 => 1, 3 => 2, 4 => 4, _ => 0 },     // single..tetris
+        _ => lines switch { 1 => 0, 2 => 1, 3 => 2, 4 => 4, _ => 0 },     // single..quad
     };
 
     /// <summary>

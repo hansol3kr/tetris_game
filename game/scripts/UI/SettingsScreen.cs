@@ -23,6 +23,7 @@ public partial class SettingsScreen : Control
 {
     public event Action? BackRequested;
     public event Action? ReplayTutorialRequested;
+    public event Action? LicensesRequested;
 
     private GameSettings _s = null!;
     private VBoxContainer _skinRows = null!;
@@ -147,10 +148,21 @@ public partial class SettingsScreen : Control
         // The tutorial is no longer forced on first launch, so it lives here (and
         // on the menu's HOW TO PLAY) as an opt-in replay.
         var help = SectionCard(col, "HELP");
-        var replay = new Button { Text = Loc.T("REPLAY TUTORIAL"), CustomMinimumSize = new Vector2(0, 46) };
+        var replay = new Button { Text = Loc.T("REPLAY TUTORIAL"), CustomMinimumSize = new Vector2(0, TouchTarget) };
         Motion.BindButtonFeel(replay);
         TouchScroll.Bind(replay, () => { Bootstrap.Instance.Save.SetSettings(_s); ReplayTutorialRequested?.Invoke(); });
         help.AddChild(replay);
+        // Open-source attributions (a store-submission requirement). Like REPLAY TUTORIAL this
+        // leaves the screen, so the pending edits are flushed first — SettingsScreen is freed by
+        // the swap and holds the only copy of anything typed since the last write.
+        var licenses = new Button
+        {
+            Text = Loc.T("OPEN SOURCE LICENSES"),
+            CustomMinimumSize = new Vector2(0, TouchTarget),
+        };
+        Motion.BindButtonFeel(licenses);
+        TouchScroll.Bind(licenses, () => { Bootstrap.Instance.Save.SetSettings(_s); LicensesRequested?.Invoke(); });
+        AddRow(help, licenses);
 
         col.AddChild(new Control { CustomMinimumSize = new Vector2(0, 8) });
         var back = new Button

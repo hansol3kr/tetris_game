@@ -587,6 +587,23 @@ internal static class LocData
         ["HOURGLASS"] = "모래시계",
         ["JUGGERNAUT"] = "거신",
 
+        // ---- Licenses screen (Settings > HELP) -----------------------------
+        // Only the chrome and the prose are translated. Copyright lines, license
+        // names ("MIT License", "SIL Open Font License 1.1") and license bodies are
+        // rendered untranslated by design — a translated license is not the license.
+        ["OPEN SOURCE LICENSES"] = "오픈소스 라이선스",
+        ["Blockfall is built on the open-source software below. Every notice is reproduced in full."] = "Blockfall은 아래 오픈소스 소프트웨어 위에서 동작합니다. 모든 고지문을 전문 그대로 싣습니다.",
+        ["GAME ENGINE"] = "게임 엔진",
+        ["RUNTIME"] = "런타임",
+        ["TYPEFACES"] = "서체",
+        ["EVERYTHING ELSE"] = "그 외",
+        ["ACKNOWLEDGEMENTS"] = "감사의 말",
+        ["The engine bundles {0} third-party components covered by {1} further licenses."] = "엔진에는 {1}종의 라이선스를 따르는 서드파티 구성 요소 {0}개가 포함되어 있습니다.",
+        ["SHOW FULL LICENSE TEXT"] = "라이선스 전문 보기",
+        ["HIDE FULL LICENSE TEXT"] = "라이선스 전문 접기",
+        ["Nothing else is bundled. The rules engine and the game project reference no third-party packages, and every texture, icon and sound is generated in code while the game runs."] = "그 밖에 포함된 것은 없습니다. 룰 엔진과 게임 프로젝트는 서드파티 패키지를 하나도 참조하지 않으며, 모든 텍스처·아이콘·사운드는 게임이 도는 동안 코드로 생성됩니다.",
+        ["The CPU opponent ranks candidate placements with a published six-feature board heuristic — landing height, eroded piece cells, row and column transitions, holes and cumulative wells — introduced by Islam El-Ashi as a refinement of Pierre Dellacherie's one-piece placement algorithm. It is implemented independently here; no third-party code is included."] = "CPU 상대는 여섯 가지 지표(착지 높이, 소거에 기여한 조각 칸, 행·열 전이, 구멍, 누적 우물)를 쓰는 공개 보드 휴리스틱으로 배치 후보의 순위를 매깁니다. 이 휴리스틱은 Pierre Dellacherie의 한 조각 배치 알고리즘을 Islam El-Ashi가 개선해 공개한 것이며, 여기서는 독자적으로 구현했습니다 — 서드파티 코드는 포함되지 않습니다.",
+
         // Charm trade descriptions (reward - price).
         ["Score x1.5 - pieces fall 40% faster"] = "점수 ×1.5 — 블록 낙하 40% 빨라짐",
         ["+2 next previews - Hold is sealed"] = "NEXT 미리보기 +2 — 홀드 봉인",

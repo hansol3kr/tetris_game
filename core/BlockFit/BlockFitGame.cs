@@ -94,7 +94,7 @@ public sealed class BlockFitGame
     public BlockPiece?[] Tray { get; } = new BlockPiece?[3];
 
     /// <summary>The parked (held) piece, or null. The player stashes a tray piece here to defer
-    /// an awkward shape and retrieve it later — a single reserve slot, Tetris-hold style. Placing
+    /// an awkward shape and retrieve it later — a single reserve slot, genre-standard hold. Placing
     /// the held piece on the board empties the slot; it never auto-refills. Held is always null in
     /// versus (the live duel exposes no hold UI), so game-over logic there is unchanged.</summary>
     public BlockPiece? Held { get; private set; }

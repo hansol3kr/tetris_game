@@ -25,7 +25,7 @@ public sealed class RunStats
     public int Singles { get; internal set; }
     public int Doubles { get; internal set; }
     public int Triples { get; internal set; }
-    public int Quads { get; internal set; }      // 4-line clears (Tetrises)
+    public int Quads { get; internal set; }      // 4-line clears
     public int TSpins { get; internal set; }
     public int TSpinMinis { get; internal set; }
     public int PerfectClears { get; internal set; }

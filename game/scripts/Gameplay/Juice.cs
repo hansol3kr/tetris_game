@@ -7,7 +7,7 @@ namespace Blockfall.Gameplay;
 
 /// <summary>
 /// All the "game feel" that makes clears satisfying: line-clear particle bursts,
-/// floating popup text with a scale punch (TETRIS!, T-SPIN, COMBO ×N …),
+/// floating popup text with a scale punch (QUAD!, T-SPIN, COMBO ×N …),
 /// a rate-limited full-board beam flash for the biggest moments, screen shake,
 /// and mobile haptics. Feedback follows an escalation table — a triple must
 /// never feel like a double. Purely cosmetic: reads nothing, mutates nothing on
@@ -47,7 +47,7 @@ public partial class JuiceLayer : Node2D
     private float _trauma;
     private const float MaxShakePixels = 16f;
 
-    // Full-board beam flash (TETRIS / PERFECT CLEAR): photosensitivity-budgeted —
+    // Full-board beam flash (QUAD / PERFECT CLEAR): photosensitivity-budgeted —
     // peak 60% alpha, 200ms ramp-down, at most one per 500ms.
     private float _beamAge = 1f;
     private float _beamY, _beamH;

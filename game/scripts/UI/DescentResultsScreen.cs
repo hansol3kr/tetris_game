@@ -37,8 +37,10 @@ public partial class DescentResultsScreen : Control
         UiTheme.ApplyTo(this);
         SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
 
-        // The run's ad slot (mobile, non-paying): end of run only, 1-in-3 capped.
-        Bootstrap.Instance.Platform.MaybeShowInterstitial();
+        // The run's ad slot (mobile, non-paying): end of run only, 1-in-3 capped. Descent is
+        // ad-eligible (it ends on a scoreboard); the mode is passed so AdPolicy decides, not this
+        // screen — see PlatformHub.MaybeShowInterstitial.
+        Bootstrap.Instance.Platform.MaybeShowInterstitial(GameModeId.Descent);
 
         var scroll = new TouchScroll { HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
         scroll.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);

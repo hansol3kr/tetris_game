@@ -7,7 +7,11 @@ config_version=5
 [application]
 
 config/name="Blockfall"
-config/description="A neon falling-block puzzle. Original brand — not affiliated with Tetris®."
+; Trademark rule (CLAUDE.md §8-1): this string is packed into the exported binary, so it is
+; SHIPPED metadata. It used to read "…not affiliated with Tetris®" — a disclaimer, but one that
+; named the mark in the app's own description, which is both a literal violation of the rule and
+; the worst possible place to invite the comparison. Describe the genre, never the competitor.
+config/description="A neon block puzzle. Drag, fit, and clear lines. Original brand, original art and rules."
 run/main_scene="res://scenes/Main.tscn"
 config/features=PackedStringArray("4.3", "C#", "Forward Plus")
 config/icon="res://icon.svg"

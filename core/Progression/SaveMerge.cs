@@ -63,7 +63,7 @@ public static class SaveMerge
         local.Singles = Math.Max(local.Singles, cloud.Singles);
         local.Doubles = Math.Max(local.Doubles, cloud.Doubles);
         local.Triples = Math.Max(local.Triples, cloud.Triples);
-        local.Tetrises = Math.Max(local.Tetrises, cloud.Tetrises);
+        local.Quads = Math.Max(local.Quads, cloud.Quads);
         local.TSpins = Math.Max(local.TSpins, cloud.TSpins);
         local.TSpinMinis = Math.Max(local.TSpinMinis, cloud.TSpinMinis);
         local.PerfectClears = Math.Max(local.PerfectClears, cloud.PerfectClears);

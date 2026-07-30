@@ -45,9 +45,22 @@ public partial class PlatformHub : Node
         => _services.ReportAchievements(stats, completed, mode);
     public void ShowLeaderboard(GameModeId mode) => _services.ShowLeaderboard(mode);
 
-    /// <summary>Show an interstitial only every few runs, and never for premium users.</summary>
-    public void MaybeShowInterstitial()
+    /// <summary>
+    /// Show an interstitial only every few runs, never for premium users, and never after a mode
+    /// that <see cref="AdPolicy"/> exempts.
+    ///
+    /// <para>The mode is a REQUIRED argument on purpose. It used to take none, so the two results
+    /// screens called it knowing the mode and unable to say so, and the Zen exclusion that
+    /// docs/MONETIZATION.md has required since the cap was written simply never existed. Making it
+    /// a parameter means a future caller cannot fail to answer the question.</para>
+    ///
+    /// <para>The exemption is checked BEFORE <c>_runsSinceAd</c> moves: counting an exempt run
+    /// would just push the ad onto the player's next run, which is the same interruption one screen
+    /// later.</para>
+    /// </summary>
+    public void MaybeShowInterstitial(GameModeId mode)
     {
+        if (!AdPolicy.AllowsInterstitial(mode)) return;
         if (!_services.SupportsAds || _services.IsPremium) return;
         _runsSinceAd++;
         if (_runsSinceAd >= 3) // frequency cap: 1 in 3 runs

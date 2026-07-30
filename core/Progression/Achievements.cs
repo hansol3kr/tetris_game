@@ -33,10 +33,56 @@ public sealed class AchievementDef
 /// <summary>The fixed set of achievements. Adding one is a single entry here.</summary>
 public static class AchievementCatalog
 {
+    /// <summary>
+    /// Ids that were RENAMED after shipping, old → new. An unlocked achievement is persisted as its
+    /// id string, so renaming one without this map would silently re-lock it on every device that
+    /// had earned it.
+    ///
+    /// <para>"first_tetris" was renamed because the id is written into the save file and CLAUDE.md
+    /// §8-1 bans the mark from code and metadata alike — the achievement's player-facing name was
+    /// always "Quad Damage", so nothing the player ever saw changes.</para>
+    ///
+    /// <para>Append-only, and entries are permanent: an old id can be on a device forever, so a row
+    /// here can never be deleted, only added to.</para>
+    /// </summary>
+    private static readonly Dictionary<string, string> RenamedIds = new()
+    {
+        ["first_tetris"] = "first_quad",
+    };
+
+    /// <summary>
+    /// Translate a persisted achievement id to its current name, leaving unknown ids untouched.
+    /// Call this when LOADING a save (and when merging a cloud one), never when writing.
+    /// <para>Unknown ids pass through rather than being dropped: an id from a NEWER build that a
+    /// downgraded client does not recognise is still that player's unlock, and discarding it would
+    /// lose it permanently on the next write.</para>
+    /// </summary>
+    public static string MigrateId(string id) => RenamedIds.TryGetValue(id, out var now) ? now : id;
+
+    /// <summary>Rewrite a persisted unlock list in place: migrate every id, drop duplicates that
+    /// the migration collapses, and preserve order. Returns true if anything changed, so a caller
+    /// can mark the save dirty only when it needs re-writing.</summary>
+    public static bool MigrateUnlocked(List<string> unlocked)
+    {
+        bool changed = false;
+        var seen = new HashSet<string>();
+        var outp = new List<string>(unlocked.Count);
+        foreach (var id in unlocked)
+        {
+            var now = MigrateId(id);
+            if (now != id) changed = true;
+            if (seen.Add(now)) outp.Add(now); else changed = true;
+        }
+        if (!changed) return false;
+        unlocked.Clear();
+        unlocked.AddRange(outp);
+        return true;
+    }
+
     public static readonly IReadOnlyList<AchievementDef> All = new List<AchievementDef>
     {
         new("first_line",    "First Steps",     "Clear your first line.",            c => c.Lifetime.TotalLines >= 1),
-        new("first_tetris",  "Quad Damage",     "Clear four lines at once.",         c => c.Lifetime.Tetrises >= 1),
+        new("first_quad",    "Quad Damage",     "Clear four lines at once.",         c => c.Lifetime.Quads >= 1),
         new("first_tspin",   "Spin Doctor",     "Score your first T-spin.",          c => c.Lifetime.TSpins >= 1),
         new("perfect",       "Spotless",        "Land a Perfect Clear.",             c => c.Lifetime.PerfectClears >= 1),
         new("combo_5",       "Chain Reaction",  "Reach a 5+ combo.",                 c => c.Lifetime.BestCombo >= 5),

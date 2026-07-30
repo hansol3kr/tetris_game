@@ -27,7 +27,7 @@ public class ProgressionTests
         Assert.Equal(140, life.TotalPieces);
         Assert.Equal(5000, life.TotalScore);
         Assert.Equal(90, life.TotalPlaytime);
-        Assert.Equal(6, life.Tetrises);       // 2 + 4
+        Assert.Equal(6, life.Quads);          // 2 + 4
         Assert.Equal(8, life.BestCombo);      // max(4,8)
         Assert.Equal(3, life.BestBackToBack); // max(3,2)
         Assert.Equal(1, life.GamesInMode(GameModeId.Marathon));
@@ -49,7 +49,7 @@ public class ProgressionTests
         var fresh = AchievementEngine.Evaluate(unlocked, Ctx(life, GameModeId.Marathon, Stats(lines: 10, quads: 1), 3000, 60, true));
 
         Assert.Contains("first_line", fresh);
-        Assert.Contains("first_tetris", fresh);
+        Assert.Contains("first_quad", fresh);
         Assert.Contains("marathon", fresh);
         foreach (var id in fresh) unlocked.Add(id);
 

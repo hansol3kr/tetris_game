@@ -35,8 +35,9 @@ public partial class ResultsScreen : Control
         UiTheme.ApplyTo(this);
         SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
 
-        // Offer an interstitial ad before showing results (mobile, non-paying users).
-        Bootstrap.Instance.Platform.MaybeShowInterstitial();
+        // Offer an interstitial ad before showing results (mobile, non-paying users). The mode is
+        // passed so the fairness exemptions in AdPolicy apply — Zen never gets one.
+        Bootstrap.Instance.Platform.MaybeShowInterstitial(_mode);
 
         var scroll = new TouchScroll { HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
         scroll.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);

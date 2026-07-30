@@ -20,12 +20,12 @@ public class AttackTableTests
     [InlineData(1, 0)] // single sends nothing
     [InlineData(2, 1)] // double
     [InlineData(3, 2)] // triple
-    [InlineData(4, 4)] // tetris
+    [InlineData(4, 4)] // quad
     public void PlainClears_MatchGuideline(int lines, int expected)
         => Assert.Equal(expected, AttackTable.LinesSent(Clear(lines)));
 
     [Fact]
-    public void TetrisBackToBack_AddsOne() => Assert.Equal(5, AttackTable.LinesSent(Clear(4, b2b: true)));
+    public void QuadBackToBack_AddsOne() => Assert.Equal(5, AttackTable.LinesSent(Clear(4, b2b: true)));
 
     [Theory]
     [InlineData(1, 2)] // T-spin single
@@ -60,7 +60,7 @@ public class AttackTableTests
     [Fact]
     public void PerfectClear_IsAHugeSwing()
     {
-        // B2B tetris perfect clear: base 4 + b2b 1 + pc 10 = 15.
+        // B2B quad perfect clear: base 4 + b2b 1 + pc 10 = 15.
         Assert.Equal(15, AttackTable.LinesSent(Clear(4, b2b: true, pc: true)));
     }
 }

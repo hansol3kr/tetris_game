@@ -57,9 +57,9 @@ public class SaveMergeTests
     [Fact]
     public void MergeLifetime_TakesMaxOfEveryCounter()
     {
-        var local = new LifetimeStats { GamesPlayed = 10, TotalScore = 5000, Tetrises = 3, BestCombo = 4 };
+        var local = new LifetimeStats { GamesPlayed = 10, TotalScore = 5000, Quads = 3, BestCombo = 4 };
         local.ModeGames["marathon"] = 6;
-        var cloud = new LifetimeStats { GamesPlayed = 8, TotalScore = 9000, Tetrises = 7, BestCombo = 2 };
+        var cloud = new LifetimeStats { GamesPlayed = 8, TotalScore = 9000, Quads = 7, BestCombo = 2 };
         cloud.ModeGames["marathon"] = 9;
         cloud.ModeGames["sprint"] = 1;
 
@@ -67,7 +67,7 @@ public class SaveMergeTests
 
         Assert.Equal(10, local.GamesPlayed);   // local ahead
         Assert.Equal(9000, local.TotalScore);  // cloud ahead
-        Assert.Equal(7, local.Tetrises);
+        Assert.Equal(7, local.Quads);
         Assert.Equal(4, local.BestCombo);
         Assert.Equal(9, local.ModeGames["marathon"]);
         Assert.Equal(1, local.ModeGames["sprint"]);

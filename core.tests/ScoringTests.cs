@@ -15,7 +15,7 @@ public class ScoringTests
     }
 
     [Fact]
-    public void Tetris_ScoresEightHundred()
+    public void Quad_ScoresEightHundred()
     {
         var s = new Scoring(1);
         var r = s.ApplyLock(4, SpinType.None, false);
@@ -31,7 +31,7 @@ public class ScoringTests
     }
 
     [Fact]
-    public void BackToBackTetris_AppliesOnePointFiveMultiplier()
+    public void BackToBackQuad_AppliesOnePointFiveMultiplier()
     {
         var s = new Scoring(1);
         var first = s.ApplyLock(4, SpinType.None, false);

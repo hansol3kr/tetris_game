@@ -19,7 +19,7 @@ public readonly struct ClearResult
     public int ScoreGained { get; init; }
     public int LevelAfter { get; init; }
 
-    /// <summary>A "difficult" clear (Tetris or any spin line clear) that sustains B2B.</summary>
+    /// <summary>A "difficult" clear (a quad or any spin line clear) that sustains B2B.</summary>
     public bool IsDifficult => LinesCleared == 4 || (Spin != SpinType.None && LinesCleared > 0);
 }
 
@@ -145,7 +145,7 @@ public sealed class Scoring
             1 => 100 * lvl,
             2 => 300 * lvl,
             3 => 500 * lvl,
-            4 => 800 * lvl, // "quad" / Tetris
+            4 => 800 * lvl, // quad (4-line clear)
             _ => 800 * lvl,
         };
     }

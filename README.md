@@ -30,7 +30,7 @@
 | **Versus Online** | The same 1v1 duel against a **human** — either **direct-connect by IP** (ENet P2P, no server) or **Quick Match** matchmaking that finds any opponent online via a relay server. |
 
 ### Depth & replayability
-- **CPU Versus** — a real opponent to fight: a deterministic **El-Tetris heuristic AI** with five tiers up to **Grandmaster (2-ply lookahead)**, exchanging garbage on a second board. It lives in the pure-C# core, so bot-vs-bot matches are unit-tested.
+- **CPU Versus** — a real opponent to fight: a deterministic **six-feature heuristic AI** (El-Ashi's published weights) with five tiers up to **Grandmaster (2-ply lookahead)**, exchanging garbage on a second board. It lives in the pure-C# core, so bot-vs-bot matches are unit-tested.
 - **Online Versus** — battle over ENet by IP, or **Quick Match** through the [matchmaking/relay server](docs/NETWORKING.md) (works across NAT). Ranked scores can be re-simulated for **anti-cheat** validation.
 - **Ranked ladder** — Quick Match duels move an **Elo-style rating** across seven tiers (Bronze → Grandmaster). Provisional accounts converge fast, then settle; the rating math and tier bands are pure-C# and unit-tested. A mid-match disconnect never counts, so a flaky connection can't be farmed. *(Direct-connect IP matches are unranked.)*
 - **Cloud save** — the whole save (bests, dailies, achievements, cosmetics, career stats, ladder) reconciles across devices with a **conflict-free merge** that keeps every best, unions collections, and never double-counts career totals. The merge is engine-agnostic and unit-tested; the platform backend (Steam Cloud / mobile) only moves opaque JSON blobs.
@@ -56,7 +56,7 @@
 
 ### Presentation & game feel
 - Dark background with additive **bloom glow** (WorldEnvironment) — on by default on desktop; **off by default on mobile** (HDR 2D is a perf/driver risk across the device long tail) and always off on macOS, where hand-drawn glow underlays carry the neon look. Toggleable in settings everywhere it's supported
-- **Line-clear particle bursts, screen shake, and floating popups** (TETRIS!, T-SPIN, COMBO ×N, PERFECT CLEAR!) — all asset-free and intensity-tunable
+- **Line-clear particle bursts, screen shake, and floating popups** (QUAD!, T-SPIN, COMBO ×N, PERFECT CLEAR!) — all asset-free and intensity-tunable
 - A **colorblind-friendly** neon palette (Okabe–Ito), toggleable in settings
 - **Cross-platform controls** — keyboard arrows/gamepad on desktop, and on phones **direct-manipulation touch**: grab the board and *drag the falling piece into place*, tap to rotate, flick down to hard-drop, flick up to hold (with a classic on-screen d-pad as a settings opt-out). Every gesture is funnelled through the same per-tick button stream the keyboard uses, so a touch-played run records and replays bit-for-bit
 

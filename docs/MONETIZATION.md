@@ -183,7 +183,7 @@ same string across code, Play Console, and App Store Connect.
 ### 3.3 Steam app ID / stat + achievement IDs
 
 Steam monetization is just the store price, but the achievement IDs
-(`ACH_FIRST_TETRIS`, `ACH_FIRST_TSPIN`, `ACH_PERFECT_CLEAR`, `ACH_COMBO_5`,
+(`ACH_FIRST_QUAD`, `ACH_FIRST_TSPIN`, `ACH_PERFECT_CLEAR`, `ACH_COMBO_5`,
 `ACH_MARATHON_CLEAR`) and leaderboard names (`LB_<MODE>`) must be created in the
 Steamworks partner site, and the `app_id` set in the GodotSteam export config
 (see `docs/BUILD.md`).

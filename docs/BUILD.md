@@ -195,7 +195,7 @@ loosely coupled and no-ops gracefully if the extension is absent.
    `steam_appid.txt` (dev) or supplied by the Steam client when launched through
    Steam (production).
 3. Configure achievement IDs in the Steamworks partner site to match the code:
-   `ACH_FIRST_TETRIS`, `ACH_FIRST_TSPIN`, `ACH_PERFECT_CLEAR`, `ACH_COMBO_5`,
+   `ACH_FIRST_QUAD`, `ACH_FIRST_TSPIN`, `ACH_PERFECT_CLEAR`, `ACH_COMBO_5`,
    `ACH_MARATHON_CLEAR`, plus leaderboards named `LB_<MODE>`.
 
 **c) Export**

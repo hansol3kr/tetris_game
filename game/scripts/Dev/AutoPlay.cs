@@ -121,6 +121,7 @@ public partial class AutoPlay : Node
 
         // ── 1) 모든 메뉴 화면 레이아웃 스윕 (0×0 회귀 감시) ──────────
         await Nav("Settings", () => R.GoToSettings(), typeof(SettingsScreen));
+        await Nav("Licenses", () => R.GoToLicenses(), typeof(LicensesScreen));
         await Nav("→Menu", () => R.GoToMainMenu(), typeof(MainMenu));
         await Nav("Store", () => R.GoToStore(), typeof(StoreScreen));
         await Nav("→Menu", () => R.GoToMainMenu(), typeof(MainMenu));

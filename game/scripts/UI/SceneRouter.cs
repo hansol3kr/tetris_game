@@ -323,6 +323,18 @@ public partial class SceneRouter : Node
         var screen = new SettingsScreen();
         screen.BackRequested += GoToMainMenu;
         screen.ReplayTutorialRequested += GoToTutorial;
+        screen.LicensesRequested += GoToLicenses;
+        Swap(screen);
+    }
+
+    /// <summary>Open-source attributions (store-submission requirement). Reached only from
+    /// Settings ▸ HELP, so BACK returns there rather than to the menu — the player is one
+    /// tap into a sub-page, not on a top-level screen.</summary>
+    public void GoToLicenses()
+    {
+        if (Busy) return;
+        var screen = new LicensesScreen();
+        screen.BackRequested += GoToSettings;
         Swap(screen);
     }
 

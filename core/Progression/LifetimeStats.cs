@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Text.Json.Serialization;
 
 namespace Blockfall.Core;
 
@@ -18,7 +20,31 @@ public sealed class LifetimeStats
     public int Singles { get; set; }
     public int Doubles { get; set; }
     public int Triples { get; set; }
-    public int Tetrises { get; set; }
+
+    /// <summary>Four-line clears. Named for what the UI has always called them ("QUADS") rather
+    /// than for the trademarked term — this property name is a KEY IN THE SAVE FILE, and CLAUDE.md
+    /// §8-1 bans the mark from code and metadata alike. See <see cref="LegacyQuads"/> for how the
+    /// counts already on players' devices survive the rename.</summary>
+    public int Quads { get; set; }
+
+    /// <summary>
+    /// Read-only migration shim for saves written before <see cref="Quads"/> was renamed.
+    ///
+    /// <para>System.Text.Json binds by property name, so without this every existing player's
+    /// four-line-clear total would silently reset to zero — and the "Quad Damage" achievement with
+    /// it. The setter folds the old key in; the getter is never serialised
+    /// (<see cref="JsonIgnoreCondition.WhenWritingDefault"/> plus a constant 0), so the old name is
+    /// read once and never written back. Deleting this is safe only once no device can still hold a
+    /// pre-rename save, which in practice means never.</para>
+    /// </summary>
+    [JsonPropertyName("Tetrises")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public int LegacyQuads
+    {
+        get => 0;
+        set => Quads = Math.Max(Quads, value);
+    }
+
     public int TSpins { get; set; }
     public int TSpinMinis { get; set; }
     public int PerfectClears { get; set; }
@@ -42,7 +68,7 @@ public sealed class LifetimeStats
         Singles += run.Singles;
         Doubles += run.Doubles;
         Triples += run.Triples;
-        Tetrises += run.Quads;
+        Quads += run.Quads;
         TSpins += run.TSpins;
         TSpinMinis += run.TSpinMinis;
         PerfectClears += run.PerfectClears;
